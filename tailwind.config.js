@@ -12,9 +12,17 @@ export default {
 
     theme: {
         extend: {
-            fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
-            },
+        fontFamily: {
+            sans: ['Inter', ...defaultTheme.fontFamily.sans],
+        },
+        colors: {
+            'vw-blue': '#001E50',
+            'vw-light-blue': '#00B0F0',
+            'vw-grey': '#767676',
+            'vw-grey-light': '#F2F2F2',
+            urgent: '#D32F2F',
+            approved: '#2E7D32',
+        },
         },
     },
 
