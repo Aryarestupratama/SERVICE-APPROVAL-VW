@@ -12,41 +12,44 @@ import {
     SidebarInset,
 } from '@/Components/ui/sidebar';
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard' },
     { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*' },
     { label: 'Customers', href: route('admin.customers.index'), routeName: 'admin.customers.*' },
     { label: 'Vehicles', href: route('admin.vehicles.index'), routeName: 'admin.vehicles.*' },
 ];
 
+const ADMIN_ONLY_NAV_ITEMS = [
+    { label: 'Staff', href: route('admin.users.index'), routeName: 'admin.users.*' },
+    { label: 'Settings', href: route('admin.settings.edit'), routeName: 'admin.settings.*' },
+];
+
 const ROLE_LABEL = {
     admin: 'Admin',
     service_advisor: 'Service Advisor',
+    technician: 'Technician',
 };
 
 const ROLE_COLOR = {
     admin: 'bg-vw-light-blue',
     service_advisor: 'bg-approved',
+    technician: 'bg-vw-grey',
 };
 
 export default function AdminLayout({ children, title }) {
     const { auth, flash } = usePage().props;
 
+    const navItems = auth.user.role === 'admin'
+        ? [...BASE_NAV_ITEMS, ...ADMIN_ONLY_NAV_ITEMS]
+        : BASE_NAV_ITEMS;
+
     return (
         <SidebarProvider>
             <Sidebar>
-                <SidebarHeader>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-bold text-vw-blue">
-                        VW
-                    </div>
-                    <span className="font-semibold tracking-tight text-white">
-                        Service Inspection
-                    </span>
-                </SidebarHeader>
-
+                {/* ... */}
                 <SidebarContent>
                     <SidebarMenu>
-                        {NAV_ITEMS.map((item) => (
+                        {navItems.map((item) => (
                             <SidebarMenuItem key={item.href}>
                                 <SidebarMenuButton asChild isActive={route().current(item.routeName)}>
                                     <Link href={item.href}>{item.label}</Link>
@@ -55,7 +58,7 @@ export default function AdminLayout({ children, title }) {
                         ))}
                     </SidebarMenu>
                 </SidebarContent>
-
+                
                 <SidebarFooter>
                     <div className="flex items-center gap-3 rounded-md bg-white/5 px-3 py-2.5">
                         <span

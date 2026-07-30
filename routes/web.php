@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\VehicleController;
@@ -37,6 +39,17 @@ Route::middleware(['auth', 'verified'])
             Route::patch('service-orders/{serviceOrder}/status',
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
+        });
+
+        // Admin-only — staff & workshop config
+        Route::middleware('role:admin')->group(function () {
+            Route::resource('users', UserController::class)
+                ->except(['show']);
+
+            Route::get('settings', [SettingController::class, 'edit'])
+                ->name('settings.edit');
+            Route::put('settings', [SettingController::class, 'update'])
+                ->name('settings.update');
         });
     });
 
