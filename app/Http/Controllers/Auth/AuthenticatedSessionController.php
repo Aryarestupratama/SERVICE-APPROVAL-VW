@@ -33,7 +33,7 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended($this->redirectPathForRole($request->user()->role));
     }
 
     /**
@@ -48,5 +48,13 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    private function redirectPathForRole(string $role): string
+    {
+        return match ($role) {
+            'admin', 'service_advisor' => route('admin.dashboard', absolute: false),
+            default => '/dashboard',
+        };
     }
 }
