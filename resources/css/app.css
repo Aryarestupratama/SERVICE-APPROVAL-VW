@@ -9,6 +9,25 @@
         --border: 220 13% 91%;
         --radius: 0.5rem;
 
+        /* Accent — dipetakan ke VW Grey Light (#F2F2F2), dipakai untuk hover state
+           komponen interaktif shadcn (select, command, dialog close button, dll) */
+        --accent: 0 0% 95%;
+        --accent-foreground: 222 47% 11%;
+
+        /* Card — sama dengan background/foreground, karena UI ini flat (bukan
+           dark mode / elevated surface berbeda), tapi didefinisikan terpisah
+           supaya komponen shadcn tetap portable kalau nanti butuh beda */
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+
+        /* Muted foreground — dipetakan ke VW Grey (#767676 ≈ hsl(0, 0%, 46%)) */
+        --muted-foreground: 0 0% 46%;
+
+        /* Popover — surface dropdown/combobox, sama dengan background/foreground
+           karena UI ini flat, tidak ada elevated dark surface */
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+
         /* Sidebar — dipetakan ke VW Blue (#001E50 ≈ hsl(213, 100%, 16%)) */
         --sidebar-background: 213 100% 16%;
         --sidebar-foreground: 0 0% 100%;

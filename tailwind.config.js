@@ -1,4 +1,3 @@
-// tailwind.config.js
 const defaultTheme = require('tailwindcss/defaultTheme');
 
 module.exports = {
@@ -22,10 +21,25 @@ module.exports = {
                 urgent: '#D32F2F',
                 approved: '#2E7D32',
 
-                // --- token baru untuk komponen shadcn, dipetakan ke CSS var ---
+                // --- token generik untuk komponen shadcn, dipetakan ke CSS var ---
                 border: 'hsl(var(--border))',
                 background: 'hsl(var(--background))',
                 foreground: 'hsl(var(--foreground))',
+                accent: {
+                    DEFAULT: 'hsl(var(--accent))',
+                    foreground: 'hsl(var(--accent-foreground))',
+                },
+                card: {
+                    DEFAULT: 'hsl(var(--card))',
+                    foreground: 'hsl(var(--card-foreground))',
+                },
+                muted: {
+                    foreground: 'hsl(var(--muted-foreground))',
+                },
+                popover: {
+                    DEFAULT: 'hsl(var(--popover))',
+                    foreground: 'hsl(var(--popover-foreground))',
+                },
                 sidebar: {
                     DEFAULT: 'hsl(var(--sidebar-background))',
                     foreground: 'hsl(var(--sidebar-foreground))',
