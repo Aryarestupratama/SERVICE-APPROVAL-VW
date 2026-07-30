@@ -19,6 +19,9 @@ Route::get('/', function () {
 Route::get('/report/{token}', [InspectionReportController::class, 'show'])
     ->name('public.inspection-report');
 
+    Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionReportController::class, 'submitDecisions'])
+    ->name('public.report.decide');
+
 Route::middleware(['auth', 'verified'])
     ->prefix('admin')
     ->name('admin.')

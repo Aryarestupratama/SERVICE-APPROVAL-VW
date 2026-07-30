@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
@@ -89,7 +89,7 @@ export default function Create({ customers, vehicles, technicians }) {
     const [customerMode, setCustomerMode] = useState('existing'); // 'existing' | 'new'
     const [vehicleMode, setVehicleMode] = useState('existing');
 
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         customer_id: '',
         new_customer: { name: '', phone: '', email: '' },
         vehicle_id: '',
@@ -101,6 +101,32 @@ export default function Create({ customers, vehicles, technicians }) {
         inspection_items: [{ name: '', description: '', cost: '', is_urgent: false }],
         videos: [],
     });
+
+    // Reset pilihan vehicle setiap kali customer/mode berubah,
+    // supaya tidak nyangkut nunjuk ke kendaraan customer lain
+    useEffect(() => {
+        setData('vehicle_id', '');
+    }, [data.customer_id, customerMode]);
+
+    const filteredVehicles =
+        customerMode === 'existing' && data.customer_id
+            ? vehicles.filter((v) => v.customer_id === data.customer_id)
+            : [];
+
+    // Transform payload sebelum dikirim ke backend.
+    // PENTING: transform() dipanggil di body komponen (bukan di dalam handleSubmit)
+    // supaya selalu ambil customerMode/vehicleMode terbaru.
+    transform((data) => ({
+        ...data,
+        customer_id: customerMode === 'existing' ? data.customer_id : '',
+        new_customer: customerMode === 'new' ? data.new_customer : null,
+        vehicle_id: vehicleMode === 'existing' ? data.vehicle_id : '',
+        new_vehicle: vehicleMode === 'new' ? data.new_vehicle : null,
+        inspection_items: data.inspection_items.map((item) => ({
+            ...item,
+            is_urgent: item.is_urgent ? 1 : 0, // FormData tidak paham boolean, paksa jadi 1/0
+        })),
+    }));
 
     const addItem = () => {
         setData('inspection_items', [
@@ -149,18 +175,7 @@ export default function Create({ customers, vehicles, technicians }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-
-        // Kalau mode "existing" tapi belum pilih apapun, kosongkan new_* supaya backend validasi benar
-        const payload = {
-            ...data,
-            customer_id: customerMode === 'existing' ? data.customer_id : '',
-            new_customer: customerMode === 'new' ? data.new_customer : null,
-            vehicle_id: vehicleMode === 'existing' ? data.vehicle_id : '',
-            new_vehicle: vehicleMode === 'new' ? data.new_vehicle : null,
-        };
-
         post(route('admin.service-orders.store'), {
-            data: payload,
             forceFormData: true, // wajib true karena ada kemungkinan file video
         });
     };
@@ -282,14 +297,28 @@ export default function Create({ customers, vehicles, technicians }) {
                         {vehicleMode === 'existing' ? (
                             <div className="space-y-1.5">
                                 <Label>Select Vehicle</Label>
-                                <EntityCombobox
-                                    items={vehicles}
-                                    value={data.vehicle_id}
-                                    onSelect={(id) => setData('vehicle_id', id)}
-                                    placeholder="Search plate number..."
-                                    getLabel={(v) => v.plate_number}
-                                    getSubLabel={(v) => `${v.brand} ${v.model}`}
-                                />
+                                {customerMode === 'new' ? (
+                                    <p className="text-sm text-vw-grey">
+                                        New customers don't have any vehicles yet — please add one below.
+                                    </p>
+                                ) : !data.customer_id ? (
+                                    <p className="text-sm text-vw-grey">
+                                        Select a customer first to see their vehicles.
+                                    </p>
+                                ) : filteredVehicles.length === 0 ? (
+                                    <p className="text-sm text-vw-grey">
+                                        This customer has no vehicles yet — please add one below.
+                                    </p>
+                                ) : (
+                                    <EntityCombobox
+                                        items={filteredVehicles}
+                                        value={data.vehicle_id}
+                                        onSelect={(id) => setData('vehicle_id', id)}
+                                        placeholder="Search plate number..."
+                                        getLabel={(v) => v.plate_number}
+                                        getSubLabel={(v) => `${v.brand} ${v.model}`}
+                                    />
+                                )}
                                 {errors.vehicle_id && (
                                     <p className="text-sm text-urgent">{errors.vehicle_id}</p>
                                 )}
@@ -345,7 +374,7 @@ export default function Create({ customers, vehicles, technicians }) {
                                     <Label>Year (optional)</Label>
                                     <Input
                                         type="number"
-                                        value={data.new_vehicle.year}
+                                        value={data.new_vehicle.year ?? ''}
                                         onChange={(e) =>
                                             setData('new_vehicle', {
                                                 ...data.new_vehicle,

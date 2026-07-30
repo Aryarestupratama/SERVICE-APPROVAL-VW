@@ -1,29 +1,19 @@
 import PublicLayout from '@/Layouts/PublicLayout';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
 
-// RAW/PLAIN VERSION — dummy data, belum konek ke backend.
-// Tujuannya cuma untuk lihat alur section & interaksi approve/reject dulu.
-// Styling & props asli menyusul setelah flow disetujui (lihat checkpoint Fase 2).
-
-const DUMMY_VIDEOS = [
-    { id: 1, label: 'Part 1' },
-    { id: 2, label: 'Part 2' },
-];
-
-const DUMMY_ITEMS = [
-    { id: 1, name: 'Ganti tension strut', cost: 850000, is_urgent: true, status: 'pending' },
-    { id: 2, name: 'Ganti oli mesin', cost: 450000, is_urgent: false, status: 'pending' },
-    { id: 3, name: 'Servis AC', cost: 300000, is_urgent: false, status: 'pending' },
-];
-
-export default function InspectionReport() {
-    const [activeVideo, setActiveVideo] = useState(DUMMY_VIDEOS[0].id);
-    const [items, setItems] = useState(DUMMY_ITEMS);
+export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
+    const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
+    const [items, setItems] = useState(initialItems);
+    const [showModal, setShowModal] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [submitted, setSubmitted] = useState(order.status !== 'draft' && order.status !== 'sent' && order.status !== 'awaiting_approval');
 
     const totalCost = items
         .filter((item) => item.status !== 'rejected')
         .reduce((sum, item) => sum + item.cost, 0);
+
+    const allDecided = items.every((item) => item.status !== 'pending');
 
     const handleDecision = (itemId, decision) => {
         setItems((prev) =>
@@ -33,13 +23,37 @@ export default function InspectionReport() {
         );
     };
 
+    const handleConfirmSubmit = () => {
+        setSubmitting(true);
+
+        router.post(
+            route('public.report.decide', token),
+            {
+                decisions: items.map((item) => ({
+                    id: item.id,
+                    status: item.status,
+                })),
+            },
+            {
+                onSuccess: () => {
+                    setSubmitted(true);
+                    setShowModal(false);
+                },
+                onError: () => {
+                    setShowModal(false);
+                },
+                onFinish: () => setSubmitting(false),
+            }
+        );
+    };
+
     return (
         <PublicLayout>
             <Head title="Inspection Report" />
 
             {/* 1. Hero / Branding */}
             <section>
-                <h1>[Workshop Name]</h1>
+                <h1>{settings.workshop_name ?? '[Workshop Name]'}</h1>
                 <p>Vehicle Inspection Report</p>
             </section>
 
@@ -48,11 +62,11 @@ export default function InspectionReport() {
             {/* 2. Video Personal */}
             <section>
                 <h2>Inspection Video</h2>
-                <p>Plate number: B 1234 XYZ</p>
-                <p>Customer: John Doe</p>
+                <p>Plate number: {vehicle.plate_number}</p>
+                <p>Customer: {customer.name}</p>
 
                 <div>
-                    {DUMMY_VIDEOS.map((video) => (
+                    {videos.map((video) => (
                         <button
                             key={video.id}
                             type="button"
@@ -63,12 +77,18 @@ export default function InspectionReport() {
                     ))}
                 </div>
 
-                <div style={{ border: '1px solid black', padding: '20px' }}>
-                    [Video player placeholder — currently showing:{' '}
-                    {DUMMY_VIDEOS.find((v) => v.id === activeVideo)?.label}]
-                </div>
+                {videos.length > 0 ? (
+                    <div style={{ border: '1px solid black', padding: '20px' }}>
+                        [Video player placeholder — currently showing:{' '}
+                        {videos.find((v) => v.id === activeVideo)?.label}]
+                    </div>
+                ) : (
+                    <p>No video available yet.</p>
+                )}
 
-                <p>Message from advisor: "Please check the items below, thank you."</p>
+                {order.personal_message && (
+                    <p>Message from advisor: "{order.personal_message}"</p>
+                )}
             </section>
 
             <hr />
@@ -76,6 +96,10 @@ export default function InspectionReport() {
             {/* 3. Service Inspection Result */}
             <section>
                 <h2>Inspection Items</h2>
+
+                {submitted && (
+                    <p><strong>Your decisions have already been submitted for this report.</strong></p>
+                )}
 
                 <table border="1">
                     <thead>
@@ -95,7 +119,7 @@ export default function InspectionReport() {
                                 <td>{item.is_urgent ? 'Yes' : '-'}</td>
                                 <td>{item.status}</td>
                                 <td>
-                                    {item.status === 'pending' ? (
+                                    {!submitted && item.status === 'pending' ? (
                                         <>
                                             <button
                                                 type="button"
@@ -122,6 +146,20 @@ export default function InspectionReport() {
                 <p>
                     <strong>Total: Rp {totalCost.toLocaleString('id-ID')}</strong>
                 </p>
+
+                {!submitted && (
+                    <button
+                        type="button"
+                        disabled={!allDecided}
+                        onClick={() => setShowModal(true)}
+                    >
+                        Submit Decision
+                    </button>
+                )}
+
+                {!submitted && !allDecided && (
+                    <p><em>Please decide on all items before submitting.</em></p>
+                )}
             </section>
 
             <hr />
@@ -129,9 +167,9 @@ export default function InspectionReport() {
             {/* 4. Contact Details */}
             <section>
                 <h2>Contact</h2>
-                <p>Jane Smith — Service Advisor</p>
-                <p>Phone: 0812xxxxxxx</p>
-                <p>Email: jane@workshop.com</p>
+                <p>{serviceAdvisor.name} — Service Advisor</p>
+                {serviceAdvisor.phone && <p>Phone: {serviceAdvisor.phone}</p>}
+                <p>Email: {serviceAdvisor.email}</p>
             </section>
 
             <hr />
@@ -139,9 +177,56 @@ export default function InspectionReport() {
             {/* 5. Location + Booking */}
             <section>
                 <h2>Location</h2>
-                <p>[Google Maps embed placeholder]</p>
+                <p>{settings.address ?? '[Address]'}</p>
                 <button type="button">Book a service</button>
             </section>
+
+            {/* Modal konfirmasi final — plain, belum styling */}
+            {showModal && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <div style={{ background: 'white', padding: '24px', maxWidth: '400px' }}>
+                        <h3>Confirm your decision</h3>
+                        <p>
+                            This action is final and cannot be changed afterwards.
+                            Please review your decisions below:
+                        </p>
+                        <ul>
+                            {items.map((item) => (
+                                <li key={item.id}>
+                                    {item.name} — <strong>{item.status}</strong>
+                                </li>
+                            ))}
+                        </ul>
+                        <p><strong>Total: Rp {totalCost.toLocaleString('id-ID')}</strong></p>
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                            <button
+                                type="button"
+                                onClick={() => setShowModal(false)}
+                                disabled={submitting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmSubmit}
+                                disabled={submitting}
+                            >
+                                {submitting ? 'Submitting...' : 'Confirm & Submit'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </PublicLayout>
     );
 }
