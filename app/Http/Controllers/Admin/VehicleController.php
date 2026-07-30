@@ -4,10 +4,35 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Vehicle;
+use App\Models\Customer;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class VehicleController extends Controller
 {
+    public function index(Request $request)
+    {
+        $vehicles = Vehicle::query()
+            ->with('customer')
+            ->when($request->search, fn ($q, $search) =>
+                $q->where('plate_number', 'like', "%{$search}%")
+                  ->orWhere('model', 'like', "%{$search}%")
+                  ->orWhereHas('customer', fn ($q2) =>
+                      $q2->where('name', 'like', "%{$search}%")
+                  )
+            )
+            ->latest()
+            ->paginate(20);
+
+        return Inertia::render('Admin/Vehicles/Index', [
+            'vehicles' => $vehicles,
+            'search' => $request->search,
+            // Dropdown pilih customer di form tambah/edit kendaraan
+            'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -35,5 +60,19 @@ class VehicleController extends Controller
         $vehicle->update($validated);
 
         return back()->with('success', 'Kendaraan berhasil diperbarui.');
+    }
+
+    public function destroy(Vehicle $vehicle)
+    {
+        try {
+            $vehicle->delete();
+        } catch (QueryException $e) {
+            return back()->with(
+                'error',
+                'Vehicle cannot be deleted because it still has related service orders.'
+            );
+        }
+
+        return back()->with('success', 'Kendaraan berhasil dihapus.');
     }
 }

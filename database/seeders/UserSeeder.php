@@ -33,5 +33,23 @@ class UserSeeder extends Seeder
             'role' => 'service_advisor',
             'phone' => '081211122233',
         ]);
+
+        User::create([
+            'name' => 'Agus Wijaya',
+            'email' => 'agus.tech@vwpik.test',
+            'password' => Hash::make('password'),
+            'role' => 'technician',
+            'phone' => '081233344455',
+            'email_verified_at' => now(),
+        ]);
+
+        User::create([
+            'name' => 'Rudi Hartono',
+            'email' => 'rudi.tech@vwpik.test',
+            'password' => Hash::make('password'),
+            'role' => 'technician',
+            'phone' => '081266677788',
+            'email_verified_at' => now(),
+        ]);
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Database\QueryException;
 
 class CustomerController extends Controller
 {
@@ -54,8 +55,14 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
-        // Hati-hati: cascade ke vehicles & service_orders (cek constraint FK di migration)
-        $customer->delete();
+        try {
+            $customer->delete();
+        } catch (QueryException $e) {
+            return back()->with(
+                'error',
+                'Customer cannot be deleted because they still have related vehicles or service orders.'
+            );
+        }
 
         return back()->with('success', 'Customer berhasil dihapus.');
     }

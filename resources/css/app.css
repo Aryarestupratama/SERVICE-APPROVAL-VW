@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+        --border: 220 13% 91%;
+        --radius: 0.5rem;
+
+        /* Sidebar — dipetakan ke VW Blue (#001E50 ≈ hsl(213, 100%, 16%)) */
+        --sidebar-background: 213 100% 16%;
+        --sidebar-foreground: 0 0% 100%;
+        --sidebar-border: 213 60% 25%;
+        --sidebar-accent: 213 60% 22%;
+        --sidebar-accent-foreground: 0 0% 100%;
+        --sidebar-primary: 199 100% 47%; /* vw-light-blue */
+        --sidebar-primary-foreground: 0 0% 100%;
+    }
+}
