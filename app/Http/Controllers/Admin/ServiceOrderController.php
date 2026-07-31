@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\ServiceOrder;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\WorkOrderNumberGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -125,7 +126,7 @@ class ServiceOrderController extends Controller
                 // service class-nya belum dibuat. Ini placeholder sementara
                 // SUPAYA TIDAK CRASH, TAPI RAWAN RACE CONDITION kalau 2 SA
                 // submit order bersamaan. Ganti begitu service class jadi.
-                'work_order_number' => (ServiceOrder::max('work_order_number') ?? 0) + 1,
+                'work_order_number' => app(WorkOrderNumberGenerator::class)->generate(),
                 'status' => 'scheduled',
                 'items_approval_status' => 'pending',
                 'inspection_fee' => $validated['inspection_fee'],
@@ -219,10 +220,6 @@ class ServiceOrderController extends Controller
 
         if ($newStatus === 'follow_up') {
             $updates['follow_up_deadline'] = now()->addDays(3);
-        }
-
-        if ($newStatus === 'completed') {
-            $updates['finalized_at'] = now();
         }
 
         $serviceOrder->update($updates);

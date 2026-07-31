@@ -85,7 +85,32 @@ function EntityCombobox({ items, value, onSelect, placeholder, getLabel, getSubL
     );
 }
 
-export default function Create({ customers, vehicles, technicians }) {
+// Format angka jadi Rupiah untuk tampilan ringkasan (bukan input).
+function formatIDR(value) {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+    }).format(value || 0);
+}
+
+// Subtotal per item SEBELUM PPN — dipakai untuk tampilan ringkasan saja.
+// final_price_snapshot (dengan PPN dari settings) tetap dihitung & dikunci
+// di backend oleh InspectionItemPricingService saat item di-approve
+// (bagian 7B & 7 poin 5 PROJECT-RULES) — bukan di sini.
+function itemSubtotal(item) {
+    const costItem = Number(item.cost_item) || 0;
+    const costLabour = Number(item.cost_labour) || 0;
+    const discItem = Number(item.discount_item_percent) || 0;
+    const discLabour = Number(item.discount_labour_percent) || 0;
+
+    const netItem = costItem * (1 - discItem / 100);
+    const netLabour = costLabour * (1 - discLabour / 100);
+
+    return netItem + netLabour;
+}
+
+export default function Create({ customers, vehicles, technicians, brands }) {
     const [customerMode, setCustomerMode] = useState('existing'); // 'existing' | 'new'
     const [vehicleMode, setVehicleMode] = useState('existing');
 
@@ -93,12 +118,22 @@ export default function Create({ customers, vehicles, technicians }) {
         customer_id: '',
         new_customer: { name: '', phone: '', email: '' },
         vehicle_id: '',
-        new_vehicle: { plate_number: '', brand: '', model: '', year: '' },
+        new_vehicle: { plate_number: '', brand: '', vin: '', model: '', year: '' },
         technician_id: '',
         personal_message: '',
         inspection_fee: '',
         inspection_fee_note: '',
-        inspection_items: [{ name: '', description: '', cost: '', is_urgent: false }],
+        inspection_items: [
+            {
+                name: '',
+                description: '',
+                cost_item: '',
+                cost_labour: '',
+                discount_item_percent: '',
+                discount_labour_percent: '',
+                is_urgent: false,
+            },
+        ],
         videos: [],
     });
 
@@ -131,7 +166,15 @@ export default function Create({ customers, vehicles, technicians }) {
     const addItem = () => {
         setData('inspection_items', [
             ...data.inspection_items,
-            { name: '', description: '', cost: '', is_urgent: false },
+            {
+                name: '',
+                description: '',
+                cost_item: '',
+                cost_labour: '',
+                discount_item_percent: '',
+                discount_labour_percent: '',
+                is_urgent: false,
+            },
         ]);
     };
 
@@ -169,7 +212,7 @@ export default function Create({ customers, vehicles, technicians }) {
     };
 
     const totalCost = data.inspection_items.reduce(
-        (sum, item) => sum + (Number(item.cost) || 0),
+        (sum, item) => sum + itemSubtotal(item),
         0
     );
 
@@ -344,16 +387,46 @@ export default function Create({ customers, vehicles, technicians }) {
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>Brand</Label>
-                                    <Input
+                                    <Select
                                         value={data.new_vehicle.brand}
+                                        onValueChange={(value) =>
+                                            setData('new_vehicle', {
+                                                ...data.new_vehicle,
+                                                brand: value,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select brand" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {brands.map((brand) => (
+                                                <SelectItem key={brand} value={brand}>
+                                                    {brand}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {errors['new_vehicle.brand'] && (
+                                        <p className="text-sm text-urgent">{errors['new_vehicle.brand']}</p>
+                                    )}
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>VIN</Label>
+                                    <Input
+                                        value={data.new_vehicle.vin}
+                                        maxLength={17}
                                         onChange={(e) =>
                                             setData('new_vehicle', {
                                                 ...data.new_vehicle,
-                                                brand: e.target.value,
+                                                vin: e.target.value.toUpperCase(),
                                             })
                                         }
-                                        placeholder="Volkswagen"
+                                        placeholder="17-character VIN"
                                     />
+                                    {errors['new_vehicle.vin'] && (
+                                        <p className="text-sm text-urgent">{errors['new_vehicle.vin']}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>Model</Label>
@@ -395,13 +468,13 @@ export default function Create({ customers, vehicles, technicians }) {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-1.5">
-                            <Label>Technician (optional, for records only)</Label>
+                            <Label>Chief Technician (optional, for records only)</Label>
                             <Select
                                 value={data.technician_id ? String(data.technician_id) : ''}
                                 onValueChange={(value) => setData('technician_id', value)}
                             >
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Select technician" />
+                                    <SelectValue placeholder="Select chief technician" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {technicians.map((tech) => (
@@ -554,21 +627,78 @@ export default function Create({ customers, vehicles, technicians }) {
                                     />
                                 </div>
 
-                                <div className="flex items-end gap-4">
-                                    <div className="flex-1 space-y-1.5">
-                                        <Label>Cost (IDR)</Label>
+                                {/* Cost item vs labour dipisah sesuai revisi skema
+                                    inspection_items (PROJECT-RULES bagian 2, 7C #6) */}
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-1.5">
+                                        <Label>Item Cost (IDR)</Label>
                                         <Input
                                             type="number"
-                                            value={item.cost}
-                                            onChange={(e) => updateItem(index, 'cost', e.target.value)}
+                                            value={item.cost_item}
+                                            onChange={(e) => updateItem(index, 'cost_item', e.target.value)}
                                         />
-                                        {errors[`inspection_items.${index}.cost`] && (
+                                        {errors[`inspection_items.${index}.cost_item`] && (
                                             <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.cost`]}
+                                                {errors[`inspection_items.${index}.cost_item`]}
                                             </p>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2 pb-2">
+                                    <div className="space-y-1.5">
+                                        <Label>Labour Cost (IDR)</Label>
+                                        <Input
+                                            type="number"
+                                            value={item.cost_labour}
+                                            onChange={(e) => updateItem(index, 'cost_labour', e.target.value)}
+                                        />
+                                        {errors[`inspection_items.${index}.cost_labour`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.cost_labour`]}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Diskon item & labour terpisah — locked permanen di backend
+                                    begitu item di-approve customer (bagian 7B poin 4) */}
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-1.5">
+                                        <Label>Item Discount (%)</Label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={item.discount_item_percent}
+                                            onChange={(e) =>
+                                                updateItem(index, 'discount_item_percent', e.target.value)
+                                            }
+                                        />
+                                        {errors[`inspection_items.${index}.discount_item_percent`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.discount_item_percent`]}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Labour Discount (%)</Label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={item.discount_labour_percent}
+                                            onChange={(e) =>
+                                                updateItem(index, 'discount_labour_percent', e.target.value)
+                                            }
+                                        />
+                                        {errors[`inspection_items.${index}.discount_labour_percent`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.discount_labour_percent`]}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
                                         <Checkbox
                                             id={`urgent-${index}`}
                                             checked={item.is_urgent}
@@ -580,20 +710,22 @@ export default function Create({ customers, vehicles, technicians }) {
                                             Urgent
                                         </Label>
                                     </div>
+                                    <p className="text-sm text-vw-grey">
+                                        Subtotal (before tax): {formatIDR(itemSubtotal(item))}
+                                    </p>
                                 </div>
                             </div>
                         ))}
 
                         <div className="flex items-center justify-between border-t border-vw-grey/20 pt-3">
-                            <p className="font-semibold text-gray-900">Items Total</p>
-                            <p className="font-semibold text-gray-900">
-                                {new Intl.NumberFormat('id-ID', {
-                                    style: 'currency',
-                                    currency: 'IDR',
-                                    maximumFractionDigits: 0,
-                                }).format(totalCost)}
-                            </p>
+                            <p className="font-semibold text-gray-900">Items Total (before tax)</p>
+                            <p className="font-semibold text-gray-900">{formatIDR(totalCost)}</p>
                         </div>
+                        <p className="text-xs text-vw-grey">
+                            Final price per item (including VAT) is calculated and locked by the
+                            system only once the customer approves that item — this total is an
+                            estimate for reference while creating the order.
+                        </p>
                     </CardContent>
                 </Card>
 
