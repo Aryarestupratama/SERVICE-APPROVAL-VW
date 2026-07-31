@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\ServiceOrderController;
+use App\Http\Controllers\Admin\NotificationController;
 
 use App\Http\Controllers\Public\InspectionReportController;
 
@@ -31,6 +32,11 @@ Route::middleware(['auth', 'verified'])
 
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
+        Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead'])
+            ->name('notifications.read');
+        Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead'])
+            ->name('notifications.read-all');
+
         Route::middleware('role:admin,service_advisor')->group(function () {
             Route::resource('customers', CustomerController::class);
             Route::resource('vehicles', VehicleController::class);
@@ -39,6 +45,10 @@ Route::middleware(['auth', 'verified'])
             Route::patch('service-orders/{serviceOrder}/status',
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
+
+            Route::post('service-orders/{serviceOrder}/invoice',
+                [ServiceOrderController::class, 'uploadInvoice'])
+                ->name('service-orders.upload-invoice');
         });
 
         // Admin-only — staff & workshop config

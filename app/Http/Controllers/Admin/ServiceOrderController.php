@@ -182,9 +182,17 @@ class ServiceOrderController extends Controller
 
         // Relasi 'invoice' dihapus — model & tabel Invoice sudah di-drop total
         // (bagian 2). Data invoice sekarang kolom langsung di service_orders
-        // (invoice_pdf_path, invoice_uploaded_at, invoice_uploaded_by),
-        // otomatis ikut ter-load tanpa eager load terpisah.
-        $serviceOrder->load(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'inspectionItems']);
+        // (invoice_pdf_path, invoice_uploaded_at, invoice_uploaded_by).
+        // invoiceUploadedBy sengaja di-eager-load supaya nama SA yang upload
+        // bisa ditampilkan di Show.jsx tanpa N+1 query tambahan.
+        $serviceOrder->load([
+            'vehicle.customer',
+            'serviceAdvisor',
+            'technician',
+            'videos',
+            'inspectionItems',
+            'invoiceUploadedBy',
+        ]);
 
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
@@ -225,6 +233,38 @@ class ServiceOrderController extends Controller
         $serviceOrder->update($updates);
 
         return back()->with('success', 'Status berhasil diperbarui.');
+    }
+
+    public function uploadInvoice(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        // Invoice hanya masuk akal diupload setelah quality_control (sesuai
+        // PROJECT-RULES bagian 6, tahap 3: "Siapkan invoice (upload PDF oleh SA)").
+        // Guard longgar dulu: boleh selama belum 'completed', supaya SA masih bisa
+        // ganti file kalau salah upload sebelum order ditutup.
+        if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
+            return back()->with('error', 'Order sudah completed, invoice tidak bisa diganti lagi.');
+        }
+
+        $validated = $request->validate([
+            'invoice_pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'], // max 10MB
+        ]);
+
+        // Hapus file lama kalau ada re-upload, biar storage tidak menumpuk
+        if ($serviceOrder->invoice_pdf_path) {
+            Storage::disk('public')->delete($serviceOrder->invoice_pdf_path);
+        }
+
+        $path = $request->file('invoice_pdf')->store('invoices', 'public');
+
+        $serviceOrder->update([
+            'invoice_pdf_path' => $path,
+            'invoice_uploaded_at' => now(),
+            'invoice_uploaded_by' => $request->user()->id,
+        ]);
+
+        return back()->with('success', 'Invoice PDF berhasil diupload.');
     }
 
     /**

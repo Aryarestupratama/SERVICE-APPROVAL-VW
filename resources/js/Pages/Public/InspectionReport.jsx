@@ -1,7 +1,7 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
-import { Phone, Mail, MessageCircle } from 'lucide-react';
+import { Phone, Mail, MessageCircle, FileText } from 'lucide-react';
 
 function StatusStamp({ status }) {
     if (status === 'pending') return null;
@@ -20,6 +20,24 @@ function StatusStamp({ status }) {
 // Selain ini (quality_control, follow_up, completed, all_rejected_cancelled),
 // order sudah lewat tahap negosiasi — form dikunci read-only.
 const DECIDABLE_STATUSES = ['scheduled', 'in_progress'];
+
+// Status di mana section invoice viewer relevan ditampilkan — harus sinkron
+// dengan $showInvoiceViewer di InspectionReportController::show().
+const INVOICE_VISIBLE_STATUSES = ['quality_control', 'completed'];
+
+// Harga tampil per item: pakai final_price_snapshot kalau sudah terkunci
+// (approved), kalau belum (pending/rejected) hitung on-the-fly dari
+// cost_item/cost_labour dikurangi diskon masing-masing.
+function itemDisplayPrice(item) {
+    if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
+        return item.final_price_snapshot;
+    }
+
+    const itemAfterDiscount = item.cost_item * (1 - (item.discount_item_percent ?? 0) / 100);
+    const labourAfterDiscount = item.cost_labour * (1 - (item.discount_labour_percent ?? 0) / 100);
+
+    return itemAfterDiscount + labourAfterDiscount;
+}
 
 export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
@@ -45,7 +63,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
     const totalCost = items
         .filter((item) => item.status !== 'rejected')
-        .reduce((sum, item) => sum + item.cost, 0);
+        .reduce((sum, item) => sum + itemDisplayPrice(item), 0);
 
     const handleDecision = (itemId, decision) => {
         setItems((prev) =>
@@ -82,6 +100,11 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     const waHref = serviceAdvisor.phone
         ? `https://wa.me/${serviceAdvisor.phone.replace(/\D/g, '')}`
         : null;
+
+    // Section invoice hanya relevan mulai quality_control/completed — sinkron
+    // dengan controller yang cuma kirim invoice_pdf_path pada status tsb
+    // (di luar itu nilainya selalu null, jadi section otomatis tersembunyi).
+    const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
 
     return (
         <PublicLayout>
@@ -185,7 +208,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                                 <div className="shrink-0 text-right">
                                     <p className="font-mono text-sm font-semibold text-gray-900">
-                                        Rp {item.cost.toLocaleString('id-ID')}
+                                        Rp {itemDisplayPrice(item).toLocaleString('id-ID')}
                                     </p>
                                     {canDecide && item.status === 'pending' && (
                                         <div className="mt-1 flex gap-2">
@@ -234,6 +257,44 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     )}
                 </section>
 
+                {/* Invoice viewer — muncul mulai status quality_control/completed
+                    (PROJECT-RULES.md bagian 6, tahap 3 & 5). Kalau order sudah di
+                    tahap ini tapi SA belum sempat upload, tampilkan pesan "belum
+                    tersedia" alih-alih menyembunyikan section total. */}
+                {showInvoiceSection && (
+                    <>
+                        <hr className="my-8 border-vw-grey-light" />
+                        <section className="px-6">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
+                                Invoice
+                            </h2>
+
+                            {order.invoice_pdf_path ? (
+                                <a
+                                    href={`/storage/${order.invoice_pdf_path}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-3 flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                >
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                        <FileText className="h-4 w-4" />
+                                    </span>
+                                    <span>
+                                        <span className="block font-medium text-gray-900">
+                                            View invoice (PDF)
+                                        </span>
+                                        <span className="text-xs text-vw-grey">Opens in a new tab</span>
+                                    </span>
+                                </a>
+                            ) : (
+                                <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
+                                    Invoice is being prepared and will appear here shortly.
+                                </p>
+                            )}
+                        </section>
+                    </>
+                )}
+
                 <hr className="my-8 border-vw-grey-light" />
 
                 {/* CTA Hubungi SA — hanya muncul saat order sedang menunggu tindak lanjut customer */}
@@ -241,7 +302,10 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     <section className="px-6">
                         <div className="flex items-center justify-between gap-4 rounded-xl border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
                             <div>
-                                <p className="text-sm font-semibold text-gray-900">Waiting on your response</p>
+                                <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                                    Ready for Pickup
+                                </span>
+                                <p className="mt-1.5 text-sm font-semibold text-gray-900">Waiting on your response</p>
                                 <p className="mt-0.5 text-xs text-vw-grey">
                                     Have questions? Reach out to your service advisor.
                                 </p>

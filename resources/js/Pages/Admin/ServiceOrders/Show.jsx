@@ -3,6 +3,8 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { useForm } from '@inertiajs/react';
 import { Badge } from '@/Components/ui/badge';
 import { Button } from '@/Components/ui/button';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import {
     Select,
     SelectContent,
@@ -20,37 +22,63 @@ import {
 } from '@/Components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 
+// Sinkron dengan ServiceOrderController::ALLOWED_TRANSITIONS (backend tetap
+// jadi sumber kebenaran/validasi terakhir — ini cuma untuk UX, supaya user
+// nggak lihat opsi yang bakal ditolak backend).
+const ALLOWED_TRANSITIONS = {
+    scheduled: ['in_progress'],
+    in_progress: ['quality_control', 'all_rejected_cancelled'],
+    quality_control: ['follow_up'],
+    follow_up: ['completed'],
+};
+
 const STATUS_VARIANT = {
-    draft: 'secondary',
-    sent: 'secondary',
-    awaiting_approval: 'default',
-    approved: 'success',
-    all_rejected_cancelled: 'destructive',
+    scheduled: 'secondary',
     in_progress: 'default',
+    quality_control: 'default',
+    follow_up: 'default',
     completed: 'success',
-    invoiced: 'success',
+    all_rejected_cancelled: 'destructive',
 };
 
 const STATUS_LABEL = {
-    draft: 'Draft',
-    sent: 'Sent',
-    awaiting_approval: 'Awaiting Approval',
-    approved: 'Approved',
-    all_rejected_cancelled: 'Rejected & Cancelled',
+    scheduled: 'Scheduled',
     in_progress: 'In Progress',
+    quality_control: 'Quality Control',
+    follow_up: 'Follow Up',
     completed: 'Completed',
-    invoiced: 'Invoiced',
+    all_rejected_cancelled: 'Rejected & Cancelled',
 };
 
-// Sesuai validasi controller: Rule::in(['approved','in_progress','completed','invoiced'])
-const MANUAL_STATUS_OPTIONS = ['approved', 'in_progress', 'completed', 'invoiced'];
+const ITEM_STATUS_VARIANT = {
+    pending: 'secondary',
+    approved: 'success',
+    rejected: 'destructive',
+};
 
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
         currency: 'IDR',
         maximumFractionDigits: 0,
-    }).format(value);
+    }).format(Number(value ?? 0));
+}
+
+// Total per item: pakai final_price_snapshot kalau sudah terkunci (approved),
+// kalau belum (pending/rejected) hitung on-the-fly dari cost - discount.
+// Ini cuma untuk tampilan; sumber kebenaran hitungan tetap
+// InspectionItemPricingService di backend.
+function itemDisplayTotal(item) {
+    if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
+        return Number(item.final_price_snapshot);
+    }
+
+    const itemAfterDiscount =
+        Number(item.cost_item) * (1 - Number(item.discount_item_percent ?? 0) / 100);
+    const labourAfterDiscount =
+        Number(item.cost_labour) * (1 - Number(item.discount_labour_percent ?? 0) / 100);
+
+    return itemAfterDiscount + labourAfterDiscount;
 }
 
 export default function Show({ order }) {
@@ -58,6 +86,9 @@ export default function Show({ order }) {
     const [confirmOpen, setConfirmOpen] = useState(false);
 
     const { patch, processing } = useForm({});
+    const invoiceForm = useForm({ invoice_pdf: null });
+
+    const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
 
     const handleSelectStatus = (value) => {
         setPendingStatus(value);
@@ -75,22 +106,49 @@ export default function Show({ order }) {
         });
     };
 
-    const totalItemsCost = order.inspection_items?.reduce(
-        (sum, item) => sum + Number(item.cost),
-        0
-    ) ?? 0;
+    const handleInvoiceUpload = (e) => {
+        e.preventDefault();
+        invoiceForm.post(route('admin.service-orders.upload-invoice', order.id), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => invoiceForm.reset(),
+        });
+    };
+
+    // Grand total: jumlah dari itemDisplayTotal semua item — bukan cuma yang
+    // approved, karena ini tampilan ringkasan admin, bukan invoice final.
+    // (Perhitungan invoice final tetap dari InspectionItemPricingService.)
+    const totalItemsCost =
+        order.inspection_items?.reduce((sum, item) => sum + itemDisplayTotal(item), 0) ?? 0;
+
+    // 'completed' hanya boleh dipilih kalau invoice sudah diupload — guard ini
+    // cuma UX, backend tetap validasi ulang di updateStatus().
+    const isCompletedBlocked =
+        !order.invoice_pdf_path && availableTransitions.includes('completed');
 
     return (
-        <AdminLayout title={`Service Order #${order.id}`}>
+        <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
             <div className="grid gap-6 lg:grid-cols-3">
                 {/* Kolom kiri: info utama */}
                 <div className="space-y-6 lg:col-span-2">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Order Overview</CardTitle>
-                            <Badge variant={STATUS_VARIANT[order.status] ?? 'default'}>
-                                {STATUS_LABEL[order.status] ?? order.status}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                                <Badge variant={STATUS_VARIANT[order.status] ?? 'default'}>
+                                    {STATUS_LABEL[order.status] ?? order.status}
+                                </Badge>
+                                {order.items_approval_status && (
+                                    <Badge variant="outline">
+                                        Items: {order.items_approval_status.replace('_', ' ')}
+                                    </Badge>
+                                )}
+                                {order.status === 'follow_up' && (
+                                    <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                        Waiting for Pickup
+                                    </Badge>
+                                )}
+                            </div>
                         </CardHeader>
                         <CardContent className="grid grid-cols-2 gap-4 text-sm">
                             <div>
@@ -120,15 +178,27 @@ export default function Show({ order }) {
                                 </p>
                             </div>
                             <div>
+                                <p className="text-vw-grey">VIN</p>
+                                <p className="font-medium text-gray-900">
+                                    {order.vehicle?.vin ?? '—'}
+                                </p>
+                            </div>
+                            <div>
                                 <p className="text-vw-grey">Service Advisor</p>
                                 <p className="font-medium text-gray-900">
                                     {order.service_advisor?.name ?? '—'}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-vw-grey">Technician</p>
+                                <p className="text-vw-grey">Chief Technician</p>
                                 <p className="font-medium text-gray-900">
                                     {order.technician?.name ?? '—'}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-vw-grey">Work Order Number</p>
+                                <p className="font-medium text-gray-900">
+                                    {order.work_order_number ?? '—'}
                                 </p>
                             </div>
                         </CardContent>
@@ -142,43 +212,82 @@ export default function Show({ order }) {
                             {order.inspection_items?.length ? (
                                 <div className="divide-y divide-vw-grey/10">
                                     {order.inspection_items.map((item) => (
-                                        <div
-                                            key={item.id}
-                                            className="flex items-center justify-between py-3"
-                                        >
-                                            <div>
-                                                <p className="font-medium text-gray-900">
-                                                    {item.name}
-                                                    {item.is_urgent && (
-                                                        <Badge
-                                                            variant="destructive"
-                                                            className="ml-2 align-middle"
-                                                        >
-                                                            Urgent
-                                                        </Badge>
-                                                    )}
-                                                </p>
-                                                {item.description && (
-                                                    <p className="text-sm text-vw-grey">
-                                                        {item.description}
+                                        <div key={item.id} className="space-y-2 py-3">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="font-medium text-gray-900">
+                                                        {item.name}
+                                                        {item.is_urgent && (
+                                                            <Badge
+                                                                variant="destructive"
+                                                                className="ml-2 align-middle"
+                                                            >
+                                                                Urgent
+                                                            </Badge>
+                                                        )}
                                                     </p>
-                                                )}
+                                                    {item.description && (
+                                                        <p className="text-sm text-vw-grey">
+                                                            {item.description}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="font-medium text-gray-900">
+                                                        {formatCurrency(itemDisplayTotal(item))}
+                                                    </p>
+                                                    <Badge
+                                                        variant={
+                                                            ITEM_STATUS_VARIANT[item.status] ??
+                                                            'secondary'
+                                                        }
+                                                    >
+                                                        {item.status}
+                                                    </Badge>
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="font-medium text-gray-900">
-                                                    {formatCurrency(item.cost)}
-                                                </p>
-                                                <Badge
-                                                    variant={
-                                                        item.status === 'approved'
-                                                            ? 'success'
-                                                            : item.status === 'rejected'
-                                                            ? 'destructive'
-                                                            : 'secondary'
-                                                    }
-                                                >
-                                                    {item.status}
-                                                </Badge>
+
+                                            <div className="grid grid-cols-2 gap-2 text-xs text-vw-grey sm:grid-cols-4">
+                                                <div>
+                                                    <span className="block">Item cost</span>
+                                                    <span className="text-gray-900">
+                                                        {formatCurrency(item.cost_item)}
+                                                    </span>
+                                                    {Number(item.discount_item_percent) > 0 && (
+                                                        <span className="ml-1">
+                                                            (-{item.discount_item_percent}%)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <span className="block">Labour cost</span>
+                                                    <span className="text-gray-900">
+                                                        {formatCurrency(item.cost_labour)}
+                                                    </span>
+                                                    {Number(item.discount_labour_percent) > 0 && (
+                                                        <span className="ml-1">
+                                                            (-{item.discount_labour_percent}%)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <span className="block">Final price</span>
+                                                    <span className="text-gray-900">
+                                                        {item.final_price_snapshot !== null
+                                                            ? formatCurrency(item.final_price_snapshot)
+                                                            : 'Not locked yet'}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="block">Decided at</span>
+                                                    <span className="text-gray-900">
+                                                        {item.decided_at
+                                                            ? new Date(item.decided_at).toLocaleString(
+                                                                  'id-ID'
+                                                              )
+                                                            : '—'}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -196,33 +305,122 @@ export default function Show({ order }) {
                     </Card>
                 </div>
 
-                {/* Kolom kanan: status control */}
+                {/* Kolom kanan: status control + invoice */}
                 <div className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle>Update Status</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            <Select
-                                value={order.status}
-                                onValueChange={handleSelectStatus}
-                                disabled={processing}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {MANUAL_STATUS_OPTIONS.map((status) => (
-                                        <SelectItem key={status} value={status}>
-                                            {STATUS_LABEL[status]}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-xs text-vw-grey">
-                                Only statuses admin/SA can set manually are listed. Earlier
-                                stages (draft, sent, awaiting approval) are system-driven.
-                            </p>
+                            {availableTransitions.length > 0 ? (
+                                <>
+                                    <Select
+                                        value=""
+                                        onValueChange={handleSelectStatus}
+                                        disabled={processing}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Move to next status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {availableTransitions.map((status) => (
+                                                <SelectItem
+                                                    key={status}
+                                                    value={status}
+                                                    disabled={
+                                                        status === 'completed' &&
+                                                        !order.invoice_pdf_path
+                                                    }
+                                                >
+                                                    {STATUS_LABEL[status]}
+                                                    {status === 'completed' &&
+                                                        !order.invoice_pdf_path &&
+                                                        ' (upload invoice first)'}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {isCompletedBlocked && (
+                                        <p className="text-xs text-red-600">
+                                            Upload invoice PDF dulu sebelum bisa menandai order
+                                            completed.
+                                        </p>
+                                    )}
+                                </>
+                            ) : (
+                                <p className="text-sm text-vw-grey">
+                                    This order is at a final status ({STATUS_LABEL[order.status]}
+                                    ) — no further manual transition available.
+                                </p>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Invoice PDF</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {order.invoice_pdf_path ? (
+                                <div className="space-y-1">
+                                    <a
+                                        href={`/storage/${order.invoice_pdf_path}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-blue-600 underline"
+                                    >
+                                        View current invoice
+                                    </a>
+                                    {order.invoice_uploaded_at && (
+                                        <p className="text-xs text-vw-grey">
+                                            Uploaded{' '}
+                                            {new Date(order.invoice_uploaded_at).toLocaleString(
+                                                'id-ID'
+                                            )}
+                                            {order.invoice_uploaded_by?.name &&
+                                                ` by ${order.invoice_uploaded_by.name}`}
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-vw-grey">No invoice uploaded yet.</p>
+                            )}
+
+                            {order.status !== 'completed' && (
+                                <form onSubmit={handleInvoiceUpload} className="space-y-2">
+                                    <Label htmlFor="invoice_pdf">
+                                        {order.invoice_pdf_path
+                                            ? 'Replace invoice'
+                                            : 'Upload invoice'}{' '}
+                                        (PDF)
+                                    </Label>
+                                    <Input
+                                        id="invoice_pdf"
+                                        type="file"
+                                        accept="application/pdf"
+                                        onChange={(e) =>
+                                            invoiceForm.setData(
+                                                'invoice_pdf',
+                                                e.target.files[0]
+                                            )
+                                        }
+                                    />
+                                    {invoiceForm.errors.invoice_pdf && (
+                                        <p className="text-xs text-red-600">
+                                            {invoiceForm.errors.invoice_pdf}
+                                        </p>
+                                    )}
+                                    <Button
+                                        type="submit"
+                                        disabled={
+                                            invoiceForm.processing || !invoiceForm.data.invoice_pdf
+                                        }
+                                        size="sm"
+                                    >
+                                        {invoiceForm.processing ? 'Uploading...' : 'Upload'}
+                                    </Button>
+                                </form>
+                            )}
                         </CardContent>
                     </Card>
 

@@ -1,4 +1,5 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, router } from '@inertiajs/react';
+import { Bell } from 'lucide-react';
 import {
     SidebarProvider,
     Sidebar,
@@ -11,6 +12,13 @@ import {
     SidebarTrigger,
     SidebarInset,
 } from '@/Components/ui/sidebar';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/Components/ui/popover';
+import { Badge } from '@/Components/ui/badge';
+import { Button } from '@/Components/ui/button';
 
 const BASE_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard' },
@@ -36,6 +44,95 @@ const ROLE_COLOR = {
     technician: 'bg-vw-grey',
 };
 
+function timeAgo(dateString) {
+    const diffMs = Date.now() - new Date(dateString).getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
+
+function NotificationBell() {
+    const { notifications } = usePage().props;
+    const unreadCount = notifications?.unread_count ?? 0;
+    const items = notifications?.items ?? [];
+
+    const handleItemClick = (notification) => {
+        if (!notification.read_at) {
+            router.post(route('notifications.read', notification.id), {}, {
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }
+
+        if (notification.service_order_id) {
+            router.visit(route('admin.service-orders.show', notification.service_order_id));
+        }
+    };
+
+    const handleMarkAllAsRead = () => {
+        router.post(route('notifications.read-all'), {}, {
+            preserveScroll: true,
+            preserveState: true,
+        });
+    };
+
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="h-5 w-5" />
+                    {unreadCount > 0 && (
+                        <Badge
+                            variant="destructive"
+                            className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px]"
+                        >
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </Badge>
+                    )}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-0">
+                <div className="flex items-center justify-between border-b border-vw-grey/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                    {unreadCount > 0 && (
+                        <button
+                            type="button"
+                            onClick={handleMarkAllAsRead}
+                            className="text-xs font-medium text-vw-blue hover:underline"
+                        >
+                            Mark all as read
+                        </button>
+                    )}
+                </div>
+
+                <div className="max-h-80 overflow-y-auto">
+                    {items.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-sm text-vw-grey">
+                            No notifications yet.
+                        </p>
+                    ) : (
+                        items.map((item) => (
+                            <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => handleItemClick(item)}
+                                className={`block w-full border-b border-vw-grey/10 px-4 py-3 text-left text-sm transition-colors last:border-b-0 hover:bg-vw-grey-light
+                                    ${!item.read_at ? 'bg-vw-blue/5' : ''}`}
+                            >
+                                <p className="text-gray-900">{item.message}</p>
+                                <p className="mt-1 text-xs text-vw-grey">{timeAgo(item.created_at)}</p>
+                            </button>
+                        ))
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
 export default function AdminLayout({ children, title }) {
     const { auth, flash } = usePage().props;
 
@@ -58,7 +155,7 @@ export default function AdminLayout({ children, title }) {
                         ))}
                     </SidebarMenu>
                 </SidebarContent>
-                
+
                 <SidebarFooter>
                     <div className="flex items-center gap-3 rounded-md bg-white/5 px-3 py-2.5">
                         <span
@@ -84,11 +181,14 @@ export default function AdminLayout({ children, title }) {
             </Sidebar>
 
             <SidebarInset>
-                <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-vw-grey/20 bg-white px-4 sm:px-6">
-                    <SidebarTrigger className="lg:hidden" />
-                    {title && (
-                        <h1 className="text-lg font-semibold tracking-tight text-gray-900">{title}</h1>
-                    )}
+                <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-vw-grey/20 bg-white px-4 sm:px-6">
+                    <div className="flex items-center gap-4">
+                        <SidebarTrigger className="lg:hidden" />
+                        {title && (
+                            <h1 className="text-lg font-semibold tracking-tight text-gray-900">{title}</h1>
+                        )}
+                    </div>
+                    <NotificationBell />
                 </header>
 
                 {flash?.success && (
