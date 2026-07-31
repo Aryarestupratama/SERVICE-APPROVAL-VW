@@ -39,9 +39,14 @@ class Customer extends Model
 
     public function serviceOrders()
     {
-        return ServiceOrder::whereHas('vehicle', function ($query) {
-            $query->where('customer_id', $this->id);
-        });
+        return $this->hasManyThrough(
+            ServiceOrder::class,
+            Vehicle::class,
+            'customer_id',  // FK di tabel Vehicle yang mengarah ke Customer
+            'vehicle_id',   // FK di tabel ServiceOrder yang mengarah ke Vehicle
+            'id',           // local key di Customer
+            'id'            // local key di Vehicle
+        );
     }
 
     public function bookings()

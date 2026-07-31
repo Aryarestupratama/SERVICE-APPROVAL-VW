@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -41,9 +42,15 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'role' => ['required', Rule::in(['admin', 'service_advisor', 'chief_technician'])],
             'password' => ['required', 'string', 'min:8'],
+            'photo' => ['nullable', 'image', 'max:2048'],
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
+
+        if ($request->hasFile('photo')) {
+            $validated['photo_path'] = $request->file('photo')->store('users', 'public');
+        }
+        unset($validated['photo']);
 
         User::create($validated);
 
@@ -58,6 +65,7 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'role' => ['required', Rule::in(['admin', 'service_advisor', 'chief_technician'])],
             'password' => ['nullable', 'string', 'min:8'],
+            'photo' => ['nullable', 'image', 'max:2048'],
         ]);
 
         // Password cuma diupdate kalau diisi — kosongin field artinya "tidak diganti"
@@ -66,6 +74,14 @@ class UserController extends Controller
         } else {
             unset($validated['password']);
         }
+
+        if ($request->hasFile('photo')) {
+            if ($user->photo_path) {
+                Storage::disk('public')->delete($user->photo_path);
+            }
+            $validated['photo_path'] = $request->file('photo')->store('users', 'public');
+        }
+        unset($validated['photo']);
 
         $user->update($validated);
 
@@ -79,6 +95,9 @@ class UserController extends Controller
         }
 
         try {
+            if ($user->photo_path) {
+                Storage::disk('public')->delete($user->photo_path);
+            }
             $user->delete();
         } catch (QueryException $e) {
             return back()->with(

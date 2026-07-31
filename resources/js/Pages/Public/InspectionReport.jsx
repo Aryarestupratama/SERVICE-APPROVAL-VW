@@ -1,6 +1,7 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { Phone, Mail, MessageCircle } from 'lucide-react';
 
 function StatusStamp({ status }) {
     if (status === 'pending') return null;
@@ -15,18 +16,36 @@ function StatusStamp({ status }) {
     );
 }
 
+// Status di mana customer masih boleh submit keputusan.
+// Selain ini (quality_control, follow_up, completed, all_rejected_cancelled),
+// order sudah lewat tahap negosiasi — form dikunci read-only.
+const DECIDABLE_STATUSES = ['scheduled', 'in_progress'];
+
 export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
     const [items, setItems] = useState(initialItems);
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
-    const [submitted, setSubmitted] = useState(order.status !== 'draft' && order.status !== 'sent' && order.status !== 'awaiting_approval');
+
+    // Order masih bisa terima keputusan customer selama statusnya scheduled/in_progress
+    // DAN masih ada item pending. Begitu order pindah status lain (SA sudah lanjutkan proses)
+    // atau semua item sudah diputuskan, form dikunci.
+    const canDecide = DECIDABLE_STATUSES.includes(order.status);
+    const pendingItems = items.filter((item) => item.status === 'pending');
+    const hasPendingItems = pendingItems.length > 0;
+    const isLocked = !canDecide || !hasPendingItems;
+
+    // Item yang baru saja diputuskan customer di sesi ini (belum submit) —
+    // ini yang dikirim ke backend, BUKAN seluruh array items (sesuai bagian 7D:
+    // "setiap submit hanya boleh berisi item yang SAAT ITU berstatus pending").
+    const decidedThisRound = items.filter(
+        (item, idx) => item.status !== 'pending' && initialItems[idx]?.status === 'pending'
+    );
+    const hasDecisionToSubmit = decidedThisRound.length > 0;
 
     const totalCost = items
         .filter((item) => item.status !== 'rejected')
         .reduce((sum, item) => sum + item.cost, 0);
-
-    const allDecided = items.every((item) => item.status !== 'pending');
 
     const handleDecision = (itemId, decision) => {
         setItems((prev) =>
@@ -42,14 +61,14 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
         router.post(
             route('public.report.decide', token),
             {
-                decisions: items.map((item) => ({
+                // Hanya kirim item yang baru diputuskan di sesi ini, bukan semua item.
+                decisions: decidedThisRound.map((item) => ({
                     id: item.id,
                     status: item.status,
                 })),
             },
             {
                 onSuccess: () => {
-                    setSubmitted(true);
                     setShowModal(false);
                 },
                 onError: () => {
@@ -59,6 +78,10 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
             }
         );
     };
+
+    const waHref = serviceAdvisor.phone
+        ? `https://wa.me/${serviceAdvisor.phone.replace(/\D/g, '')}`
+        : null;
 
     return (
         <PublicLayout>
@@ -130,9 +153,15 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         Inspection Items
                     </h2>
 
-                    {submitted && (
+                    {isLocked && !hasPendingItems && (
                         <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
-                            Your decisions have already been submitted for this report.
+                            All items have been decided for this report.
+                        </p>
+                    )}
+
+                    {isLocked && hasPendingItems && !canDecide && (
+                        <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
+                            This report is no longer accepting new decisions.
                         </p>
                     )}
 
@@ -158,7 +187,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     <p className="font-mono text-sm font-semibold text-gray-900">
                                         Rp {item.cost.toLocaleString('id-ID')}
                                     </p>
-                                    {!submitted && item.status === 'pending' && (
+                                    {canDecide && item.status === 'pending' && (
                                         <div className="mt-1 flex gap-2">
                                             <button
                                                 type="button"
@@ -188,36 +217,81 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         </span>
                     </div>
 
-                    {!submitted && (
-                        <button
-                            type="button"
-                            disabled={!allDecided}
-                            onClick={() => setShowModal(true)}
-                            className="mt-6 w-full rounded-lg bg-vw-blue py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-                        >
-                            Submit Decision
-                        </button>
-                    )}
-
-                    {!submitted && !allDecided && (
-                        <p className="mt-2 text-center text-xs text-vw-grey">
-                            Please decide on all items before submitting.
-                        </p>
+                    {canDecide && hasPendingItems && (
+                        <>
+                            <button
+                                type="button"
+                                disabled={!hasDecisionToSubmit}
+                                onClick={() => setShowModal(true)}
+                                className="mt-6 w-full rounded-lg bg-vw-blue py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+                            >
+                                Submit Decision
+                            </button>
+                            <p className="mt-2 text-center text-xs text-vw-grey">
+                                You can decide on some items now and come back later for the rest.
+                            </p>
+                        </>
                     )}
                 </section>
 
                 <hr className="my-8 border-vw-grey-light" />
 
+                {/* CTA Hubungi SA — hanya muncul saat order sedang menunggu tindak lanjut customer */}
+                {order.status === 'follow_up' && waHref && (
+                    <section className="px-6">
+                        <div className="flex items-center justify-between gap-4 rounded-xl border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">Waiting on your response</p>
+                                <p className="mt-0.5 text-xs text-vw-grey">
+                                    Have questions? Reach out to your service advisor.
+                                </p>
+                            </div>
+                            <a
+                                href={waHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex shrink-0 items-center gap-1.5 rounded-full bg-vw-blue px-4 py-2 text-xs font-semibold text-white hover:opacity-90"
+                            >
+                                <MessageCircle className="h-3.5 w-3.5" />
+                                Contact SA
+                            </a>
+                        </div>
+                    </section>
+                )}
+
+                <hr className="my-8 border-vw-grey-light" />
+
                 {/* 4 & 5. Contact + Location */}
-                <section className="grid grid-cols-1 gap-8 px-6 sm:grid-cols-2">
+                <section className="grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
                     <div>
                         <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Contact</h2>
                         <p className="mt-2 font-medium text-gray-900">{serviceAdvisor.name}</p>
                         <p className="text-sm text-vw-grey">Service Advisor</p>
-                        {serviceAdvisor.phone && (
-                            <p className="mt-1 font-mono text-sm text-gray-700">{serviceAdvisor.phone}</p>
-                        )}
-                        <p className="font-mono text-sm text-gray-700">{serviceAdvisor.email}</p>
+
+                        <div className="mt-3 space-y-2">
+                            {serviceAdvisor.phone && (
+                                <a
+                                    href={waHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2.5 rounded-lg border border-vw-grey/20 px-3 py-2 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                >
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                        <Phone className="h-4 w-4" />
+                                    </span>
+                                    <span className="font-mono">{serviceAdvisor.phone}</span>
+                                </a>
+                            )}
+                            <a
+                                href={`mailto:${serviceAdvisor.email}`}
+                                className="flex items-center gap-2.5 rounded-lg border border-vw-grey/20 px-3 py-2 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                            >
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                    <Mail className="h-4 w-4" />
+                                </span>
+                                <span className="truncate font-mono">{serviceAdvisor.email}</span>
+                            </a>
+                        </div>
                     </div>
 
                     <div>
@@ -239,11 +313,11 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
                         <h3 className="text-base font-bold text-gray-900">Confirm your decision</h3>
                         <p className="mt-1 text-sm text-vw-grey">
-                            This action is final and cannot be changed afterwards.
+                            This action is final and cannot be changed afterwards for the items below.
                         </p>
 
                         <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto">
-                            {items.map((item) => (
+                            {decidedThisRound.map((item) => (
                                 <li key={item.id} className="flex items-center justify-between text-sm">
                                     <span className="text-gray-700">{item.name}</span>
                                     <StatusStamp status={item.status} />

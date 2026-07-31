@@ -14,6 +14,7 @@ export default function Edit({ settings }) {
         whatsapp_number: settings?.whatsapp_number ?? '',
         google_maps_url: settings?.google_maps_url ?? '',
         website_url: settings?.website_url ?? '',
+        ppn_percent: settings?.ppn_percent ?? '11',
         logo: null,
         hero_image: null,
         _method: 'put',
@@ -113,6 +114,32 @@ export default function Edit({ settings }) {
                         {errors.website_url && (
                             <p className="text-sm text-urgent">{errors.website_url}</p>
                         )}
+                    </div>
+                </div>
+
+                <div className="rounded-lg border border-vw-grey/20 bg-white p-6 space-y-4">
+                    <h2 className="text-sm font-semibold text-gray-900">Tax</h2>
+
+                    <div className="space-y-1.5">
+                        <Label htmlFor="ppn_percent">VAT / PPN (%)</Label>
+                        <Input
+                            id="ppn_percent"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value={data.ppn_percent}
+                            onChange={(e) => setData('ppn_percent', e.target.value)}
+                            className="max-w-[160px]"
+                        />
+                        {errors.ppn_percent && (
+                            <p className="text-sm text-urgent">{errors.ppn_percent}</p>
+                        )}
+                        <p className="text-xs text-vw-grey">
+                            Applied when calculating the final price of approved inspection items.
+                            Changing this does not affect items that are already approved
+                            (their price is locked at approval time).
+                        </p>
                     </div>
                 </div>
 

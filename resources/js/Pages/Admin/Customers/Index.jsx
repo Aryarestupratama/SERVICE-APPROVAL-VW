@@ -21,20 +21,61 @@ import {
     DialogFooter,
 } from '@/Components/ui/dialog';
 
+// Terima input user dalam bentuk apapun (boleh diawali 0, 62, atau langsung tanpa awalan)
+// dan kembalikan hanya bagian digit SETELAH kode negara, tanpa leading zero.
+// Backend (mutator Customer::phone) yang bertanggung jawab menyatukan jadi "+62..." final.
+function toLocalDigits(raw) {
+    let digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('62')) {
+        digits = digits.slice(2);
+    } else if (digits.startsWith('0')) {
+        digits = digits.slice(1);
+    }
+    return digits;
+}
+
+function PhoneInput({ id, value, onChange, error }) {
+    return (
+        <div className="space-y-1.5">
+            <Label htmlFor={id}>Phone</Label>
+            <div
+                className={`flex items-center rounded-md border ${
+                    error ? 'border-urgent' : 'border-input'
+                } focus-within:ring-1 focus-within:ring-ring`}
+            >
+                <span className="select-none border-r border-input bg-vw-grey-light px-3 py-2 text-sm text-vw-grey">
+                    +62
+                </span>
+                <Input
+                    id={id}
+                    type="tel"
+                    inputMode="numeric"
+                    value={value}
+                    onChange={(e) => onChange(toLocalDigits(e.target.value))}
+                    placeholder="8xxxxxxxxxx"
+                    className="border-0 focus-visible:ring-0"
+                />
+            </div>
+            {error && <p className="text-sm text-urgent">{error}</p>}
+        </div>
+    );
+}
+
 function CustomerFormDialog({ open, onOpenChange, customer, onSuccess }) {
     const isEdit = Boolean(customer);
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         name: customer?.name ?? '',
-        phone: customer?.phone ?? '',
+        phone: customer ? toLocalDigits(customer.phone ?? '') : '',
         email: customer?.email ?? '',
     });
 
     // Reset form data setiap kali dialog dibuka dengan customer berbeda (atau kosong = mode tambah)
     useEffect(() => {
         if (open) {
+            clearErrors();
             setData({
                 name: customer?.name ?? '',
-                phone: customer?.phone ?? '',
+                phone: customer ? toLocalDigits(customer.phone ?? '') : '',
                 email: customer?.email ?? '',
             });
         }
@@ -83,16 +124,12 @@ function CustomerFormDialog({ open, onOpenChange, customer, onSuccess }) {
                             {errors.name && <p className="text-sm text-urgent">{errors.name}</p>}
                         </div>
 
-                        <div className="space-y-1.5">
-                            <Label htmlFor="phone">Phone</Label>
-                            <Input
-                                id="phone"
-                                value={data.phone}
-                                onChange={(e) => setData('phone', e.target.value)}
-                                placeholder="08xxxxxxxxxx"
-                            />
-                            {errors.phone && <p className="text-sm text-urgent">{errors.phone}</p>}
-                        </div>
+                        <PhoneInput
+                            id="phone"
+                            value={data.phone}
+                            onChange={(value) => setData('phone', value)}
+                            error={errors.phone}
+                        />
 
                         <div className="space-y-1.5">
                             <Label htmlFor="email">Email (optional)</Label>

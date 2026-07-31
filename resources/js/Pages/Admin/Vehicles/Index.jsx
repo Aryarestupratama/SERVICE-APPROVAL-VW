@@ -28,22 +28,25 @@ import {
     DialogFooter,
 } from '@/Components/ui/dialog';
 
-function VehicleFormDialog({ open, onOpenChange, vehicle, customers, onSuccess }) {
+function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         customer_id: vehicle?.customer_id ?? '',
         plate_number: vehicle?.plate_number ?? '',
         brand: vehicle?.brand ?? '',
+        vin: vehicle?.vin ?? '',
         model: vehicle?.model ?? '',
         year: vehicle?.year ?? '',
     });
 
     useEffect(() => {
         if (open) {
+            clearErrors();
             setData({
                 customer_id: vehicle?.customer_id ?? '',
                 plate_number: vehicle?.plate_number ?? '',
                 brand: vehicle?.brand ?? '',
+                vin: vehicle?.vin ?? '',
                 model: vehicle?.model ?? '',
                 year: vehicle?.year ?? '',
             });
@@ -83,7 +86,8 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, onSuccess }
 
                     <div className="space-y-4 py-4">
                         {/* Customer hanya bisa dipilih saat tambah baru — tidak ikut di-update saat edit,
-                            karena controller update() tidak menerima customer_id */}
+                            karena controller update() tidak menerima customer_id.
+                            "Edit vehicle: pindah customer" masih belum diputuskan owner. */}
                         {!isEdit && (
                             <div className="space-y-1.5">
                                 <Label htmlFor="customer_id">Customer</Label>
@@ -121,15 +125,40 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, onSuccess }
                             )}
                         </div>
 
+                        {/* Brand sekarang enum terbatas (Audi, VW) — bukan free text lagi,
+                            sesuai keputusan owner 2026-07-31 (bagian 7B PROJECT-RULES.md) */}
                         <div className="space-y-1.5">
                             <Label htmlFor="brand">Brand</Label>
-                            <Input
-                                id="brand"
-                                value={data.brand}
-                                onChange={(e) => setData('brand', e.target.value)}
-                                placeholder="Volkswagen"
-                            />
+                            <Select
+                                value={data.brand || ''}
+                                onValueChange={(value) => setData('brand', value)}
+                            >
+                                <SelectTrigger id="brand">
+                                    <SelectValue placeholder="Select brand" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {brands.map((brand) => (
+                                        <SelectItem key={brand} value={brand}>
+                                            {brand}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
+                        </div>
+
+                        {/* VIN wajib unique, CHAR(17) — sesuai keputusan owner 2026-07-31 */}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="vin">VIN</Label>
+                            <Input
+                                id="vin"
+                                value={data.vin}
+                                onChange={(e) => setData('vin', e.target.value.toUpperCase())}
+                                placeholder="17-character VIN"
+                                maxLength={17}
+                                className="uppercase"
+                            />
+                            {errors.vin && <p className="text-sm text-urgent">{errors.vin}</p>}
                         </div>
 
                         <div className="space-y-1.5">
@@ -209,7 +238,7 @@ function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
     );
 }
 
-export default function Index({ vehicles, search, customers }) {
+export default function Index({ vehicles, search, customers, brands }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
     const [formOpen, setFormOpen] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState(null);
@@ -244,7 +273,7 @@ export default function Index({ vehicles, search, customers }) {
                 <Input
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by plate, model, or customer..."
+                    placeholder="Search by plate, VIN, model, or customer..."
                     className="max-w-xs"
                 />
                 <Button onClick={openAddForm}>Add Vehicle</Button>
@@ -256,6 +285,7 @@ export default function Index({ vehicles, search, customers }) {
                         <TableRow>
                             <TableHead>Plate Number</TableHead>
                             <TableHead>Brand / Model</TableHead>
+                            <TableHead>VIN</TableHead>
                             <TableHead>Year</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead className="w-1"></TableHead>
@@ -264,7 +294,7 @@ export default function Index({ vehicles, search, customers }) {
                     <TableBody>
                         {vehicles.data.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={5} className="py-8 text-center text-vw-grey">
+                                <TableCell colSpan={6} className="py-8 text-center text-vw-grey">
                                     No vehicles found.
                                 </TableCell>
                             </TableRow>
@@ -276,6 +306,9 @@ export default function Index({ vehicles, search, customers }) {
                                 </TableCell>
                                 <TableCell>
                                     {vehicle.brand} {vehicle.model}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                    {vehicle.vin ?? '—'}
                                 </TableCell>
                                 <TableCell>{vehicle.year ?? '—'}</TableCell>
                                 <TableCell>{vehicle.customer?.name ?? '—'}</TableCell>
@@ -327,6 +360,7 @@ export default function Index({ vehicles, search, customers }) {
                 onOpenChange={setFormOpen}
                 vehicle={editingVehicle}
                 customers={customers}
+                brands={brands}
             />
 
             <DeleteConfirmDialog

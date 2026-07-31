@@ -32,41 +32,56 @@ import {
 const ROLE_LABEL = {
     admin: 'Admin',
     service_advisor: 'Service Advisor',
-    technician: 'Technician',
+    chief_technician: 'Chief Technician',
 };
 
 const ROLE_BADGE_VARIANT = {
     admin: 'default',
     service_advisor: 'secondary',
-    technician: 'outline',
+    chief_technician: 'outline',
 };
 
 function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
     const isEdit = Boolean(user);
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+    const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         name: user?.name ?? '',
         email: user?.email ?? '',
         phone: user?.phone ?? '',
         role: user?.role ?? 'service_advisor',
         password: '',
+        photo: null,
+        _method: isEdit ? 'put' : 'post',
     });
+
+    const [photoPreview, setPhotoPreview] = useState(user?.photo_path ?? null);
 
     useEffect(() => {
         if (open) {
+            clearErrors();
             setData({
                 name: user?.name ?? '',
                 email: user?.email ?? '',
                 phone: user?.phone ?? '',
                 role: user?.role ?? 'service_advisor',
                 password: '',
+                photo: null,
+                _method: isEdit ? 'put' : 'post',
             });
+            setPhotoPreview(user?.photo_path ?? null);
         }
     }, [open, user]);
+
+    const handlePhotoChange = (e) => {
+        const file = e.target.files?.[0] ?? null;
+        setData('photo', file);
+        if (file) setPhotoPreview(URL.createObjectURL(file));
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
         const options = {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
                 reset();
                 onOpenChange(false);
@@ -74,8 +89,9 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
             },
         };
 
+        // File upload butuh multipart — _method spoofing untuk edit (PUT), post biasa untuk tambah baru
         if (isEdit) {
-            put(route('admin.users.update', user.id), options);
+            post(route('admin.users.update', user.id), options);
         } else {
             post(route('admin.users.store'), options);
         }
@@ -135,14 +151,14 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
                                 <SelectContent>
                                     <SelectItem value="admin">Admin</SelectItem>
                                     <SelectItem value="service_advisor">Service Advisor</SelectItem>
-                                    <SelectItem value="technician">Technician</SelectItem>
+                                    <SelectItem value="chief_technician">Chief Technician</SelectItem>
                                 </SelectContent>
                             </Select>
                             {errors.role && <p className="text-sm text-urgent">{errors.role}</p>}
-                            {data.role === 'technician' && (
+                            {data.role === 'chief_technician' && (
                                 <p className="text-xs text-vw-grey">
-                                    Technicians don't log in — this account is only used for assignment
-                                    plotting on service orders.
+                                    Chief technicians don't log in — this account is only used for
+                                    assignment plotting on service orders.
                                 </p>
                             )}
                         </div>
@@ -161,6 +177,19 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
                             {errors.password && (
                                 <p className="text-sm text-urgent">{errors.password}</p>
                             )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="photo">Photo (optional)</Label>
+                            {photoPreview && (
+                                <img
+                                    src={photoPreview.startsWith('blob:') ? photoPreview : `/storage/${photoPreview}`}
+                                    alt="Photo preview"
+                                    className="mb-2 h-16 w-16 rounded-full border border-vw-grey/20 object-cover"
+                                />
+                            )}
+                            <Input id="photo" type="file" accept="image/*" onChange={handlePhotoChange} />
+                            {errors.photo && <p className="text-sm text-urgent">{errors.photo}</p>}
                         </div>
                     </div>
 
