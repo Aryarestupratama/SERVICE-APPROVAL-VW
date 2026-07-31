@@ -15,6 +15,20 @@ use Inertia\Inertia;
 
 class ServiceOrderController extends Controller
 {
+    /**
+     * Status yang boleh dipindah manual lewat updateStatus().
+     * Guard sederhana dulu (linear, sesuai 5 tahap final di PROJECT-RULES bagian 2).
+     * TODO (bagian 7C #4): ini masih versi dasar — belum ada aturan siapa boleh
+     * pindah dari status apa ke status apa secara granular per role, dan belum
+     * menangani percabangan ke `all_rejected_cancelled`.
+     */
+    private const ALLOWED_TRANSITIONS = [
+        'scheduled' => ['in_progress'],
+        'in_progress' => ['quality_control', 'all_rejected_cancelled'],
+        'quality_control' => ['follow_up'],
+        'follow_up' => ['completed'],
+    ];
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -37,10 +51,11 @@ class ServiceOrderController extends Controller
             'vehicles' => Vehicle::select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
                 ->orderBy('plate_number')
                 ->get(),
-            'technicians' => User::where('role', 'technician')
+            'technicians' => User::where('role', 'chief_technician')
                 ->select('id', 'name')
                 ->orderBy('name')
                 ->get(),
+            'brands' => Vehicle::BRANDS,
         ]);
     }
 
@@ -58,7 +73,8 @@ class ServiceOrderController extends Controller
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'new_vehicle' => ['nullable', 'array'],
             'new_vehicle.plate_number' => ['required_with:new_vehicle', 'string', 'max:20'],
-            'new_vehicle.brand' => ['nullable', 'string', 'max:100'],
+            'new_vehicle.brand' => ['required_with:new_vehicle', Rule::in(Vehicle::BRANDS)],
+            'new_vehicle.vin' => ['required_with:new_vehicle', 'string', 'size:17', 'unique:vehicles,vin'],
             'new_vehicle.model' => ['required_with:new_vehicle', 'string', 'max:100'],
             'new_vehicle.year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
 
@@ -70,7 +86,10 @@ class ServiceOrderController extends Controller
             'inspection_items' => ['required', 'array', 'min:1'],
             'inspection_items.*.name' => ['required', 'string', 'max:255'],
             'inspection_items.*.description' => ['nullable', 'string'],
-            'inspection_items.*.cost' => ['required', 'numeric', 'min:0'],
+            'inspection_items.*.cost_item' => ['required', 'numeric', 'min:0'],
+            'inspection_items.*.cost_labour' => ['required', 'numeric', 'min:0'],
+            'inspection_items.*.discount_item_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'inspection_items.*.discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'inspection_items.*.is_urgent' => ['boolean'],
 
             'videos' => ['nullable', 'array'],
@@ -101,7 +120,14 @@ class ServiceOrderController extends Controller
                 'vehicle_id' => $vehicleId,
                 'service_advisor_id' => $request->user()->id,
                 'technician_id' => $validated['technician_id'] ?? null,
-                'status' => 'draft',
+                // TODO (bagian 7C #3): work_order_number SEHARUSNYA dari
+                // App\Services\WorkOrderNumberGenerator (atomic, race-safe) —
+                // service class-nya belum dibuat. Ini placeholder sementara
+                // SUPAYA TIDAK CRASH, TAPI RAWAN RACE CONDITION kalau 2 SA
+                // submit order bersamaan. Ganti begitu service class jadi.
+                'work_order_number' => (ServiceOrder::max('work_order_number') ?? 0) + 1,
+                'status' => 'scheduled',
+                'items_approval_status' => 'pending',
                 'inspection_fee' => $validated['inspection_fee'],
                 'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
                 'personal_message' => $validated['personal_message'] ?? null,
@@ -111,7 +137,13 @@ class ServiceOrderController extends Controller
                 $order->inspectionItems()->create([
                     'name' => $item['name'],
                     'description' => $item['description'] ?? null,
-                    'cost' => $item['cost'],
+                    'cost_item' => $item['cost_item'],
+                    'cost_labour' => $item['cost_labour'],
+                    'discount_item_percent' => $item['discount_item_percent'] ?? 0,
+                    'discount_labour_percent' => $item['discount_labour_percent'] ?? 0,
+                    // final_price_snapshot sengaja TIDAK diisi di sini — tetap null
+                    // selama status 'pending', baru dikunci oleh service pricing
+                    // (TODO bagian 7C #2) saat item di-approve customer.
                     'is_urgent' => $item['is_urgent'] ?? false,
                     'status' => 'pending',
                 ]);
@@ -147,7 +179,11 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        $serviceOrder->load(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'inspectionItems', 'invoice']);
+        // Relasi 'invoice' dihapus — model & tabel Invoice sudah di-drop total
+        // (bagian 2). Data invoice sekarang kolom langsung di service_orders
+        // (invoice_pdf_path, invoice_uploaded_at, invoice_uploaded_by),
+        // otomatis ikut ter-load tanpa eager load terpisah.
+        $serviceOrder->load(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'inspectionItems']);
 
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
@@ -158,15 +194,38 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Hanya admin & SA yang bisa sampai sini (dijamin middleware route),
-        // teknisi tidak punya akun login jadi tidak perlu cabang logic terpisah
         $validated = $request->validate([
             'status' => ['required', Rule::in([
-                'approved', 'in_progress', 'completed', 'invoiced',
+                'scheduled', 'in_progress', 'quality_control', 'follow_up',
+                'completed', 'all_rejected_cancelled',
             ])],
         ]);
 
-        $serviceOrder->update(['status' => $validated['status']]);
+        $newStatus = $validated['status'];
+        $currentStatus = $serviceOrder->status;
+
+        $allowed = self::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
+        if (!in_array($newStatus, $allowed, true)) {
+            return back()->with('error', "Tidak bisa pindah status dari '{$currentStatus}' ke '{$newStatus}'.");
+        }
+
+        // Aturan wajib bagian 2: tidak boleh masuk 'completed' kalau
+        // invoice_pdf_path masih kosong (invoice diupload manual oleh SA).
+        if ($newStatus === 'completed' && empty($serviceOrder->invoice_pdf_path)) {
+            return back()->with('error', 'Upload invoice PDF dulu sebelum menandai order selesai.');
+        }
+
+        $updates = ['status' => $newStatus];
+
+        if ($newStatus === 'follow_up') {
+            $updates['follow_up_deadline'] = now()->addDays(3);
+        }
+
+        if ($newStatus === 'completed') {
+            $updates['finalized_at'] = now();
+        }
+
+        $serviceOrder->update($updates);
 
         return back()->with('success', 'Status berhasil diperbarui.');
     }

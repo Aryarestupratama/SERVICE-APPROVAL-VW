@@ -39,7 +39,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['admin', 'service_advisor', 'technician'])],
+            'role' => ['required', Rule::in(['admin', 'service_advisor', 'chief_technician'])],
             'password' => ['required', 'string', 'min:8'],
         ]);
 
@@ -56,7 +56,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['admin', 'service_advisor', 'technician'])],
+            'role' => ['required', Rule::in(['admin', 'service_advisor', 'chief_technician'])],
             'password' => ['nullable', 'string', 'min:8'],
         ]);
 

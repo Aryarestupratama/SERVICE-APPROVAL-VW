@@ -28,6 +28,7 @@ class SettingController extends Controller
             'whatsapp_number' => ['required', 'string', 'max:30'],
             'google_maps_url' => ['required', 'url', 'max:500'],
             'website_url' => ['nullable', 'url', 'max:500'],
+            'ppn_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'hero_image' => ['nullable', 'image', 'max:4096'],
         ]);
@@ -41,6 +42,7 @@ class SettingController extends Controller
             'whatsapp_number' => $validated['whatsapp_number'],
             'google_maps_url' => $validated['google_maps_url'],
             'website_url' => $validated['website_url'] ?? null,
+            'ppn_percent' => $validated['ppn_percent'],
         ]);
 
         if ($request->hasFile('logo')) {

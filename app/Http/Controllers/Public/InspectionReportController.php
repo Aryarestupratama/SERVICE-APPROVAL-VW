@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Public;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceOrder;
 use App\Models\Setting;
+use App\Services\InspectionItemPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -21,24 +22,34 @@ class InspectionReportController extends Controller
             return Inertia::render('Public/LinkExpired');
         }
 
-        $settings = Setting::first();
+        // Halaman publik mengasumsikan settings sudah pasti ada (bukan seperti
+        // Admin\SettingController::edit() yang harus toleran terhadap tabel
+        // masih kosong) — lihat PROJECT-RULES.md bagian 4.
+        $settings = Setting::current();
+
+        // Section viewer PDF invoice (bagian 5, revisi 2026-07-31) hanya
+        // muncul mulai status quality_control/completed.
+        $showInvoiceViewer = in_array($serviceOrder->status, ['quality_control', 'completed'], true);
 
         return Inertia::render('Public/InspectionReport', [
             'token' => $token,
             'settings' => [
-                'workshop_name' => $settings?->workshop_name,
-                'logo_path' => $settings?->logo_path,
-                'address' => $settings?->address,
-                'phone' => $settings?->phone,
-                'whatsapp_number' => $settings?->whatsapp_number,
-                'google_maps_url' => $settings?->google_maps_url,
+                'workshop_name' => $settings->workshop_name,
+                'logo_path' => $settings->logo_path,
+                'address' => $settings->address,
+                'phone' => $settings->phone,
+                'whatsapp_number' => $settings->whatsapp_number,
+                'google_maps_url' => $settings->google_maps_url,
+                'ppn_percent' => (float) $settings->ppn_percent,
             ],
             'order' => [
                 'id' => $serviceOrder->id,
                 'status' => $serviceOrder->status,
+                'items_approval_status' => $serviceOrder->items_approval_status,
                 'personal_message' => $serviceOrder->personal_message,
-                'inspection_fee' => $serviceOrder->inspection_fee,
+                'inspection_fee' => (float) $serviceOrder->inspection_fee,
                 'inspection_fee_note' => $serviceOrder->inspection_fee_note,
+                'invoice_pdf_path' => $showInvoiceViewer ? $serviceOrder->invoice_pdf_path : null,
             ],
             'vehicle' => [
                 'plate_number' => $serviceOrder->vehicle->plate_number,
@@ -62,7 +73,13 @@ class InspectionReportController extends Controller
                 'id' => $item->id,
                 'name' => $item->name,
                 'description' => $item->description,
-                'cost' => (float) $item->cost,
+                'cost_item' => (float) $item->cost_item,
+                'cost_labour' => (float) $item->cost_labour,
+                'discount_item_percent' => (float) $item->discount_item_percent,
+                'discount_labour_percent' => (float) $item->discount_labour_percent,
+                'final_price_snapshot' => $item->final_price_snapshot !== null
+                    ? (float) $item->final_price_snapshot
+                    : null,
                 'is_urgent' => $item->is_urgent,
                 'status' => $item->status,
             ]),
@@ -70,8 +87,15 @@ class InspectionReportController extends Controller
     }
 
     /**
-     * Terima keputusan approve/reject sekaligus untuk semua item, dari modal konfirmasi final.
-     * Menulis log per item ke inspection_item_logs, lalu update status service_order otomatis.
+     * Terima keputusan approve/reject untuk item-item yang MASIH PENDING, dari
+     * modal konfirmasi final. Bisa dipanggil berkali-kali (negosiasi berulang)
+     * selama status order masih 'in_progress' dan masih ada item pending.
+     *
+     * Item yang sudah 'approved' terkunci permanen (final_price_snapshot locked,
+     * PROJECT-RULES.md bagian 2 & 7B) — tidak bisa didecide ulang. Item 'rejected'
+     * saat ini juga final di controller ini; kalau nanti SA butuh membuka lagi
+     * item yang ditolak untuk negosiasi ulang (reset ke pending dengan harga
+     * baru), itu fitur terpisah yang BELUM ADA — lihat catatan TODO di bawah.
      */
     public function submitDecisions(Request $request, string $token)
     {
@@ -83,9 +107,21 @@ class InspectionReportController extends Controller
             abort(410, 'This link has expired.');
         }
 
-        // Cegah submit ulang kalau order sudah diputuskan sebelumnya
-        // (mis. customer refresh & submit dua kali, atau buka link lama setelah status berubah)
-        if (!in_array($serviceOrder->status, ['draft', 'sent', 'awaiting_approval'])) {
+        // Approval item terjadi di dalam tahap 'in_progress' (PROJECT-RULES.md
+        // bagian 2: "Vehicle Check-in & Work Process, termasuk approval item
+        // customer... semua di tahap ini"). Order TETAP di 'in_progress' selama
+        // negosiasi berjalan — tidak auto-pindah tahap, SA yang memutuskan kapan
+        // lanjut ke quality_control lewat ServiceOrderController::updateStatus().
+        if ($serviceOrder->status !== 'in_progress') {
+            abort(409, 'This inspection report is not open for decisions.');
+        }
+
+        $pendingItems = $serviceOrder->inspectionItems->where('status', 'pending');
+
+        // Tidak ada lagi item pending untuk order ini — negosiasi sudah final
+        // sebelumnya (lihat finalized_at), tidak ada yang bisa didecide lagi
+        // sampai SA membuka ulang item tertentu (fitur belum ada).
+        if ($pendingItems->isEmpty()) {
             abort(409, 'This inspection report has already been decided.');
         }
 
@@ -95,20 +131,22 @@ class InspectionReportController extends Controller
             'decisions.*.status' => ['required', 'in:approved,rejected'],
         ]);
 
-        $itemsById = $serviceOrder->inspectionItems->keyBy('id');
+        $pendingItemsById = $pendingItems->keyBy('id');
 
-        // Pastikan semua item milik order ini benar-benar ada di payload —
-        // jangan biarkan submit parsial (menghindari status order jadi tanggung)
+        // Payload wajib pas dengan item yang SAAT INI pending — item yang sudah
+        // approved/rejected sebelumnya tidak boleh ikut nyasar ke payload ini.
         $submittedIds = collect($validated['decisions'])->pluck('id')->sort()->values()->toArray();
-        $expectedIds = $itemsById->keys()->sort()->values()->toArray();
+        $expectedIds = $pendingItemsById->keys()->sort()->values()->toArray();
 
         if ($submittedIds !== $expectedIds) {
-            abort(422, 'All inspection items must be decided before submitting.');
+            abort(422, 'All pending inspection items must be decided in this submission.');
         }
 
-        DB::transaction(function () use ($validated, $itemsById, $request, $serviceOrder) {
+        DB::transaction(function () use ($validated, $pendingItemsById, $request, $serviceOrder) {
+            $pricingService = new InspectionItemPricingService();
+
             foreach ($validated['decisions'] as $decision) {
-                $item = $itemsById[$decision['id']];
+                $item = $pendingItemsById[$decision['id']];
                 $oldStatus = $item->status;
                 $newStatus = $decision['status'];
 
@@ -116,6 +154,13 @@ class InspectionReportController extends Controller
                     'status' => $newStatus,
                     'decided_at' => now(),
                 ]);
+
+                // Diskon & harga final locked mulai di sini — snapshot dihitung
+                // pakai ppn_percent yang berlaku SAAT INI, tidak pernah dihitung
+                // ulang setelahnya (PROJECT-RULES.md bagian 2 & 7B).
+                if ($newStatus === 'approved') {
+                    $pricingService->lockFinalPrice($item->fresh());
+                }
 
                 $item->logs()->create([
                     'old_status' => $oldStatus,
@@ -127,17 +172,35 @@ class InspectionReportController extends Controller
                 ]);
             }
 
-            // Logic status otomatis
             $freshItems = $serviceOrder->inspectionItems()->get();
+            $stillPending = $freshItems->contains(fn ($item) => $item->status === 'pending');
             $allRejected = $freshItems->every(fn ($item) => $item->status === 'rejected');
+            $allApproved = $freshItems->every(fn ($item) => $item->status === 'approved');
 
-            $serviceOrder->update([
-                'status' => $allRejected ? 'all_rejected_cancelled' : 'approved',
-                'finalized_at' => now(),
-            ]);
+            $itemsApprovalStatus = match (true) {
+                $allRejected => 'rejected',
+                $allApproved => 'approved',
+                default => 'partially_approved',
+            };
 
-            // TODO: auto-generate invoice jasa inspeksi kalau $allRejected === true
-            // Ditunda sampai format invoice_number final (lihat TODO di PROJECT-RULES.md)
+            $updates = ['items_approval_status' => $itemsApprovalStatus];
+
+            // Negosiasi baru dianggap final kalau tidak ada item pending tersisa.
+            // Selama masih ada yang pending (skenario reopen item di masa depan),
+            // finalized_at belum di-set — customer masih bisa submit lagi nanti.
+            if (!$stillPending) {
+                $updates['finalized_at'] = now();
+
+                // Satu-satunya transisi status utama yang otomatis di sini:
+                // kalau benar-benar semua item ditolak, order dibatalkan.
+                // Selain itu (approved semua/sebagian), status TETAP 'in_progress'
+                // — SA yang lanjutkan manual ke quality_control kapan siap.
+                if ($allRejected) {
+                    $updates['status'] = 'all_rejected_cancelled';
+                }
+            }
+
+            $serviceOrder->update($updates);
         });
 
         return back()->with('success', 'Your decisions have been submitted.');

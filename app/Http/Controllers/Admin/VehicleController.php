@@ -7,6 +7,7 @@ use App\Models\Vehicle;
 use App\Models\Customer;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class VehicleController extends Controller
@@ -18,6 +19,7 @@ class VehicleController extends Controller
             ->when($request->search, fn ($q, $search) =>
                 $q->where('plate_number', 'like', "%{$search}%")
                   ->orWhere('model', 'like', "%{$search}%")
+                  ->orWhere('vin', 'like', "%{$search}%")
                   ->orWhereHas('customer', fn ($q2) =>
                       $q2->where('name', 'like', "%{$search}%")
                   )
@@ -30,6 +32,8 @@ class VehicleController extends Controller
             'search' => $request->search,
             // Dropdown pilih customer di form tambah/edit kendaraan
             'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
+            // Dropdown brand di form tambah/edit kendaraan
+            'brands' => Vehicle::BRANDS,
         ]);
     }
 
@@ -38,7 +42,8 @@ class VehicleController extends Controller
         $validated = $request->validate([
             'customer_id' => ['required', 'exists:customers,id'],
             'plate_number' => ['required', 'string', 'max:20'],
-            'brand' => ['nullable', 'string', 'max:100'],
+            'brand' => ['required', Rule::in(Vehicle::BRANDS)],
+            'vin' => ['required', 'string', 'size:17', 'unique:vehicles,vin'],
             'model' => ['required', 'string', 'max:100'],
             'year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
         ]);
@@ -52,11 +57,16 @@ class VehicleController extends Controller
     {
         $validated = $request->validate([
             'plate_number' => ['required', 'string', 'max:20'],
-            'brand' => ['nullable', 'string', 'max:100'],
+            'brand' => ['required', Rule::in(Vehicle::BRANDS)],
+            'vin' => ['required', 'string', 'size:17', Rule::unique('vehicles', 'vin')->ignore($vehicle->id)],
             'model' => ['required', 'string', 'max:100'],
             'year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
         ]);
 
+        // Catatan: customer_id sengaja TIDAK termasuk di sini.
+        // "Edit vehicle: pindah customer" masih belum diputuskan owner
+        // (lihat TODO bagian 7 di PROJECT-RULES.md) — jangan tambah field ini
+        // sampai ada keputusan final, supaya tidak mendahului keputusan bisnis.
         $vehicle->update($validated);
 
         return back()->with('success', 'Kendaraan berhasil diperbarui.');
