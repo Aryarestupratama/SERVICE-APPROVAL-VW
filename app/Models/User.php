@@ -41,9 +41,9 @@ class User extends Authenticatable
         return $this->role === 'service_advisor';
     }
 
-    public function isTechnician(): bool
+    public function isChiefTechnician(): bool
     {
-        return $this->role === 'technician';
+        return $this->role === 'chief_technician';
     }
 
     // Order-order yang dibuat SA ini

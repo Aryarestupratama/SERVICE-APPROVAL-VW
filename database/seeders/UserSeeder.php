@@ -38,7 +38,7 @@ class UserSeeder extends Seeder
             'name' => 'Agus Wijaya',
             'email' => 'agus.tech@vwpik.test',
             'password' => Hash::make('password'),
-            'role' => 'technician',
+            'role' => 'chief_technician',
             'phone' => '081233344455',
             'email_verified_at' => now(),
         ]);
@@ -47,7 +47,7 @@ class UserSeeder extends Seeder
             'name' => 'Rudi Hartono',
             'email' => 'rudi.tech@vwpik.test',
             'password' => Hash::make('password'),
-            'role' => 'technician',
+            'role' => 'chief_technician',
             'phone' => '081266677788',
             'email_verified_at' => now(),
         ]);

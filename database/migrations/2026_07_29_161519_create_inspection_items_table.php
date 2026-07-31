@@ -13,7 +13,11 @@ return new class extends Migration
             $table->foreignId('service_order_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->decimal('cost', 12, 2);
+            $table->decimal('cost_item', 12, 2);
+            $table->decimal('cost_labour', 12, 2);
+            $table->decimal('discount_item_percent', 5, 2)->default(0);
+            $table->decimal('discount_labour_percent', 5, 2)->default(0);
+            $table->decimal('final_price_snapshot', 12, 2)->nullable();
             $table->boolean('is_urgent')->default(false);
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->timestamp('decided_at')->nullable();

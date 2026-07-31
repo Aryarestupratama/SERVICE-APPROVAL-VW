@@ -18,6 +18,7 @@ class SettingsSeeder extends Seeder
             'whatsapp_number' => '628111234567',
             'google_maps_url' => 'https://maps.google.com/?q=Volkswagen+PIK',
             'website_url' => null,
+            'ppn_percent' => 11.00,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

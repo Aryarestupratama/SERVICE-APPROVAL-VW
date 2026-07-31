@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('whatsapp_number'); // format 62xxx
             $table->string('google_maps_url');
             $table->string('website_url')->nullable();
+            $table->decimal('ppn_percent', 5, 2)->default(11.00);
             $table->timestamps();
         });
     }

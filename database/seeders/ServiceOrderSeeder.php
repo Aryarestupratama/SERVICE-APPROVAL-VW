@@ -13,35 +13,49 @@ class ServiceOrderSeeder extends Seeder
         // ID user: 1 = admin, 2 = Budi (SA), 3 = Sarah (SA) — sesuai UserSeeder
         // ID vehicle: 1 = Tiguan (Andi), 2 = Polo (Rina), 3 = Golf (Hendra)
 
-        // --- Service Order #1: masih draft, belum dikirim ke customer ---
+        // --- Service Order #1: tahap "scheduled" (appointment/preparation), belum ada aktivitas pengerjaan ---
         $order1Id = DB::table('service_orders')->insertGetId([
             'vehicle_id' => 1,
             'service_advisor_id' => 2,
             'technician_id' => null,
-            'status' => 'draft',
+            'work_order_number' => 1,
+            'status' => 'scheduled',
+            'items_approval_status' => 'pending',
             'inspection_fee' => 150000,
             'inspection_fee_note' => 'Biaya cek diagnostik standar',
             'personal_message' => null,
             'inspection_token' => null,
             'inspection_token_expires_at' => null,
-            'invoice_token' => null,
+            'invoice_pdf_path' => null,
+            'invoice_uploaded_at' => null,
+            'invoice_uploaded_by' => null,
+            'follow_up_deadline' => null,
+            'follow_up_reminder_sent_at' => null,
+            'follow_up_escalated_to_admin_at' => null,
             'finalized_at' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        // --- Service Order #2: sudah dikirim, menunggu keputusan customer ---
+        // --- Service Order #2: tahap "in_progress" (check-in & work process, item masih menunggu approval customer) ---
         $order2Id = DB::table('service_orders')->insertGetId([
             'vehicle_id' => 2,
             'service_advisor_id' => 2,
             'technician_id' => 2, // SA yang sama plotting dirinya sbg pengerjaan, contoh dummy
-            'status' => 'awaiting_approval',
+            'work_order_number' => 2,
+            'status' => 'in_progress',
+            'items_approval_status' => 'pending',
             'inspection_fee' => 100000,
             'inspection_fee_note' => 'Biaya cek rem & suspensi',
             'personal_message' => 'Halo Kak Rina, berikut hasil inspeksi kendaraan Anda. Mohon dicek videonya ya.',
             'inspection_token' => Str::random(32),
             'inspection_token_expires_at' => now()->addDays(7),
-            'invoice_token' => null,
+            'invoice_pdf_path' => null,
+            'invoice_uploaded_at' => null,
+            'invoice_uploaded_by' => null,
+            'follow_up_deadline' => null,
+            'follow_up_reminder_sent_at' => null,
+            'follow_up_escalated_to_admin_at' => null,
             'finalized_at' => null,
             'created_at' => now()->subDays(2),
             'updated_at' => now()->subDays(2),
@@ -63,7 +77,11 @@ class ServiceOrderSeeder extends Seeder
             'service_order_id' => $order2Id,
             'name' => 'Ganti kampas rem depan',
             'description' => 'Kampas sudah tipis, sisa ±2mm',
-            'cost' => 850000,
+            'cost_item' => 600000,
+            'cost_labour' => 250000,
+            'discount_item_percent' => 0,
+            'discount_labour_percent' => 0,
+            'final_price_snapshot' => null, // belum di-approve, belum dikunci
             'is_urgent' => true,
             'status' => 'pending',
             'decided_at' => null,
@@ -75,7 +93,11 @@ class ServiceOrderSeeder extends Seeder
             'service_order_id' => $order2Id,
             'name' => 'Spooring & balancing',
             'description' => null,
-            'cost' => 350000,
+            'cost_item' => 200000,
+            'cost_labour' => 150000,
+            'discount_item_percent' => 0,
+            'discount_labour_percent' => 0,
+            'final_price_snapshot' => null,
             'is_urgent' => false,
             'status' => 'pending',
             'decided_at' => null,
@@ -83,19 +105,26 @@ class ServiceOrderSeeder extends Seeder
             'updated_at' => now(),
         ]);
 
-        // --- Service Order #3: sudah completed & ada invoice ---
+        // --- Service Order #3: tahap "completed" (mobil sudah keluar, invoice PDF sudah diupload SA) ---
         $order3Id = DB::table('service_orders')->insertGetId([
             'vehicle_id' => 3,
             'service_advisor_id' => 3,
             'technician_id' => 3,
+            'work_order_number' => 3,
             'status' => 'completed',
+            'items_approval_status' => 'partially_approved', // 1 approved, 1 rejected
             'inspection_fee' => 150000,
             'inspection_fee_note' => 'Biaya cek diagnostik lengkap',
             'personal_message' => 'Halo Kak Hendra, servis sudah selesai, berikut rinciannya.',
             'inspection_token' => Str::random(32),
             'inspection_token_expires_at' => now()->subDays(3), // sudah lewat, karena sudah final
-            'invoice_token' => Str::random(32),
-            'finalized_at' => now()->subDays(5),
+            'invoice_pdf_path' => 'invoices/order-3-work-order-3.pdf',
+            'invoice_uploaded_at' => now()->subDays(3),
+            'invoice_uploaded_by' => 3, // Sarah (SA) yang upload
+            'follow_up_deadline' => null, // sudah completed, siklus follow-up sudah lewat
+            'follow_up_reminder_sent_at' => null,
+            'follow_up_escalated_to_admin_at' => null,
+            'finalized_at' => now()->subDays(3),
             'created_at' => now()->subDays(10),
             'updated_at' => now()->subDays(3),
         ]);
@@ -121,11 +150,21 @@ class ServiceOrderSeeder extends Seeder
             ],
         ]);
 
+        // Item approved: harga final dihitung & dikunci pas approve (cost_item+cost_labour, PPN 11% berlaku saat itu)
+        $item3aCostItem = 450000;
+        $item3aCostLabour = 200000;
+        $item3aSubtotal = $item3aCostItem + $item3aCostLabour; // 650000, tidak ada diskon
+        $item3aFinal = $item3aSubtotal * 1.11; // PPN 11% yang berlaku saat approve
+
         $item3aId = DB::table('inspection_items')->insertGetId([
             'service_order_id' => $order3Id,
             'name' => 'Ganti oli mesin + filter',
             'description' => null,
-            'cost' => 650000,
+            'cost_item' => $item3aCostItem,
+            'cost_labour' => $item3aCostLabour,
+            'discount_item_percent' => 0,
+            'discount_labour_percent' => 0,
+            'final_price_snapshot' => $item3aFinal,
             'is_urgent' => false,
             'status' => 'approved',
             'decided_at' => now()->subDays(5),
@@ -133,11 +172,16 @@ class ServiceOrderSeeder extends Seeder
             'updated_at' => now()->subDays(5),
         ]);
 
+        // Item rejected: tidak pernah di-approve, final_price_snapshot tetap null (tidak pernah dikunci)
         $item3bId = DB::table('inspection_items')->insertGetId([
             'service_order_id' => $order3Id,
             'name' => 'Ganti timing belt',
             'description' => 'Sudah masuk masa servis 60rb km',
-            'cost' => 1250000,
+            'cost_item' => 900000,
+            'cost_labour' => 350000,
+            'discount_item_percent' => 0,
+            'discount_labour_percent' => 0,
+            'final_price_snapshot' => null,
             'is_urgent' => true,
             'status' => 'rejected',
             'decided_at' => now()->subDays(5),
@@ -170,20 +214,7 @@ class ServiceOrderSeeder extends Seeder
             ],
         ]);
 
-        // Invoice: dummy, format resmi belum final (lihat PROJECT-RULES.md Fase 0 & bagian 2)
-        $subtotal = 650000; // hanya item yang approved
-        $vat = $subtotal * 0.11;
-
-        DB::table('invoices')->insert([
-            'service_order_id' => $order3Id,
-            'invoice_number' => 'INV-000001',
-            'subtotal' => $subtotal,
-            'vat_amount' => $vat,
-            'total' => $subtotal + $vat,
-            'status' => 'paid',
-            'issued_at' => now()->subDays(3),
-            'created_at' => now()->subDays(3),
-            'updated_at' => now()->subDays(3),
-        ]);
+        // Tidak ada lagi insert ke tabel `invoices` — invoice sekarang PDF upload
+        // yang path/metadata-nya sudah ditempel langsung di kolom service_orders di atas.
     }
 }

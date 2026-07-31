@@ -15,7 +15,15 @@ class Setting extends Model
         'whatsapp_number',
         'google_maps_url',
         'website_url',
+        'ppn_percent',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'ppn_percent' => 'decimal:2',
+        ];
+    }
 
     // Single row config — helper untuk akses cepat tanpa query berulang
     public static function current(): self

@@ -6,10 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class Vehicle extends Model
 {
+    // Daftar merk yang diizinkan — single source of truth untuk validasi
+    // di controller/request, supaya tidak hardcode array ['Audi', 'VW'] di banyak tempat.
+    public const BRANDS = ['Audi', 'VW'];
+
     protected $fillable = [
         'customer_id',
         'plate_number',
         'brand',
+        'vin',
         'model',
         'year',
     ];
