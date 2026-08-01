@@ -133,13 +133,19 @@ class InspectionReportController extends Controller
 
         $pendingItemsById = $pendingItems->keyBy('id');
 
-        // Payload wajib pas dengan item yang SAAT INI pending — item yang sudah
-        // approved/rejected sebelumnya tidak boleh ikut nyasar ke payload ini.
         $submittedIds = collect($validated['decisions'])->pluck('id')->sort()->values()->toArray();
         $expectedIds = $pendingItemsById->keys()->sort()->values()->toArray();
 
-        if ($submittedIds !== $expectedIds) {
-            abort(422, 'All pending inspection items must be decided in this submission.');
+        // Payload boleh berisi SEBAGIAN dari item pending (negosiasi bertahap) —
+        // yang penting semua id yang dikirim memang benar-benar masih pending.
+        // Duplikat id juga ditolak.
+        if (count($submittedIds) !== count(array_unique($submittedIds))) {
+            abort(422, 'Duplicate item ids in submission.');
+        }
+
+        $invalidIds = array_diff($submittedIds, $expectedIds);
+        if (!empty($invalidIds)) {
+            abort(422, 'Some submitted items are not currently pending for this order.');
         }
 
         DB::transaction(function () use ($validated, $pendingItemsById, $request, $serviceOrder) {

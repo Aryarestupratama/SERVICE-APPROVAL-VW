@@ -85,19 +85,22 @@ export default function Show({ order }) {
     const [pendingStatus, setPendingStatus] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
-    const { patch, processing } = useForm({});
+    // FIX: status harus ada di form state (useForm), bukan dititip lewat
+    // options.data saat patch() — Inertia selalu mengirim form.data, jadi
+    // options.data diabaikan dan sebelumnya request terkirim kosong.
+    const { setData, patch, processing } = useForm({ status: '' });
     const invoiceForm = useForm({ invoice_pdf: null });
 
     const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
 
     const handleSelectStatus = (value) => {
         setPendingStatus(value);
+        setData('status', value);
         setConfirmOpen(true);
     };
 
     const confirmStatusChange = () => {
         patch(route('admin.service-orders.update-status', order.id), {
-            data: { status: pendingStatus },
             preserveScroll: true,
             onFinish: () => {
                 setConfirmOpen(false);

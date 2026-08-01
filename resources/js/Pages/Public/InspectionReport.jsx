@@ -61,6 +61,12 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     );
     const hasDecisionToSubmit = decidedThisRound.length > 0;
 
+    // FIX #3: total khusus untuk modal konfirmasi — hanya item yang BARU
+    // di-approve di sesi ini, bukan total keseluruhan order (totalCost).
+    const decidedApprovedTotal = decidedThisRound
+        .filter((item) => item.status === 'approved')
+        .reduce((sum, item) => sum + itemDisplayPrice(item), 0);
+
     const totalCost = items
         .filter((item) => item.status !== 'rejected')
         .reduce((sum, item) => sum + itemDisplayPrice(item), 0);
@@ -240,20 +246,23 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         </span>
                     </div>
 
-                    {canDecide && hasPendingItems && (
-                        <>
-                            <button
-                                type="button"
-                                disabled={!hasDecisionToSubmit}
-                                onClick={() => setShowModal(true)}
-                                className="mt-6 w-full rounded-lg bg-vw-blue py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-                            >
-                                Submit Decision
-                            </button>
-                            <p className="mt-2 text-center text-xs text-vw-grey">
-                                You can decide on some items now and come back later for the rest.
-                            </p>
-                        </>
+                    {/* FIX #2: tombol submit sekarang berdasarkan hasDecisionToSubmit
+                        (ada keputusan yang belum dikirim), bukan hasPendingItems —
+                        sebelumnya tombol langsung hilang begitu semua item di-decide
+                        di state lokal, padahal belum tersimpan ke backend. */}
+                    {canDecide && hasDecisionToSubmit && (
+                        <button
+                            type="button"
+                            onClick={() => setShowModal(true)}
+                            className="mt-6 w-full rounded-lg bg-vw-blue py-3 text-sm font-semibold text-white transition-opacity"
+                        >
+                            Submit Decision
+                        </button>
+                    )}
+                    {canDecide && hasPendingItems && !hasDecisionToSubmit && (
+                        <p className="mt-2 text-center text-xs text-vw-grey">
+                            You can decide on some items now and come back later for the rest.
+                        </p>
                     )}
                 </section>
 
@@ -389,10 +398,13 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                             ))}
                         </ul>
 
+                        {/* FIX #3: total di modal sekarang hanya menjumlahkan item yang
+                            BARU di-approve di sesi ini (decidedApprovedTotal), bukan
+                            totalCost (yang mencakup seluruh item order). */}
                         <div className="mt-4 flex items-center justify-between border-t border-vw-grey-light pt-3">
                             <span className="text-sm font-semibold text-vw-grey">Total</span>
                             <span className="font-mono text-base font-bold text-vw-blue">
-                                Rp {totalCost.toLocaleString('id-ID')}
+                                Rp {decidedApprovedTotal.toLocaleString('id-ID')}
                             </span>
                         </div>
 
