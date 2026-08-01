@@ -31,6 +31,11 @@ const DECIDABLE_STATUSES = ['scheduled', 'in_progress'];
 // dengan $showInvoiceViewer di InspectionReportController::show().
 const INVOICE_VISIBLE_STATUSES = ['quality_control', 'completed'];
 
+// Harga baru dianggap final mulai quality_control (final_price_snapshot sudah
+// terkunci untuk item approved). Sebelum itu (scheduled/in_progress), harga
+// yang ditampilkan masih estimasi karena customer masih bisa approve/reject.
+const FINAL_PRICING_STATUSES = ['quality_control', 'follow_up', 'completed'];
+
 // Harga tampil per item: pakai final_price_snapshot kalau sudah terkunci
 // (approved), kalau belum (pending/rejected) hitung on-the-fly dari
 // cost_item/cost_labour dikurangi diskon masing-masing.
@@ -134,6 +139,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     // dengan controller yang cuma kirim invoice_pdf_path pada status tsb
     // (di luar itu nilainya selalu null, jadi section otomatis tersembunyi).
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
+    const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
 
     return (
         <PublicLayout>
@@ -201,9 +207,17 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                 {/* 3. Service Inspection Result */}
                 <section className="px-6">
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
-                        Inspection Items
-                    </h2>
+                    <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
+                            Inspection Items
+                        </h2>
+                        <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide
+                                ${isPricingFinal ? 'bg-approved/10 text-approved' : 'bg-amber-100 text-amber-700'}`}
+                        >
+                            {isPricingFinal ? 'Final Price' : 'Estimated Price'}
+                        </span>
+                    </div>
 
                     {isLocked && !hasPendingItems && (
                         <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
@@ -277,13 +291,19 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         </div>
                         <div className="flex items-center justify-between border-t border-vw-grey-light pt-1.5">
                             <span className="text-sm font-semibold uppercase tracking-wide text-vw-grey">
-                                Grand Total
+                                {isPricingFinal ? 'Final Total' : 'Estimated Total'}
                             </span>
                             <span className="font-mono text-lg font-bold text-vw-blue">
                                 Rp {grandTotal.toLocaleString('id-ID')}
                             </span>
                         </div>
                     </div>
+
+                    {!isPricingFinal && (
+                        <p className="mt-2 text-xs italic text-vw-grey">
+                            These prices are estimates and may change until finalized after inspection review.
+                        </p>
+                    )}
 
                     {/* FIX #2: tombol submit sekarang berdasarkan hasDecisionToSubmit
                         (ada keputusan yang belum dikirim), bukan hasPendingItems —
