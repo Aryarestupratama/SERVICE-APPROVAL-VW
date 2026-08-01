@@ -412,7 +412,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                     )}
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label>VIN</Label>
+                                    <Label>NIK (Nomor Identitas Kendaraan)</Label>
                                     <Input
                                         value={data.new_vehicle.vin}
                                         maxLength={17}
@@ -422,7 +422,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                                 vin: e.target.value.toUpperCase(),
                                             })
                                         }
-                                        placeholder="17-character VIN"
+                                        placeholder="17-character NIK"
                                     />
                                     {errors['new_vehicle.vin'] && (
                                         <p className="text-sm text-urgent">{errors['new_vehicle.vin']}</p>
@@ -631,7 +631,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                     inspection_items (PROJECT-RULES bagian 2, 7C #6) */}
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-1.5">
-                                        <Label>Item Cost (IDR)</Label>
+                                        <Label>Item Price (IDR)</Label>
                                         <Input
                                             type="number"
                                             value={item.cost_item}
@@ -644,7 +644,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                         )}
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label>Labour Cost (IDR)</Label>
+                                        <Label>Labour Price (IDR)</Label>
                                         <Input
                                             type="number"
                                             value={item.cost_labour}
@@ -711,14 +711,14 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                         </Label>
                                     </div>
                                     <p className="text-sm text-vw-grey">
-                                        Subtotal (before tax): {formatIDR(itemSubtotal(item))}
+                                        Subtotal price (before tax): {formatIDR(itemSubtotal(item))}
                                     </p>
                                 </div>
                             </div>
                         ))}
 
                         <div className="flex items-center justify-between border-t border-vw-grey/20 pt-3">
-                            <p className="font-semibold text-gray-900">Items Total (before tax)</p>
+                            <p className="font-semibold text-gray-900">Items Total Price (before tax)</p>
                             <p className="font-semibold text-gray-900">{formatIDR(totalCost)}</p>
                         </div>
                         <p className="text-xs text-vw-grey">

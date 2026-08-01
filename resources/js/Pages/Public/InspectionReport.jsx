@@ -4,7 +4,13 @@ import { useState } from 'react';
 import { Phone, Mail, MessageCircle, FileText } from 'lucide-react';
 
 function StatusStamp({ status }) {
-    if (status === 'pending') return null;
+    if (status === 'pending') {
+        return (
+            <span className="inline-flex -rotate-6 items-center rounded-full border-2 border-dashed border-vw-grey px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-vw-grey">
+                Waiting Approval
+            </span>
+        );
+    }
     const isApproved = status === 'approved';
     return (
         <span
@@ -39,6 +45,15 @@ function itemDisplayPrice(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
+// Subtotal pre-PPN per item, dihitung dari raw fields — sama seperti admin
+// Show.jsx, konsisten untuk item locked maupun belum.
+function itemSubtotal(item) {
+    const itemAfterDiscount = item.cost_item * (1 - (item.discount_item_percent ?? 0) / 100);
+    const labourAfterDiscount = item.cost_labour * (1 - (item.discount_labour_percent ?? 0) / 100);
+
+    return itemAfterDiscount + labourAfterDiscount;
+}
+
 export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
     const [items, setItems] = useState(initialItems);
@@ -61,15 +76,23 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     );
     const hasDecisionToSubmit = decidedThisRound.length > 0;
 
-    // FIX #3: total khusus untuk modal konfirmasi — hanya item yang BARU
-    // di-approve di sesi ini, bukan total keseluruhan order (totalCost).
-    const decidedApprovedTotal = decidedThisRound
-        .filter((item) => item.status === 'approved')
-        .reduce((sum, item) => sum + itemDisplayPrice(item), 0);
-
-    const totalCost = items
+    // Breakdown PPN: filter sama seperti totalCost sebelumnya (exclude rejected),
+    // subtotal pre-PPN lalu dikenakan settings.ppn_percent — pola yang sama
+    // dengan backend InspectionItemPricingService.
+    const ppnPercent = Number(settings.ppn_percent ?? 0);
+    const subtotal = items
         .filter((item) => item.status !== 'rejected')
-        .reduce((sum, item) => sum + itemDisplayPrice(item), 0);
+        .reduce((sum, item) => sum + itemSubtotal(item), 0);
+    const ppnAmount = subtotal * (ppnPercent / 100);
+    const grandTotal = subtotal + ppnAmount;
+
+    // FIX #3: total khusus untuk modal konfirmasi — hanya item yang BARU
+    // di-approve di sesi ini, bukan total keseluruhan order. Sekarang sudah
+    // termasuk PPN, sama seperti Grand Total di section 3.
+    const decidedApprovedSubtotal = decidedThisRound
+        .filter((item) => item.status === 'approved')
+        .reduce((sum, item) => sum + itemSubtotal(item), 0);
+    const decidedApprovedTotal = decidedApprovedSubtotal * (1 + ppnPercent / 100);
 
     const handleDecision = (itemId, decision) => {
         setItems((prev) =>
@@ -239,11 +262,27 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         ))}
                     </div>
 
-                    <div className="mt-4 flex items-center justify-between">
-                        <span className="text-sm font-semibold uppercase tracking-wide text-vw-grey">Total</span>
-                        <span className="font-mono text-lg font-bold text-vw-blue">
-                            Rp {totalCost.toLocaleString('id-ID')}
-                        </span>
+                    <div className="mt-4 space-y-1.5">
+                        <div className="flex items-center justify-between text-sm text-vw-grey">
+                            <span>Subtotal</span>
+                            <span className="font-mono text-gray-700">
+                                Rp {subtotal.toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm text-vw-grey">
+                            <span>PPN ({ppnPercent}%)</span>
+                            <span className="font-mono text-gray-700">
+                                Rp {ppnAmount.toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-vw-grey-light pt-1.5">
+                            <span className="text-sm font-semibold uppercase tracking-wide text-vw-grey">
+                                Grand Total
+                            </span>
+                            <span className="font-mono text-lg font-bold text-vw-blue">
+                                Rp {grandTotal.toLocaleString('id-ID')}
+                            </span>
+                        </div>
                     </div>
 
                     {/* FIX #2: tombol submit sekarang berdasarkan hasDecisionToSubmit
@@ -398,14 +437,29 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                             ))}
                         </ul>
 
-                        {/* FIX #3: total di modal sekarang hanya menjumlahkan item yang
-                            BARU di-approve di sesi ini (decidedApprovedTotal), bukan
-                            totalCost (yang mencakup seluruh item order). */}
-                        <div className="mt-4 flex items-center justify-between border-t border-vw-grey-light pt-3">
-                            <span className="text-sm font-semibold text-vw-grey">Total</span>
-                            <span className="font-mono text-base font-bold text-vw-blue">
-                                Rp {decidedApprovedTotal.toLocaleString('id-ID')}
-                            </span>
+                        {/* FIX #3: total di modal hanya menjumlahkan item yang BARU
+                            di-approve di sesi ini, bukan totalCost seluruh order.
+                            Sekarang sudah termasuk PPN, sama seperti Grand Total
+                            di section 3. */}
+                        <div className="mt-4 space-y-1 border-t border-vw-grey-light pt-3">
+                            <div className="flex items-center justify-between text-xs text-vw-grey">
+                                <span>Subtotal</span>
+                                <span className="font-mono">
+                                    Rp {decidedApprovedSubtotal.toLocaleString('id-ID')}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-vw-grey">
+                                <span>PPN ({ppnPercent}%)</span>
+                                <span className="font-mono">
+                                    Rp {(decidedApprovedTotal - decidedApprovedSubtotal).toLocaleString('id-ID')}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-vw-grey">Total</span>
+                                <span className="font-mono text-base font-bold text-vw-blue">
+                                    Rp {decidedApprovedTotal.toLocaleString('id-ID')}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="mt-5 flex gap-3">

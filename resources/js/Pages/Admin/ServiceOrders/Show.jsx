@@ -56,6 +56,10 @@ const ITEM_STATUS_VARIANT = {
     rejected: 'destructive',
 };
 
+const ITEM_STATUS_LABEL = {
+    pending: 'Waiting Approval',
+};
+
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
@@ -81,7 +85,19 @@ function itemDisplayTotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-export default function Show({ order }) {
+// Subtotal pre-PPN, dihitung ulang dari raw fields (cost_item/cost_labour/diskon)
+// yang tetap tersimpan meski item sudah locked — jadi konsisten dipakai untuk
+// SEMUA item (approved maupun belum), tidak bergantung final_price_snapshot.
+function itemSubtotal(item) {
+    const itemAfterDiscount =
+        Number(item.cost_item) * (1 - Number(item.discount_item_percent ?? 0) / 100);
+    const labourAfterDiscount =
+        Number(item.cost_labour) * (1 - Number(item.discount_labour_percent ?? 0) / 100);
+
+    return itemAfterDiscount + labourAfterDiscount;
+}
+
+export default function Show({ order, settings }) {
     const [pendingStatus, setPendingStatus] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -118,11 +134,14 @@ export default function Show({ order }) {
         });
     };
 
-    // Grand total: jumlah dari itemDisplayTotal semua item — bukan cuma yang
-    // approved, karena ini tampilan ringkasan admin, bukan invoice final.
-    // (Perhitungan invoice final tetap dari InspectionItemPricingService.)
-    const totalItemsCost =
-        order.inspection_items?.reduce((sum, item) => sum + itemDisplayTotal(item), 0) ?? 0;
+    // Breakdown PPN: subtotal dihitung dari raw cost fields (konsisten untuk
+    // semua item), PPN & grand total mengikuti settings.ppn_percent — pola
+    // yang sama dengan InspectionItemPricingService::lockFinalPrice() di backend.
+    const ppnPercent = Number(settings?.ppn_percent ?? 0);
+    const subtotal =
+        order.inspection_items?.reduce((sum, item) => sum + itemSubtotal(item), 0) ?? 0;
+    const ppnAmount = subtotal * (ppnPercent / 100);
+    const grandTotal = subtotal + ppnAmount;
 
     // 'completed' hanya boleh dipilih kalau invoice sudah diupload — guard ini
     // cuma UX, backend tetap validasi ulang di updateStatus().
@@ -181,7 +200,7 @@ export default function Show({ order }) {
                                 </p>
                             </div>
                             <div>
-                                <p className="text-vw-grey">VIN</p>
+                                <p className="text-vw-grey">NIK (Nomor Identitas Kendaraan)</p>
                                 <p className="font-medium text-gray-900">
                                     {order.vehicle?.vin ?? '—'}
                                 </p>
@@ -245,14 +264,14 @@ export default function Show({ order }) {
                                                             'secondary'
                                                         }
                                                     >
-                                                        {item.status}
+                                                        {ITEM_STATUS_LABEL[item.status] ?? item.status}
                                                     </Badge>
                                                 </div>
                                             </div>
 
                                             <div className="grid grid-cols-2 gap-2 text-xs text-vw-grey sm:grid-cols-4">
                                                 <div>
-                                                    <span className="block">Item cost</span>
+                                                    <span className="block">Item price</span>
                                                     <span className="text-gray-900">
                                                         {formatCurrency(item.cost_item)}
                                                     </span>
@@ -263,7 +282,7 @@ export default function Show({ order }) {
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <span className="block">Labour cost</span>
+                                                    <span className="block">Labour price</span>
                                                     <span className="text-gray-900">
                                                         {formatCurrency(item.cost_labour)}
                                                     </span>
@@ -294,11 +313,21 @@ export default function Show({ order }) {
                                             </div>
                                         </div>
                                     ))}
-                                    <div className="flex items-center justify-between pt-3">
-                                        <p className="font-semibold text-gray-900">Total</p>
-                                        <p className="font-semibold text-gray-900">
-                                            {formatCurrency(totalItemsCost)}
-                                        </p>
+                                    <div className="space-y-1 pt-3">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <p className="text-vw-grey">Subtotal</p>
+                                            <p className="text-gray-900">{formatCurrency(subtotal)}</p>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <p className="text-vw-grey">PPN ({ppnPercent}%)</p>
+                                            <p className="text-gray-900">{formatCurrency(ppnAmount)}</p>
+                                        </div>
+                                        <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
+                                            <p className="font-semibold text-gray-900">Grand Total</p>
+                                            <p className="font-semibold text-gray-900">
+                                                {formatCurrency(grandTotal)}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (

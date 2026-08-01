@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\ServiceOrder;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\Setting;
 use App\Services\WorkOrderNumberGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -196,6 +197,10 @@ class ServiceOrderController extends Controller
 
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
+            // Dibutuhkan Show.jsx untuk breakdown PPN (Subtotal/PPN/Grand Total)
+            // di kartu Inspection Items — settings.ppn_percent sumber kebenaran
+            // tunggal, sama seperti dipakai InspectionItemPricingService di backend.
+            'settings' => Setting::current(),
         ]);
     }
 
@@ -218,6 +223,13 @@ class ServiceOrderController extends Controller
             return back()->with('error', "Tidak bisa pindah status dari '{$currentStatus}' ke '{$newStatus}'.");
         }
 
+        // Aturan wajib bagian 7 poin 3: tidak boleh masuk 'quality_control' kalau
+        // customer belum selesai memutuskan semua item (finalized_at masih kosong).
+        // Mencegah SA pindah status manual sebelum negosiasi item selesai.
+        if ($newStatus === 'quality_control' && empty($serviceOrder->finalized_at)) {
+            return back()->with('error', 'Belum bisa pindah ke Quality Control — customer belum selesai memutuskan semua item inspeksi.');
+        }
+
         // Aturan wajib bagian 2: tidak boleh masuk 'completed' kalau
         // invoice_pdf_path masih kosong (invoice diupload manual oleh SA).
         if ($newStatus === 'completed' && empty($serviceOrder->invoice_pdf_path)) {
@@ -225,10 +237,6 @@ class ServiceOrderController extends Controller
         }
 
         $updates = ['status' => $newStatus];
-
-        if ($newStatus === 'follow_up') {
-            $updates['follow_up_deadline'] = now()->addDays(3);
-        }
 
         $serviceOrder->update($updates);
 

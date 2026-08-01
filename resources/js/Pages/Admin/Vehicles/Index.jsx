@@ -147,14 +147,14 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
                         </div>
 
-                        {/* VIN wajib unique, CHAR(17) — sesuai keputusan owner 2026-07-31 */}
+                        {/* NIK (nama kolom DB: vin) wajib unique, CHAR(17) — sesuai keputusan owner 2026-07-31 */}
                         <div className="space-y-1.5">
-                            <Label htmlFor="vin">VIN</Label>
+                            <Label htmlFor="vin">NIK (Nomor Identitas Kendaraan)</Label>
                             <Input
                                 id="vin"
                                 value={data.vin}
                                 onChange={(e) => setData('vin', e.target.value.toUpperCase())}
-                                placeholder="17-character VIN"
+                                placeholder="17-character NIK"
                                 maxLength={17}
                                 className="uppercase"
                             />
@@ -273,7 +273,7 @@ export default function Index({ vehicles, search, customers, brands }) {
                 <Input
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by plate, VIN, model, or customer..."
+                    placeholder="Search by plate, NIK, model, or customer..."
                     className="max-w-xs"
                 />
                 <Button onClick={openAddForm}>Add Vehicle</Button>
@@ -285,7 +285,7 @@ export default function Index({ vehicles, search, customers, brands }) {
                         <TableRow>
                             <TableHead>Plate Number</TableHead>
                             <TableHead>Brand / Model</TableHead>
-                            <TableHead>VIN</TableHead>
+                            <TableHead>NIK</TableHead>
                             <TableHead>Year</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead className="w-1"></TableHead>

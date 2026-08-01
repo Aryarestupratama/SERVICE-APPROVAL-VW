@@ -43,10 +43,6 @@ return new class extends Migration
             $table->timestamp('invoice_uploaded_at')->nullable();
             $table->foreignId('invoice_uploaded_by')->nullable()->constrained('users')->nullOnDelete();
 
-            $table->timestamp('follow_up_deadline')->nullable();
-            $table->timestamp('follow_up_reminder_sent_at')->nullable();
-            $table->timestamp('follow_up_escalated_to_admin_at')->nullable();
-
             $table->timestamp('finalized_at')->nullable();
             $table->timestamps();
         });
