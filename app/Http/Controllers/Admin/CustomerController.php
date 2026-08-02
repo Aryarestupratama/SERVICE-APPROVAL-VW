@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Illuminate\Database\QueryException;
 
@@ -24,6 +25,7 @@ class CustomerController extends Controller
         return Inertia::render('Admin/Customers/Index', [
             'customers' => $customers,
             'search' => $request->search,
+            'titles' => Customer::TITLES,
         ]);
     }
 
@@ -31,6 +33,7 @@ class CustomerController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', Rule::in(Customer::TITLES)],
             'phone' => ['required', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:255'],
         ]);
@@ -44,6 +47,7 @@ class CustomerController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', Rule::in(Customer::TITLES)],
             'phone' => ['required', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:255'],
         ]);

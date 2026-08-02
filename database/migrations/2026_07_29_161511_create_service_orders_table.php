@@ -17,13 +17,13 @@ return new class extends Migration
             $table->unsignedBigInteger('work_order_number')->unique();
 
             $table->enum('status', [
-                'scheduled',
-                'in_progress',
+                'appointment',
+                'work_in_progress',
                 'quality_control',
-                'follow_up',
+                'invoice_preparation',
                 'completed',
                 'all_rejected_cancelled',
-            ])->default('scheduled');
+            ])->default('appointment');
 
             $table->enum('items_approval_status', [
                 'pending',
@@ -38,10 +38,6 @@ return new class extends Migration
 
             $table->string('inspection_token')->unique()->nullable();
             $table->timestamp('inspection_token_expires_at')->nullable();
-
-            $table->string('invoice_pdf_path')->nullable();
-            $table->timestamp('invoice_uploaded_at')->nullable();
-            $table->foreignId('invoice_uploaded_by')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamp('finalized_at')->nullable();
             $table->timestamps();

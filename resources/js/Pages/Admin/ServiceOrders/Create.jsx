@@ -5,7 +5,6 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Textarea } from '@/Components/ui/textarea';
-import { Checkbox } from '@/Components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 import {
     Select,
@@ -94,6 +93,15 @@ function formatIDR(value) {
     }).format(value || 0);
 }
 
+// Ubah 'related' -> 'Related', 'work_in_progress' -> 'Work In Progress', dst.
+// Dipakai untuk label dropdown Group supaya tidak menampilkan raw enum value.
+function formatGroupLabel(group) {
+    return group
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
 // Subtotal per item SEBELUM PPN — dipakai untuk tampilan ringkasan saja.
 // final_price_snapshot (dengan PPN dari settings) tetap dihitung & dikunci
 // di backend oleh InspectionItemPricingService saat item di-approve
@@ -110,7 +118,7 @@ function itemSubtotal(item) {
     return netItem + netLabour;
 }
 
-export default function Create({ customers, vehicles, technicians, brands }) {
+export default function Create({ customers, vehicles, technicians, brands, groups }) {
     const [customerMode, setCustomerMode] = useState('existing'); // 'existing' | 'new'
     const [vehicleMode, setVehicleMode] = useState('existing');
 
@@ -131,7 +139,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                 cost_labour: '',
                 discount_item_percent: '',
                 discount_labour_percent: '',
-                is_urgent: false,
+                group: groups?.[0] ?? '',
             },
         ],
         videos: [],
@@ -157,10 +165,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
         new_customer: customerMode === 'new' ? data.new_customer : null,
         vehicle_id: vehicleMode === 'existing' ? data.vehicle_id : '',
         new_vehicle: vehicleMode === 'new' ? data.new_vehicle : null,
-        inspection_items: data.inspection_items.map((item) => ({
-            ...item,
-            is_urgent: item.is_urgent ? 1 : 0, // FormData tidak paham boolean, paksa jadi 1/0
-        })),
+        inspection_items: data.inspection_items,
     }));
 
     const addItem = () => {
@@ -173,7 +178,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                 cost_labour: '',
                 discount_item_percent: '',
                 discount_labour_percent: '',
-                is_urgent: false,
+                group: groups?.[0] ?? '',
             },
         ]);
     };
@@ -412,7 +417,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                     )}
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label>NIK (Nomor Identitas Kendaraan)</Label>
+                                    <Label>VIN/Chasis Number</Label>
                                     <Input
                                         value={data.new_vehicle.vin}
                                         maxLength={17}
@@ -422,7 +427,7 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                                 vin: e.target.value.toUpperCase(),
                                             })
                                         }
-                                        placeholder="17-character NIK"
+                                        placeholder="17-character VIN/Chasis Number"
                                     />
                                     {errors['new_vehicle.vin'] && (
                                         <p className="text-sm text-urgent">{errors['new_vehicle.vin']}</p>
@@ -627,22 +632,9 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                     />
                                 </div>
 
-                                {/* Cost item vs labour dipisah sesuai revisi skema
-                                    inspection_items (PROJECT-RULES bagian 2, 7C #6) */}
+                                {/* Posisi ditukar: Labour price kiri, Part price kanan
+                                    (PROJECT-RULES Revisi Besar #2, poin 4) */}
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label>Item Price (IDR)</Label>
-                                        <Input
-                                            type="number"
-                                            value={item.cost_item}
-                                            onChange={(e) => updateItem(index, 'cost_item', e.target.value)}
-                                        />
-                                        {errors[`inspection_items.${index}.cost_item`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.cost_item`]}
-                                            </p>
-                                        )}
-                                    </div>
                                     <div className="space-y-1.5">
                                         <Label>Labour Price (IDR)</Label>
                                         <Input
@@ -656,28 +648,24 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                             </p>
                                         )}
                                     </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Part Price (IDR)</Label>
+                                        <Input
+                                            type="number"
+                                            value={item.cost_item}
+                                            onChange={(e) => updateItem(index, 'cost_item', e.target.value)}
+                                        />
+                                        {errors[`inspection_items.${index}.cost_item`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.cost_item`]}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Diskon item & labour terpisah — locked permanen di backend
                                     begitu item di-approve customer (bagian 7B poin 4) */}
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label>Item Discount (%)</Label>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={item.discount_item_percent}
-                                            onChange={(e) =>
-                                                updateItem(index, 'discount_item_percent', e.target.value)
-                                            }
-                                        />
-                                        {errors[`inspection_items.${index}.discount_item_percent`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.discount_item_percent`]}
-                                            </p>
-                                        )}
-                                    </div>
                                     <div className="space-y-1.5">
                                         <Label>Labour Discount (%)</Label>
                                         <Input
@@ -695,20 +683,48 @@ export default function Create({ customers, vehicles, technicians, brands }) {
                                             </p>
                                         )}
                                     </div>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <Checkbox
-                                            id={`urgent-${index}`}
-                                            checked={item.is_urgent}
-                                            onCheckedChange={(checked) =>
-                                                updateItem(index, 'is_urgent', Boolean(checked))
+                                    <div className="space-y-1.5">
+                                        <Label>Part Discount (%)</Label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={item.discount_item_percent}
+                                            onChange={(e) =>
+                                                updateItem(index, 'discount_item_percent', e.target.value)
                                             }
                                         />
-                                        <Label htmlFor={`urgent-${index}`} className="cursor-pointer">
-                                            Urgent
-                                        </Label>
+                                        {errors[`inspection_items.${index}.discount_item_percent`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.discount_item_percent`]}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="space-y-1.5">
+                                        <Label>Group</Label>
+                                        <Select
+                                            value={item.group}
+                                            onValueChange={(value) => updateItem(index, 'group', value)}
+                                        >
+                                            <SelectTrigger className="w-[180px]">
+                                                <SelectValue placeholder="Select group" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {groups.map((group) => (
+                                                    <SelectItem key={group} value={group}>
+                                                        {formatGroupLabel(group)}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {errors[`inspection_items.${index}.group`] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors[`inspection_items.${index}.group`]}
+                                            </p>
+                                        )}
                                     </div>
                                     <p className="text-sm text-vw-grey">
                                         Subtotal price (before tax): {formatIDR(itemSubtotal(item))}

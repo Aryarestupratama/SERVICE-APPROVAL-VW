@@ -46,9 +46,21 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
 
+            Route::post('service-orders/{serviceOrder}/estimation-document',
+                [ServiceOrderController::class, 'uploadEstimationDocument'])
+                ->name('service-orders.upload-estimation-document');
+
+            Route::delete('service-orders/{serviceOrder}/estimation-documents/{estimationDocument}',
+                [ServiceOrderController::class, 'deleteEstimationDocument'])
+                ->name('service-orders.delete-estimation-document');
+
             Route::post('service-orders/{serviceOrder}/invoice',
                 [ServiceOrderController::class, 'uploadInvoice'])
                 ->name('service-orders.upload-invoice');
+
+            Route::delete('service-orders/{serviceOrder}/invoices/{invoice}',
+                [ServiceOrderController::class, 'deleteInvoice'])
+                ->name('service-orders.delete-invoice');
         });
 
         // Admin-only — staff & workshop config

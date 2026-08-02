@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\InspectionItem;
 use App\Models\ServiceOrder;
+use App\Models\ServiceOrderEstimationDocument;
+use App\Models\ServiceOrderInvoice;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Setting;
@@ -25,11 +28,19 @@ class ServiceOrderController extends Controller
      * menangani percabangan ke `all_rejected_cancelled`.
      */
     private const ALLOWED_TRANSITIONS = [
-        'scheduled' => ['in_progress'],
-        'in_progress' => ['quality_control', 'all_rejected_cancelled'],
-        'quality_control' => ['follow_up'],
-        'follow_up' => ['completed'],
+        'appointment' => ['work_in_progress'],
+        'work_in_progress' => ['quality_control', 'all_rejected_cancelled'],
+        'quality_control' => ['invoice_preparation'],
+        'invoice_preparation' => ['completed'],
     ];
+
+    /**
+     * Batas maksimal jumlah invoice PDF per order — sesuai PROJECT-RULES
+     * Revisi Besar #2 poin 8 ("bisa lebih dari 1 file, tergantung permintaan
+     * customer, misal dipecah per part"). Tidak ada batas eksplisit di dokumen,
+     * dipatok longgar mengikuti pola yang sama dengan estimation form (5 dokumen).
+     */
+    private const MAX_INVOICES_PER_ORDER = 5;
 
     public function index(Request $request)
     {
@@ -58,6 +69,7 @@ class ServiceOrderController extends Controller
                 ->orderBy('name')
                 ->get(),
             'brands' => Vehicle::BRANDS,
+            'groups' => InspectionItem::GROUPS,
         ]);
     }
 
@@ -92,7 +104,7 @@ class ServiceOrderController extends Controller
             'inspection_items.*.cost_labour' => ['required', 'numeric', 'min:0'],
             'inspection_items.*.discount_item_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'inspection_items.*.discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'inspection_items.*.is_urgent' => ['boolean'],
+            'inspection_items.*.group' => ['required', Rule::in(InspectionItem::GROUPS)],
 
             'videos' => ['nullable', 'array'],
             'videos.*.video_source' => ['required_with:videos', Rule::in(['upload', 'external_link'])],
@@ -128,7 +140,7 @@ class ServiceOrderController extends Controller
                 // SUPAYA TIDAK CRASH, TAPI RAWAN RACE CONDITION kalau 2 SA
                 // submit order bersamaan. Ganti begitu service class jadi.
                 'work_order_number' => app(WorkOrderNumberGenerator::class)->generate(),
-                'status' => 'scheduled',
+                'status' => ServiceOrder::STATUS_APPOINTMENT,
                 'items_approval_status' => 'pending',
                 'inspection_fee' => $validated['inspection_fee'],
                 'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
@@ -146,7 +158,7 @@ class ServiceOrderController extends Controller
                     // final_price_snapshot sengaja TIDAK diisi di sini — tetap null
                     // selama status 'pending', baru dikunci oleh service pricing
                     // (TODO bagian 7C #2) saat item di-approve customer.
-                    'is_urgent' => $item['is_urgent'] ?? false,
+                    'group' => $item['group'],
                     'status' => 'pending',
                 ]);
             }
@@ -181,18 +193,17 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Relasi 'invoice' dihapus — model & tabel Invoice sudah di-drop total
-        // (bagian 2). Data invoice sekarang kolom langsung di service_orders
-        // (invoice_pdf_path, invoice_uploaded_at, invoice_uploaded_by).
-        // invoiceUploadedBy sengaja di-eager-load supaya nama SA yang upload
-        // bisa ditampilkan di Show.jsx tanpa N+1 query tambahan.
+        // Invoice sekarang relasi hasMany (service_order_invoices), bukan kolom
+        // tunggal di service_orders — diurutkan sort_order, uploadedBy di-eager-load
+        // supaya nama SA yang upload bisa ditampilkan tanpa N+1 query tambahan.
         $serviceOrder->load([
             'vehicle.customer',
             'serviceAdvisor',
             'technician',
             'videos',
             'inspectionItems',
-            'invoiceUploadedBy',
+            'invoices.uploadedBy',
+            'estimationDocuments.uploadedBy',
         ]);
 
         return Inertia::render('Admin/ServiceOrders/Show', [
@@ -201,6 +212,8 @@ class ServiceOrderController extends Controller
             // di kartu Inspection Items — settings.ppn_percent sumber kebenaran
             // tunggal, sama seperti dipakai InspectionItemPricingService di backend.
             'settings' => Setting::current(),
+            'groups' => InspectionItem::GROUPS,
+            'maxInvoices' => self::MAX_INVOICES_PER_ORDER,
         ]);
     }
 
@@ -210,8 +223,12 @@ class ServiceOrderController extends Controller
 
         $validated = $request->validate([
             'status' => ['required', Rule::in([
-                'scheduled', 'in_progress', 'quality_control', 'follow_up',
-                'completed', 'all_rejected_cancelled',
+                ServiceOrder::STATUS_APPOINTMENT,
+                ServiceOrder::STATUS_WORK_IN_PROGRESS,
+                ServiceOrder::STATUS_QUALITY_CONTROL,
+                ServiceOrder::STATUS_INVOICE_PREPARATION,
+                ServiceOrder::STATUS_COMPLETED,
+                ServiceOrder::STATUS_ALL_REJECTED_CANCELLED,
             ])],
         ]);
 
@@ -226,14 +243,15 @@ class ServiceOrderController extends Controller
         // Aturan wajib bagian 7 poin 3: tidak boleh masuk 'quality_control' kalau
         // customer belum selesai memutuskan semua item (finalized_at masih kosong).
         // Mencegah SA pindah status manual sebelum negosiasi item selesai.
-        if ($newStatus === 'quality_control' && empty($serviceOrder->finalized_at)) {
+        if ($newStatus === ServiceOrder::STATUS_QUALITY_CONTROL && empty($serviceOrder->finalized_at)) {
             return back()->with('error', 'Belum bisa pindah ke Quality Control — customer belum selesai memutuskan semua item inspeksi.');
         }
 
-        // Aturan wajib bagian 2: tidak boleh masuk 'completed' kalau
-        // invoice_pdf_path masih kosong (invoice diupload manual oleh SA).
-        if ($newStatus === 'completed' && empty($serviceOrder->invoice_pdf_path)) {
-            return back()->with('error', 'Upload invoice PDF dulu sebelum menandai order selesai.');
+        // Aturan wajib bagian 2: tidak boleh masuk 'completed' kalau belum ada
+        // minimal 1 baris invoice di service_order_invoices (dulu cek kolom
+        // invoice_pdf_path tunggal, sekarang cek relasi karena bisa multi-file).
+        if ($newStatus === ServiceOrder::STATUS_COMPLETED && !$serviceOrder->hasInvoiceUploaded()) {
+            return back()->with('error', 'Upload minimal 1 invoice PDF dulu sebelum menandai order selesai.');
         }
 
         $updates = ['status' => $newStatus];
@@ -243,36 +261,152 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Status berhasil diperbarui.');
     }
 
+    /**
+     * Upload/replace 1 PDF estimation form untuk 1 kelompok tertentu.
+     * updateOrCreate berdasarkan (service_order_id, group) — sesuai constraint
+     * unique di migration, jadi upload ulang ke group yang sama otomatis
+     * REPLACE file lama (hapus file lama dari storage, ganti pdf_path baru).
+     */
+    public function uploadEstimationDocument(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        // Estimation form relevan selama negosiasi berjalan — dikunci begitu
+        // order sudah lewat work_in_progress, sama pola guard dengan invoice.
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Estimation form hanya bisa diubah saat status Work In Progress.');
+        }
+
+        $validated = $request->validate([
+            'group' => ['required', Rule::in(ServiceOrderEstimationDocument::GROUPS)],
+            'pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
+        ]);
+
+        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+            $existing = $serviceOrder->estimationDocuments()
+                ->where('group', $validated['group'])
+                ->first();
+
+            // Hapus file lama dari storage kalau ini replace, bukan upload pertama.
+            if ($existing && $existing->pdf_path) {
+                Storage::disk('public')->delete($existing->pdf_path);
+            }
+
+            $path = $request->file('pdf')->store('estimation-documents', 'public');
+
+            ServiceOrderEstimationDocument::updateOrCreate(
+                [
+                    'service_order_id' => $serviceOrder->id,
+                    'group' => $validated['group'],
+                ],
+                [
+                    'pdf_path' => $path,
+                    'uploaded_at' => now(),
+                    'uploaded_by' => $request->user()->id,
+                ]
+            );
+        });
+
+        return back()->with('success', 'Estimation form berhasil diupload.');
+    }
+
+    /**
+     * Hapus PDF estimation form untuk 1 kelompok tertentu — baris tetap ada
+     * (atau dihapus total, tergantung preferensi), tapi pdf_path di-null-kan
+     * supaya slot itu kembali kosong dan bisa diupload ulang.
+     */
+    public function deleteEstimationDocument(Request $request, ServiceOrder $serviceOrder, ServiceOrderEstimationDocument $estimationDocument)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($estimationDocument->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Estimation form hanya bisa dihapus saat status Work In Progress.');
+        }
+
+        if ($estimationDocument->pdf_path) {
+            Storage::disk('public')->delete($estimationDocument->pdf_path);
+        }
+
+        $estimationDocument->delete();
+
+        return back()->with('success', 'Estimation form berhasil dihapus.');
+    }
+
+    /**
+     * Upload satu atau lebih file invoice PDF sekaligus — APPEND ke daftar yang
+     * sudah ada, bukan replace (beda dari perilaku lama saat masih single-file).
+     * Untuk mengganti/menghapus satu file tertentu, pakai deleteInvoice().
+     */
     public function uploadInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Invoice hanya masuk akal diupload setelah quality_control (sesuai
-        // PROJECT-RULES bagian 6, tahap 3: "Siapkan invoice (upload PDF oleh SA)").
-        // Guard longgar dulu: boleh selama belum 'completed', supaya SA masih bisa
-        // ganti file kalau salah upload sebelum order ditutup.
+        // Guard longgar dulu: boleh selama belum 'completed', supaya SA masih
+        // bisa menambah/mengganti invoice sebelum order ditutup.
         if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
-            return back()->with('error', 'Order sudah completed, invoice tidak bisa diganti lagi.');
+            return back()->with('error', 'Order sudah completed, invoice tidak bisa diubah lagi.');
         }
+
+        $existingCount = $serviceOrder->invoices()->count();
 
         $validated = $request->validate([
-            'invoice_pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'], // max 10MB
+            'invoice_pdfs' => ['required', 'array', 'min:1'],
+            'invoice_pdfs.*' => [
+                'file',
+                'mimes:pdf',
+                'max:10240', // max 10MB per file
+            ],
         ]);
 
-        // Hapus file lama kalau ada re-upload, biar storage tidak menumpuk
-        if ($serviceOrder->invoice_pdf_path) {
-            Storage::disk('public')->delete($serviceOrder->invoice_pdf_path);
+        $incomingCount = count($validated['invoice_pdfs']);
+        if ($existingCount + $incomingCount > self::MAX_INVOICES_PER_ORDER) {
+            return back()->with(
+                'error',
+                'Maksimal ' . self::MAX_INVOICES_PER_ORDER . ' invoice PDF per order. Saat ini sudah ada ' . $existingCount . '.'
+            );
         }
 
-        $path = $request->file('invoice_pdf')->store('invoices', 'public');
+        DB::transaction(function () use ($request, $serviceOrder, $existingCount) {
+            foreach ($request->file('invoice_pdfs') as $index => $file) {
+                $path = $file->store('invoices', 'public');
 
-        $serviceOrder->update([
-            'invoice_pdf_path' => $path,
-            'invoice_uploaded_at' => now(),
-            'invoice_uploaded_by' => $request->user()->id,
-        ]);
+                $serviceOrder->invoices()->create([
+                    'file_path' => $path,
+                    'sort_order' => $existingCount + $index,
+                    'uploaded_at' => now(),
+                    'uploaded_by' => $request->user()->id,
+                ]);
+            }
+        });
 
         return back()->with('success', 'Invoice PDF berhasil diupload.');
+    }
+
+    /**
+     * Hapus satu baris invoice tertentu. sort_order baris-baris yang tersisa
+     * TIDAK di-reindex otomatis — labelnya ("Invoice 1", dst) memang boleh ada
+     * gap, konsisten dengan pola ServiceOrderVideo yang juga tidak reindex.
+     */
+    public function deleteInvoice(Request $request, ServiceOrder $serviceOrder, ServiceOrderInvoice $invoice)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($invoice->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
+            return back()->with('error', 'Order sudah completed, invoice tidak bisa dihapus lagi.');
+        }
+
+        Storage::disk('public')->delete($invoice->file_path);
+        $invoice->delete();
+
+        return back()->with('success', 'Invoice PDF berhasil dihapus.');
     }
 
     /**

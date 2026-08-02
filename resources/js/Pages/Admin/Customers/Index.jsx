@@ -13,6 +13,13 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/Components/ui/select';
+import {
     Dialog,
     DialogContent,
     DialogHeader,
@@ -61,10 +68,11 @@ function PhoneInput({ id, value, onChange, error }) {
     );
 }
 
-function CustomerFormDialog({ open, onOpenChange, customer, onSuccess }) {
+function CustomerFormDialog({ open, onOpenChange, customer, onSuccess, titles }) {
     const isEdit = Boolean(customer);
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         name: customer?.name ?? '',
+        title: customer?.title ?? '',
         phone: customer ? toLocalDigits(customer.phone ?? '') : '',
         email: customer?.email ?? '',
     });
@@ -75,6 +83,7 @@ function CustomerFormDialog({ open, onOpenChange, customer, onSuccess }) {
             clearErrors();
             setData({
                 name: customer?.name ?? '',
+                title: customer?.title ?? '',
                 phone: customer ? toLocalDigits(customer.phone ?? '') : '',
                 email: customer?.email ?? '',
             });
@@ -113,6 +122,26 @@ function CustomerFormDialog({ open, onOpenChange, customer, onSuccess }) {
                     </DialogHeader>
 
                     <div className="space-y-4 py-4">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="title">Prefix (optional)</Label>
+                            <Select
+                                value={data.title || undefined}
+                                onValueChange={(value) => setData('title', value)}
+                            >
+                                <SelectTrigger id="title">
+                                    <SelectValue placeholder="Select prefix" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {titles.map((title) => (
+                                        <SelectItem key={title} value={title}>
+                                            {title}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            {errors.title && <p className="text-sm text-urgent">{errors.title}</p>}
+                        </div>
+
                         <div className="space-y-1.5">
                             <Label htmlFor="name">Name</Label>
                             <Input
@@ -197,7 +226,7 @@ function DeleteConfirmDialog({ open, onOpenChange, customer }) {
     );
 }
 
-export default function Index({ customers, search }) {
+export default function Index({ customers, search, titles }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
     const [formOpen, setFormOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
@@ -260,7 +289,10 @@ export default function Index({ customers, search }) {
                         )}
                         {customers.data.map((customer) => (
                             <TableRow key={customer.id}>
-                                <TableCell className="font-medium">{customer.name}</TableCell>
+                                <TableCell className="font-medium">
+                                    {customer.title ? `${customer.title} ` : ''}
+                                    {customer.name}
+                                </TableCell>
                                 <TableCell>{customer.phone}</TableCell>
                                 <TableCell>{customer.email ?? '—'}</TableCell>
                                 <TableCell>{customer.vehicles?.length ?? 0}</TableCell>
@@ -311,6 +343,7 @@ export default function Index({ customers, search }) {
                 open={formOpen}
                 onOpenChange={setFormOpen}
                 customer={editingCustomer}
+                titles={titles}
             />
 
             <DeleteConfirmDialog

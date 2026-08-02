@@ -22,19 +22,32 @@ function StatusStamp({ status }) {
     );
 }
 
+const GROUP_LABEL = {
+    related: 'Related',
+    safety: 'Safety',
+    durability: 'Durability',
+    experience: 'Experience',
+    appearance: 'Appearance',
+};
+
+// Estimation Form aktif hanya saat work_in_progress, Invoice Form aktif mulai
+// quality_control/invoice_preparation/completed — sinkron dengan
+// $showEstimationViewer / $showInvoiceViewer di controller.
+const ESTIMATION_VISIBLE_STATUSES = ['work_in_progress'];
+
 // Status di mana customer masih boleh submit keputusan.
-// Selain ini (quality_control, follow_up, completed, all_rejected_cancelled),
+// Selain ini (quality_control, invoice_preparation, completed, all_rejected_cancelled),
 // order sudah lewat tahap negosiasi — form dikunci read-only.
-const DECIDABLE_STATUSES = ['scheduled', 'in_progress'];
+const DECIDABLE_STATUSES = ['appointment', 'work_in_progress'];
 
 // Status di mana section invoice viewer relevan ditampilkan — harus sinkron
 // dengan $showInvoiceViewer di InspectionReportController::show().
-const INVOICE_VISIBLE_STATUSES = ['quality_control', 'completed'];
+const INVOICE_VISIBLE_STATUSES = ['quality_control', 'invoice_preparation', 'completed'];
 
 // Harga baru dianggap final mulai quality_control (final_price_snapshot sudah
-// terkunci untuk item approved). Sebelum itu (scheduled/in_progress), harga
+// terkunci untuk item approved). Sebelum itu (appointment/work_in_progress), harga
 // yang ditampilkan masih estimasi karena customer masih bisa approve/reject.
-const FINAL_PRICING_STATUSES = ['quality_control', 'follow_up', 'completed'];
+const FINAL_PRICING_STATUSES = ['quality_control', 'invoice_preparation', 'completed'];
 
 // Harga tampil per item: pakai final_price_snapshot kalau sudah terkunci
 // (approved), kalau belum (pending/rejected) hitung on-the-fly dari
@@ -50,7 +63,7 @@ function itemDisplayPrice(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-// Subtotal pre-PPN per item, dihitung dari raw fields — sama seperti admin
+// Subtotal pre-VAT per item, dihitung dari raw fields — sama seperti admin
 // Show.jsx, konsisten untuk item locked maupun belum.
 function itemSubtotal(item) {
     const itemAfterDiscount = item.cost_item * (1 - (item.discount_item_percent ?? 0) / 100);
@@ -59,13 +72,19 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
+// "Invoice 1", "Invoice 2", dst — di-derive dari sort_order, sama pola dengan
+// admin Show.jsx (belum ada kolom `label` tersendiri di service_order_invoices).
+function sortedInvoices(invoices) {
+    return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+}
+
 export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
     const [items, setItems] = useState(initialItems);
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    // Order masih bisa terima keputusan customer selama statusnya scheduled/in_progress
+    // Order masih bisa terima keputusan customer selama statusnya appointment/work_in_progress
     // DAN masih ada item pending. Begitu order pindah status lain (SA sudah lanjutkan proses)
     // atau semua item sudah diputuskan, form dikunci.
     const canDecide = DECIDABLE_STATUSES.includes(order.status);
@@ -81,23 +100,23 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     );
     const hasDecisionToSubmit = decidedThisRound.length > 0;
 
-    // Breakdown PPN: filter sama seperti totalCost sebelumnya (exclude rejected),
-    // subtotal pre-PPN lalu dikenakan settings.ppn_percent — pola yang sama
+    // Breakdown VAT: filter sama seperti totalCost sebelumnya (exclude rejected),
+    // subtotal pre-VAT lalu dikenakan settings.ppn_percent — pola yang sama
     // dengan backend InspectionItemPricingService.
-    const ppnPercent = Number(settings.ppn_percent ?? 0);
+    const vatPercent = Number(settings.ppn_percent ?? 0);
     const subtotal = items
         .filter((item) => item.status !== 'rejected')
         .reduce((sum, item) => sum + itemSubtotal(item), 0);
-    const ppnAmount = subtotal * (ppnPercent / 100);
-    const grandTotal = subtotal + ppnAmount;
+    const vatAmount = subtotal * (vatPercent / 100);
+    const grandTotal = subtotal + vatAmount;
 
     // FIX #3: total khusus untuk modal konfirmasi — hanya item yang BARU
     // di-approve di sesi ini, bukan total keseluruhan order. Sekarang sudah
-    // termasuk PPN, sama seperti Grand Total di section 3.
+    // termasuk VAT, sama seperti Grand Total di section 3.
     const decidedApprovedSubtotal = decidedThisRound
         .filter((item) => item.status === 'approved')
         .reduce((sum, item) => sum + itemSubtotal(item), 0);
-    const decidedApprovedTotal = decidedApprovedSubtotal * (1 + ppnPercent / 100);
+    const decidedApprovedTotal = decidedApprovedSubtotal * (1 + vatPercent / 100);
 
     const handleDecision = (itemId, decision) => {
         setItems((prev) =>
@@ -135,11 +154,13 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
         ? `https://wa.me/${serviceAdvisor.phone.replace(/\D/g, '')}`
         : null;
 
-    // Section invoice hanya relevan mulai quality_control/completed — sinkron
-    // dengan controller yang cuma kirim invoice_pdf_path pada status tsb
-    // (di luar itu nilainya selalu null, jadi section otomatis tersembunyi).
+    // Section invoice hanya relevan mulai quality_control/invoice_preparation/
+    // completed — daftar diambil dari order.invoices (relasi), bisa kosong
+    // kalau SA belum sempat upload meski statusnya sudah masuk tahap ini.
+    const showEstimationSection = ESTIMATION_VISIBLE_STATUSES.includes(order.status);
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
     const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
+    const invoices = sortedInvoices(order.invoices);
 
     return (
         <PublicLayout>
@@ -237,9 +258,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-medium text-gray-900">{item.name}</span>
-                                        {item.is_urgent && (
-                                            <span className="rounded bg-urgent/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-urgent">
-                                                Urgent
+                                        {item.group && (
+                                            <span className="rounded bg-vw-grey-light px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-vw-grey">
+                                                {GROUP_LABEL[item.group] ?? item.group}
                                             </span>
                                         )}
                                         <StatusStamp status={item.status} />
@@ -284,9 +305,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                             </span>
                         </div>
                         <div className="flex items-center justify-between text-sm text-vw-grey">
-                            <span>PPN ({ppnPercent}%)</span>
+                            <span>VAT ({vatPercent}%)</span>
                             <span className="font-mono text-gray-700">
-                                Rp {ppnAmount.toLocaleString('id-ID')}
+                                Rp {vatAmount.toLocaleString('id-ID')}
                             </span>
                         </div>
                         <div className="flex items-center justify-between border-t border-vw-grey-light pt-1.5">
@@ -325,35 +346,83 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     )}
                 </section>
 
-                {/* Invoice viewer — muncul mulai status quality_control/completed
-                    (PROJECT-RULES.md bagian 6, tahap 3 & 5). Kalau order sudah di
-                    tahap ini tapi SA belum sempat upload, tampilkan pesan "belum
-                    tersedia" alih-alih menyembunyikan section total. */}
+                {/* Invoice viewer — muncul mulai status quality_control/
+                    invoice_preparation/completed. Sekarang render daftar dari
+                    order.invoices (bisa lebih dari 1 file), bukan 1 link tunggal.
+                    Kalau order sudah di tahap ini tapi SA belum sempat upload,
+                    tampilkan pesan "belum tersedia" alih-alih menyembunyikan
+                    section total. */}
+                {/* Estimation Form — muncul HANYA saat work_in_progress, list PDF per group */}
+                {showEstimationSection && (
+                    <>
+                        <hr className="my-8 border-vw-grey-light" />
+                        <section className="px-6">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
+                                Estimation Form
+                            </h2>
+
+                            {order.estimationDocuments?.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                    {order.estimationDocuments.map((doc) => (
+                                        <a
+                                            key={doc.id}
+                                            href={`/storage/${doc.pdf_path}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                        >
+                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                                <FileText className="h-4 w-4" />
+                                            </span>
+                                            <span>
+                                                <span className="block font-medium text-gray-900">
+                                                    {GROUP_LABEL[doc.group] ?? doc.group} Estimation (PDF)
+                                                </span>
+                                                <span className="text-xs text-vw-grey">Opens in a new tab</span>
+                                            </span>
+                                        </a>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
+                                    Estimation form is being prepared and will appear here shortly.
+                                </p>
+                            )}
+                        </section>
+                    </>
+                )}
+
+                {/* Invoice Form — muncul mulai quality_control/invoice_preparation/completed */}
                 {showInvoiceSection && (
                     <>
                         <hr className="my-8 border-vw-grey-light" />
                         <section className="px-6">
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
-                                Invoice
+                                Invoice Form
                             </h2>
 
-                            {order.invoice_pdf_path ? (
-                                <a
-                                    href={`/storage/${order.invoice_pdf_path}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-3 flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
-                                >
-                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
-                                        <FileText className="h-4 w-4" />
-                                    </span>
-                                    <span>
-                                        <span className="block font-medium text-gray-900">
-                                            View invoice (PDF)
-                                        </span>
-                                        <span className="text-xs text-vw-grey">Opens in a new tab</span>
-                                    </span>
-                                </a>
+                            {invoices.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                    {invoices.map((invoice, index) => (
+                                        <a
+                                            key={invoice.id}
+                                            href={`/storage/${invoice.file_path}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                        >
+                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                                <FileText className="h-4 w-4" />
+                                            </span>
+                                            <span>
+                                                <span className="block font-medium text-gray-900">
+                                                    View {invoice.label ?? `Invoice ${index + 1}`} (PDF)
+                                                </span>
+                                                <span className="text-xs text-vw-grey">Opens in a new tab</span>
+                                            </span>
+                                        </a>
+                                    ))}
+                                </div>
                             ) : (
                                 <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
                                     Invoice is being prepared and will appear here shortly.
@@ -366,7 +435,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                 <hr className="my-8 border-vw-grey-light" />
 
                 {/* CTA Hubungi SA — hanya muncul saat order sedang menunggu tindak lanjut customer */}
-                {order.status === 'follow_up' && waHref && (
+                {order.status === 'invoice_preparation' && waHref && (
                     <section className="px-6">
                         <div className="flex items-center justify-between gap-4 rounded-xl border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
                             <div>
@@ -459,7 +528,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                         {/* FIX #3: total di modal hanya menjumlahkan item yang BARU
                             di-approve di sesi ini, bukan totalCost seluruh order.
-                            Sekarang sudah termasuk PPN, sama seperti Grand Total
+                            Sekarang sudah termasuk VAT, sama seperti Grand Total
                             di section 3. */}
                         <div className="mt-4 space-y-1 border-t border-vw-grey-light pt-3">
                             <div className="flex items-center justify-between text-xs text-vw-grey">
@@ -469,7 +538,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 </span>
                             </div>
                             <div className="flex items-center justify-between text-xs text-vw-grey">
-                                <span>PPN ({ppnPercent}%)</span>
+                                <span>VAT ({vatPercent}%)</span>
                                 <span className="font-mono">
                                     Rp {(decidedApprovedTotal - decidedApprovedSubtotal).toLocaleString('id-ID')}
                                 </span>

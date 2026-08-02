@@ -18,7 +18,13 @@ return new class extends Migration
             $table->decimal('discount_item_percent', 5, 2)->default(0);
             $table->decimal('discount_labour_percent', 5, 2)->default(0);
             $table->decimal('final_price_snapshot', 12, 2)->nullable();
-            $table->boolean('is_urgent')->default(false);
+            $table->enum('group', [
+                'related',
+                'safety',
+                'durability',
+                'experience',
+                'appearance',
+            ]);
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->timestamp('decided_at')->nullable();
             $table->timestamps();

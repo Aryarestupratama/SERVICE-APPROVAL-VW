@@ -15,21 +15,25 @@ class InspectionReportController extends Controller
     public function show(string $token)
     {
         $serviceOrder = ServiceOrder::where('inspection_token', $token)
-            ->with(['vehicle.customer', 'serviceAdvisor', 'videos', 'inspectionItems'])
+            ->with(['vehicle.customer', 'serviceAdvisor', 'videos', 'inspectionItems', 'invoices', 'estimationDocuments'])
             ->firstOrFail();
 
         if ($serviceOrder->isInspectionLinkExpired()) {
             return Inertia::render('Public/LinkExpired');
         }
 
-        // Halaman publik mengasumsikan settings sudah pasti ada (bukan seperti
-        // Admin\SettingController::edit() yang harus toleran terhadap tabel
-        // masih kosong) — lihat PROJECT-RULES.md bagian 4.
         $settings = Setting::current();
 
-        // Section viewer PDF invoice (bagian 5, revisi 2026-07-31) hanya
-        // muncul mulai status quality_control/completed.
-        $showInvoiceViewer = in_array($serviceOrder->status, ['quality_control', 'completed'], true);
+        // Section "Estimation Form" vs "Invoice Form" dinamis berdasarkan status
+        // (PROJECT-RULES.md bagian 5) — hanya salah satu yang aktif di satu waktu,
+        // bukan 2 section terpisah selamanya.
+        $showEstimationViewer = $serviceOrder->status === ServiceOrder::STATUS_WORK_IN_PROGRESS;
+
+        $showInvoiceViewer = in_array($serviceOrder->status, [
+            ServiceOrder::STATUS_QUALITY_CONTROL,
+            ServiceOrder::STATUS_INVOICE_PREPARATION,
+            ServiceOrder::STATUS_COMPLETED,
+        ], true);
 
         return Inertia::render('Public/InspectionReport', [
             'token' => $token,
@@ -49,7 +53,6 @@ class InspectionReportController extends Controller
                 'personal_message' => $serviceOrder->personal_message,
                 'inspection_fee' => (float) $serviceOrder->inspection_fee,
                 'inspection_fee_note' => $serviceOrder->inspection_fee_note,
-                'invoice_pdf_path' => $showInvoiceViewer ? $serviceOrder->invoice_pdf_path : null,
             ],
             'vehicle' => [
                 'plate_number' => $serviceOrder->vehicle->plate_number,
@@ -80,16 +83,37 @@ class InspectionReportController extends Controller
                 'final_price_snapshot' => $item->final_price_snapshot !== null
                     ? (float) $item->final_price_snapshot
                     : null,
-                'is_urgent' => $item->is_urgent,
+                'group' => $item->group,
                 'status' => $item->status,
             ]),
+            // Invoice bisa lebih dari 1 file — kosong kalau belum masuk status yang
+            // relevan, supaya frontend tidak perlu tahu logika status.
+            'invoices' => $showInvoiceViewer
+                ? $serviceOrder->invoices->map(fn ($invoice) => [
+                    'id' => $invoice->id,
+                    'file_path' => $invoice->file_path,
+                    'label' => $invoice->label,
+                ])
+                : [],
+            // Estimation form per kelompok — hanya kirim yang benar-benar sudah
+            // ada file-nya (pdf_path terisi), dan hanya saat work_in_progress.
+            'estimationDocuments' => $showEstimationViewer
+                ? $serviceOrder->estimationDocuments
+                    ->filter(fn ($doc) => !empty($doc->pdf_path))
+                    ->map(fn ($doc) => [
+                        'id' => $doc->id,
+                        'group' => $doc->group,
+                        'pdf_path' => $doc->pdf_path,
+                    ])
+                    ->values()
+                : [],
         ]);
     }
 
     /**
      * Terima keputusan approve/reject untuk item-item yang MASIH PENDING, dari
      * modal konfirmasi final. Bisa dipanggil berkali-kali (negosiasi berulang)
-     * selama status order masih 'in_progress' dan masih ada item pending.
+     * selama status order masih 'work_in_progress' dan masih ada item pending.
      *
      * Item yang sudah 'approved' terkunci permanen (final_price_snapshot locked,
      * PROJECT-RULES.md bagian 2 & 7B) — tidak bisa didecide ulang. Item 'rejected'
@@ -107,12 +131,12 @@ class InspectionReportController extends Controller
             abort(410, 'This link has expired.');
         }
 
-        // Approval item terjadi di dalam tahap 'in_progress' (PROJECT-RULES.md
+        // Approval item terjadi di dalam tahap 'work_in_progress' (PROJECT-RULES.md
         // bagian 2: "Vehicle Check-in & Work Process, termasuk approval item
-        // customer... semua di tahap ini"). Order TETAP di 'in_progress' selama
+        // customer... semua di tahap ini"). Order TETAP di 'work_in_progress' selama
         // negosiasi berjalan — tidak auto-pindah tahap, SA yang memutuskan kapan
         // lanjut ke quality_control lewat ServiceOrderController::updateStatus().
-        if ($serviceOrder->status !== 'in_progress') {
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
             abort(409, 'This inspection report is not open for decisions.');
         }
 
@@ -199,10 +223,10 @@ class InspectionReportController extends Controller
 
                 // Satu-satunya transisi status utama yang otomatis di sini:
                 // kalau benar-benar semua item ditolak, order dibatalkan.
-                // Selain itu (approved semua/sebagian), status TETAP 'in_progress'
+                // Selain itu (approved semua/sebagian), status TETAP 'work_in_progress'
                 // — SA yang lanjutkan manual ke quality_control kapan siap.
                 if ($allRejected) {
-                    $updates['status'] = 'all_rejected_cancelled';
+                    $updates['status'] = ServiceOrder::STATUS_ALL_REJECTED_CANCELLED;
                 }
             }
 

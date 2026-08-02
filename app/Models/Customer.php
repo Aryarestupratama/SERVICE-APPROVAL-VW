@@ -7,8 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class Customer extends Model
 {
+    /**
+     * Salutation/title customer — label UI: "Prefix" (keputusan owner, final).
+     * PROJECT-RULES.md bagian 2.
+     */
+    public const TITLES = ['Mr.', 'Mrs.', 'Mss.'];
+
     protected $fillable = [
         'name',
+        'title',
         'phone',
         'email',
     ];

@@ -6,6 +6,21 @@ use Illuminate\Database\Eloquent\Model;
 
 class InspectionItem extends Model
 {
+    // Kelompok item inspeksi — urutan tetap sesuai tampilan (related = paling urgent)
+    public const GROUP_RELATED = 'related';
+    public const GROUP_SAFETY = 'safety';
+    public const GROUP_DURABILITY = 'durability';
+    public const GROUP_EXPERIENCE = 'experience';
+    public const GROUP_APPEARANCE = 'appearance';
+
+    public const GROUPS = [
+        self::GROUP_RELATED,
+        self::GROUP_SAFETY,
+        self::GROUP_DURABILITY,
+        self::GROUP_EXPERIENCE,
+        self::GROUP_APPEARANCE,
+    ];
+
     protected $fillable = [
         'service_order_id',
         'name',
@@ -15,7 +30,7 @@ class InspectionItem extends Model
         'discount_item_percent',
         'discount_labour_percent',
         'final_price_snapshot',
-        'is_urgent',
+        'group',
         'status', // pending, approved, rejected
         'decided_at',
     ];
@@ -28,7 +43,6 @@ class InspectionItem extends Model
             'discount_item_percent' => 'decimal:2',
             'discount_labour_percent' => 'decimal:2',
             'final_price_snapshot' => 'decimal:2',
-            'is_urgent' => 'boolean',
             'decided_at' => 'datetime',
         ];
     }

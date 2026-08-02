@@ -9,10 +9,10 @@ use Illuminate\Support\Carbon;
 class ServiceOrder extends Model
 {
     // Status utama order — 5 tahap alur + 1 status cabang (batal)
-    public const STATUS_SCHEDULED = 'scheduled';
-    public const STATUS_IN_PROGRESS = 'in_progress';
+    public const STATUS_APPOINTMENT = 'appointment';
+    public const STATUS_WORK_IN_PROGRESS = 'work_in_progress';
     public const STATUS_QUALITY_CONTROL = 'quality_control';
-    public const STATUS_FOLLOW_UP = 'follow_up';
+    public const STATUS_INVOICE_PREPARATION = 'invoice_preparation';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_ALL_REJECTED_CANCELLED = 'all_rejected_cancelled';
 
@@ -34,12 +34,6 @@ class ServiceOrder extends Model
         'personal_message',
         'inspection_token',
         'inspection_token_expires_at',
-        'invoice_pdf_path',
-        'invoice_uploaded_at',
-        'invoice_uploaded_by',
-        'follow_up_deadline',
-        'follow_up_reminder_sent_at',
-        'follow_up_escalated_to_admin_at',
         'finalized_at',
     ];
 
@@ -48,10 +42,6 @@ class ServiceOrder extends Model
         return [
             'inspection_fee' => 'decimal:2',
             'inspection_token_expires_at' => 'datetime',
-            'invoice_uploaded_at' => 'datetime',
-            'follow_up_deadline' => 'datetime',
-            'follow_up_reminder_sent_at' => 'datetime',
-            'follow_up_escalated_to_admin_at' => 'datetime',
             'finalized_at' => 'datetime',
         ];
     }
@@ -95,11 +85,6 @@ class ServiceOrder extends Model
         return $this->belongsTo(User::class, 'technician_id');
     }
 
-    public function invoiceUploadedBy()
-    {
-        return $this->belongsTo(User::class, 'invoice_uploaded_by');
-    }
-
     public function videos()
     {
         return $this->hasMany(ServiceOrderVideo::class)->orderBy('sort_order');
@@ -110,6 +95,16 @@ class ServiceOrder extends Model
         return $this->hasMany(InspectionItem::class);
     }
 
+    public function estimationDocuments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ServiceOrderEstimationDocument::class);
+    }
+
+    public function invoices()
+    {
+        return $this->hasMany(ServiceOrderInvoice::class)->orderBy('sort_order');
+    }
+
     // Helper cek link publik masih valid atau sudah expired
     public function isInspectionLinkExpired(): bool
     {
@@ -117,9 +112,12 @@ class ServiceOrder extends Model
             && $this->inspection_token_expires_at->isPast();
     }
 
-    // Halaman publik wajib tampilkan viewer invoice kalau ini true
+    // Halaman publik & guard status 'completed' wajib cek ini — order dianggap
+    // punya invoice kalau minimal 1 baris ada di service_order_invoices
+    // (PROJECT-RULES bagian 7 poin 2: guard completed cek tabel ini, bukan
+    // lagi kolom invoice_pdf_path yang sudah dihapus).
     public function hasInvoiceUploaded(): bool
     {
-        return ! empty($this->invoice_pdf_path);
+        return $this->invoices()->exists();
     }
 }

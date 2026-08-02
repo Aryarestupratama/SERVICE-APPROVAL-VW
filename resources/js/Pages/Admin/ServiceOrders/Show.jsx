@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm } from '@inertiajs/react';
+import { useForm, router } from '@inertiajs/react';
 import { Badge } from '@/Components/ui/badge';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -22,30 +22,27 @@ import {
 } from '@/Components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 
-// Sinkron dengan ServiceOrderController::ALLOWED_TRANSITIONS (backend tetap
-// jadi sumber kebenaran/validasi terakhir — ini cuma untuk UX, supaya user
-// nggak lihat opsi yang bakal ditolak backend).
 const ALLOWED_TRANSITIONS = {
-    scheduled: ['in_progress'],
-    in_progress: ['quality_control', 'all_rejected_cancelled'],
-    quality_control: ['follow_up'],
-    follow_up: ['completed'],
+    appointment: ['work_in_progress'],
+    work_in_progress: ['quality_control', 'all_rejected_cancelled'],
+    quality_control: ['invoice_preparation'],
+    invoice_preparation: ['completed'],
 };
 
 const STATUS_VARIANT = {
-    scheduled: 'secondary',
-    in_progress: 'default',
+    appointment: 'secondary',
+    work_in_progress: 'default',
     quality_control: 'default',
-    follow_up: 'default',
+    invoice_preparation: 'default',
     completed: 'success',
     all_rejected_cancelled: 'destructive',
 };
 
 const STATUS_LABEL = {
-    scheduled: 'Scheduled',
-    in_progress: 'In Progress',
+    appointment: 'Appointment',
+    work_in_progress: 'Work In Progress',
     quality_control: 'Quality Control',
-    follow_up: 'Follow Up',
+    invoice_preparation: 'Invoice Preparation',
     completed: 'Completed',
     all_rejected_cancelled: 'Rejected & Cancelled',
 };
@@ -60,6 +57,25 @@ const ITEM_STATUS_LABEL = {
     pending: 'Waiting Approval',
 };
 
+// Urutan tetap sesuai InspectionItem::GROUPS / ServiceOrderEstimationDocument::GROUPS
+const GROUPS = ['related', 'safety', 'durability', 'experience', 'appearance'];
+
+const GROUP_LABEL = {
+    related: 'Related',
+    safety: 'Safety',
+    durability: 'Durability',
+    experience: 'Experience',
+    appearance: 'Appearance',
+};
+
+const GROUP_VARIANT = {
+    related: 'destructive',
+    safety: 'default',
+    durability: 'secondary',
+    experience: 'secondary',
+    appearance: 'outline',
+};
+
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
@@ -68,10 +84,6 @@ function formatCurrency(value) {
     }).format(Number(value ?? 0));
 }
 
-// Total per item: pakai final_price_snapshot kalau sudah terkunci (approved),
-// kalau belum (pending/rejected) hitung on-the-fly dari cost - discount.
-// Ini cuma untuk tampilan; sumber kebenaran hitungan tetap
-// InspectionItemPricingService di backend.
 function itemDisplayTotal(item) {
     if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
         return Number(item.final_price_snapshot);
@@ -85,9 +97,6 @@ function itemDisplayTotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-// Subtotal pre-PPN, dihitung ulang dari raw fields (cost_item/cost_labour/diskon)
-// yang tetap tersimpan meski item sudah locked — jadi konsisten dipakai untuk
-// SEMUA item (approved maupun belum), tidak bergantung final_price_snapshot.
 function itemSubtotal(item) {
     const itemAfterDiscount =
         Number(item.cost_item) * (1 - Number(item.discount_item_percent ?? 0) / 100);
@@ -97,17 +106,55 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-export default function Show({ order, settings }) {
+// Breakdown subtotal/VAT/grand total per kelompok — pola sama dengan breakdown
+// gabungan, cuma di-scope filter per group.
+function groupBreakdown(items, group, vatPercent) {
+    const groupItems = items.filter((item) => item.group === group);
+    const subtotal = groupItems.reduce((sum, item) => sum + itemSubtotal(item), 0);
+    const vatAmount = subtotal * (vatPercent / 100);
+    return {
+        items: groupItems,
+        subtotal,
+        vatAmount,
+        grandTotal: subtotal + vatAmount,
+    };
+}
+
+function sortedInvoices(invoices) {
+    return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+}
+
+// Map estimationDocuments (array, bisa cuma sebagian group yang ada baris-nya)
+// jadi lookup by group — supaya gampang render 5 slot tetap termasuk yang
+// belum pernah diupload (undefined).
+function estimationDocsByGroup(docs) {
+    const map = {};
+    (docs ?? []).forEach((doc) => {
+        map[doc.group] = doc;
+    });
+    return map;
+}
+
+export default function Show({ order, settings, maxInvoices }) {
     const [pendingStatus, setPendingStatus] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
-    // FIX: status harus ada di form state (useForm), bukan dititip lewat
-    // options.data saat patch() — Inertia selalu mengirim form.data, jadi
-    // options.data diabaikan dan sebelumnya request terkirim kosong.
+    // Group mana yang lagi dipilih file-nya di form upload estimation form,
+    // supaya 1 form bisa dipakai untuk semua slot (bukan 5 form terpisah).
+    const [selectedGroup, setSelectedGroup] = useState(null);
+
     const { setData, patch, processing } = useForm({ status: '' });
-    const invoiceForm = useForm({ invoice_pdf: null });
+    const invoiceForm = useForm({ invoice_pdfs: [] });
+    const estimationForm = useForm({ group: '', pdf: null });
 
     const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
+    const invoices = sortedInvoices(order.invoices);
+    const hasInvoice = invoices.length > 0;
+    const remainingSlots = (maxInvoices ?? 5) - invoices.length;
+
+    const docsByGroup = estimationDocsByGroup(order.estimation_documents);
+    const vatPercent = Number(settings?.ppn_percent ?? 0);
+    const canEditEstimationDocs = order.status === 'work_in_progress';
 
     const handleSelectStatus = (value) => {
         setPendingStatus(value);
@@ -125,6 +172,10 @@ export default function Show({ order, settings }) {
         });
     };
 
+    const handleInvoiceFilesChange = (e) => {
+        invoiceForm.setData('invoice_pdfs', Array.from(e.target.files));
+    };
+
     const handleInvoiceUpload = (e) => {
         e.preventDefault();
         invoiceForm.post(route('admin.service-orders.upload-invoice', order.id), {
@@ -134,19 +185,47 @@ export default function Show({ order, settings }) {
         });
     };
 
-    // Breakdown PPN: subtotal dihitung dari raw cost fields (konsisten untuk
-    // semua item), PPN & grand total mengikuti settings.ppn_percent — pola
-    // yang sama dengan InspectionItemPricingService::lockFinalPrice() di backend.
-    const ppnPercent = Number(settings?.ppn_percent ?? 0);
+    const handleDeleteInvoice = (invoiceId) => {
+        if (!confirm('Hapus invoice PDF ini?')) return;
+
+        router.delete(
+            route('admin.service-orders.delete-invoice', [order.id, invoiceId]),
+            { preserveScroll: true }
+        );
+    };
+
+    const handleEstimationFileChange = (group, file) => {
+        setSelectedGroup(group);
+        estimationForm.setData({ group, pdf: file });
+    };
+
+    const handleEstimationUpload = (e) => {
+        e.preventDefault();
+        estimationForm.post(route('admin.service-orders.upload-estimation-document', order.id), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => {
+                estimationForm.reset();
+                setSelectedGroup(null);
+            },
+        });
+    };
+
+    const handleDeleteEstimationDoc = (doc) => {
+        if (!confirm(`Hapus estimation form untuk kelompok ${GROUP_LABEL[doc.group]}?`)) return;
+
+        router.delete(
+            route('admin.service-orders.delete-estimation-document', [order.id, doc.id]),
+            { preserveScroll: true }
+        );
+    };
+
     const subtotal =
         order.inspection_items?.reduce((sum, item) => sum + itemSubtotal(item), 0) ?? 0;
-    const ppnAmount = subtotal * (ppnPercent / 100);
-    const grandTotal = subtotal + ppnAmount;
+    const vatAmount = subtotal * (vatPercent / 100);
+    const grandTotal = subtotal + vatAmount;
 
-    // 'completed' hanya boleh dipilih kalau invoice sudah diupload — guard ini
-    // cuma UX, backend tetap validasi ulang di updateStatus().
-    const isCompletedBlocked =
-        !order.invoice_pdf_path && availableTransitions.includes('completed');
+    const isCompletedBlocked = !hasInvoice && availableTransitions.includes('completed');
 
     return (
         <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
@@ -165,7 +244,7 @@ export default function Show({ order, settings }) {
                                         Items: {order.items_approval_status.replace('_', ' ')}
                                     </Badge>
                                 )}
-                                {order.status === 'follow_up' && (
+                                {order.status === 'invoice_preparation' && (
                                     <Badge variant="outline" className="border-amber-500 text-amber-600">
                                         Waiting for Pickup
                                     </Badge>
@@ -200,7 +279,7 @@ export default function Show({ order, settings }) {
                                 </p>
                             </div>
                             <div>
-                                <p className="text-vw-grey">NIK (Nomor Identitas Kendaraan)</p>
+                                <p className="text-vw-grey">VIN/Chasis Number</p>
                                 <p className="font-medium text-gray-900">
                                     {order.vehicle?.vin ?? '—'}
                                 </p>
@@ -237,17 +316,20 @@ export default function Show({ order, settings }) {
                                         <div key={item.id} className="space-y-2 py-3">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <p className="font-medium text-gray-900">
+                                                    <div className="font-medium text-gray-900">
                                                         {item.name}
-                                                        {item.is_urgent && (
+                                                        {item.group && (
                                                             <Badge
-                                                                variant="destructive"
+                                                                variant={
+                                                                    GROUP_VARIANT[item.group] ??
+                                                                    'secondary'
+                                                                }
                                                                 className="ml-2 align-middle"
                                                             >
-                                                                Urgent
+                                                                {GROUP_LABEL[item.group] ?? item.group}
                                                             </Badge>
                                                         )}
-                                                    </p>
+                                                    </div>
                                                     {item.description && (
                                                         <p className="text-sm text-vw-grey">
                                                             {item.description}
@@ -271,7 +353,7 @@ export default function Show({ order, settings }) {
 
                                             <div className="grid grid-cols-2 gap-2 text-xs text-vw-grey sm:grid-cols-4">
                                                 <div>
-                                                    <span className="block">Item price</span>
+                                                    <span className="block">Part price</span>
                                                     <span className="text-gray-900">
                                                         {formatCurrency(item.cost_item)}
                                                     </span>
@@ -319,8 +401,8 @@ export default function Show({ order, settings }) {
                                             <p className="text-gray-900">{formatCurrency(subtotal)}</p>
                                         </div>
                                         <div className="flex items-center justify-between text-sm">
-                                            <p className="text-vw-grey">PPN ({ppnPercent}%)</p>
-                                            <p className="text-gray-900">{formatCurrency(ppnAmount)}</p>
+                                            <p className="text-vw-grey">VAT ({vatPercent}%)</p>
+                                            <p className="text-gray-900">{formatCurrency(vatAmount)}</p>
                                         </div>
                                         <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
                                             <p className="font-semibold text-gray-900">Grand Total</p>
@@ -333,6 +415,175 @@ export default function Show({ order, settings }) {
                             ) : (
                                 <p className="text-sm text-vw-grey">No inspection items yet.</p>
                             )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Breakdown per kelompok — subtotal/VAT/grand total masing-masing
+                        group, plus daftar item di dalamnya. Cuma group yang punya
+                        minimal 1 item yang ditampilkan. */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Cost Breakdown by Group</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {GROUPS.map((group) => {
+                                const breakdown = groupBreakdown(
+                                    order.inspection_items ?? [],
+                                    group,
+                                    vatPercent
+                                );
+
+                                if (breakdown.items.length === 0) return null;
+
+                                return (
+                                    <div
+                                        key={group}
+                                        className="rounded-lg border border-vw-grey/10 p-3"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <Badge variant={GROUP_VARIANT[group] ?? 'secondary'}>
+                                                {GROUP_LABEL[group]}
+                                            </Badge>
+                                            <span className="text-xs text-vw-grey">
+                                                {breakdown.items.length} item
+                                                {breakdown.items.length > 1 ? 's' : ''}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 space-y-1 text-sm">
+                                            <div className="flex items-center justify-between text-vw-grey">
+                                                <span>Subtotal</span>
+                                                <span>{formatCurrency(breakdown.subtotal)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-vw-grey">
+                                                <span>VAT ({vatPercent}%)</span>
+                                                <span>{formatCurrency(breakdown.vatAmount)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1 font-medium text-gray-900">
+                                                <span>Group Total</span>
+                                                <span>{formatCurrency(breakdown.grandTotal)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {(order.inspection_items?.length ?? 0) === 0 && (
+                                <p className="text-sm text-vw-grey">No inspection items yet.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Estimation Forms per group — 5 slot tetap, tiap slot bisa
+                        upload/replace/hapus independen. Hanya editable saat
+                        work_in_progress. */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Estimation Forms</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {!canEditEstimationDocs && (
+                                <p className="text-xs text-vw-grey">
+                                    Estimation forms can only be uploaded or changed while the
+                                    order is at Work In Progress.
+                                </p>
+                            )}
+
+                            {GROUPS.map((group) => {
+                                const doc = docsByGroup[group];
+                                const hasFile = doc?.pdf_path;
+
+                                return (
+                                    <div
+                                        key={group}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-vw-grey/10 p-3"
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <Badge variant={GROUP_VARIANT[group] ?? 'secondary'}>
+                                                {GROUP_LABEL[group]}
+                                            </Badge>
+
+                                            {hasFile ? (
+                                                <div className="mt-1.5 space-y-0.5">
+                                                    <aa
+                                                        href={`/storage/${doc.pdf_path}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm text-blue-600 underline"
+                                                    >
+                                                        View current file
+                                                    </aa>
+                                                    {doc.uploaded_at && (
+                                                        <p className="text-xs text-vw-grey">
+                                                            Uploaded{' '}
+                                                            {new Date(
+                                                                doc.uploaded_at
+                                                            ).toLocaleString('id-ID')}
+                                                            {doc.uploaded_by?.name &&
+                                                                ` by ${doc.uploaded_by.name}`}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <p className="mt-1.5 text-sm text-vw-grey">
+                                                    No file uploaded yet.
+                                                </p>
+                                            )}
+
+                                            {canEditEstimationDocs && (
+                                                <form
+                                                    onSubmit={handleEstimationUpload}
+                                                    className="mt-2 flex items-center gap-2"
+                                                >
+                                                    <Input
+                                                        type="file"
+                                                        accept="application/pdf"
+                                                        className="text-xs"
+                                                        onChange={(e) =>
+                                                            handleEstimationFileChange(
+                                                                group,
+                                                                e.target.files[0]
+                                                            )
+                                                        }
+                                                    />
+                                                    <Button
+                                                        type="submit"
+                                                        size="sm"
+                                                        disabled={
+                                                            estimationForm.processing ||
+                                                            selectedGroup !== group ||
+                                                            !estimationForm.data.pdf
+                                                        }
+                                                    >
+                                                        {estimationForm.processing &&
+                                                        selectedGroup === group
+                                                            ? 'Uploading...'
+                                                            : hasFile
+                                                            ? 'Replace'
+                                                            : 'Upload'}
+                                                    </Button>
+                                                </form>
+                                            )}
+                                            {selectedGroup === group &&
+                                                estimationForm.errors.pdf && (
+                                                    <p className="mt-1 text-xs text-red-600">
+                                                        {estimationForm.errors.pdf}
+                                                    </p>
+                                                )}
+                                        </div>
+
+                                        {hasFile && canEditEstimationDocs && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="shrink-0 text-red-600 hover:text-red-700"
+                                                onClick={() => handleDeleteEstimationDoc(doc)}
+                                            >
+                                                Delete
+                                            </Button>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </CardContent>
                     </Card>
                 </div>
@@ -359,14 +610,11 @@ export default function Show({ order, settings }) {
                                                 <SelectItem
                                                     key={status}
                                                     value={status}
-                                                    disabled={
-                                                        status === 'completed' &&
-                                                        !order.invoice_pdf_path
-                                                    }
+                                                    disabled={status === 'completed' && !hasInvoice}
                                                 >
                                                     {STATUS_LABEL[status]}
                                                     {status === 'completed' &&
-                                                        !order.invoice_pdf_path &&
+                                                        !hasInvoice &&
                                                         ' (upload invoice first)'}
                                                 </SelectItem>
                                             ))}
@@ -374,8 +622,8 @@ export default function Show({ order, settings }) {
                                     </Select>
                                     {isCompletedBlocked && (
                                         <p className="text-xs text-red-600">
-                                            Upload invoice PDF dulu sebelum bisa menandai order
-                                            completed.
+                                            Upload minimal 1 invoice PDF dulu sebelum bisa menandai
+                                            order completed.
                                         </p>
                                     )}
                                 </>
@@ -390,62 +638,79 @@ export default function Show({ order, settings }) {
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Invoice PDF</CardTitle>
+                            <CardTitle>Invoice PDF{invoices.length > 1 ? 's' : ''}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {order.invoice_pdf_path ? (
-                                <div className="space-y-1">
-                                    <a
-                                        href={`/storage/${order.invoice_pdf_path}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-blue-600 underline"
-                                    >
-                                        View current invoice
-                                    </a>
-                                    {order.invoice_uploaded_at && (
-                                        <p className="text-xs text-vw-grey">
-                                            Uploaded{' '}
-                                            {new Date(order.invoice_uploaded_at).toLocaleString(
-                                                'id-ID'
+                            {hasInvoice ? (
+                                <ul className="space-y-2">
+                                    {invoices.map((invoice, index) => (
+                                        <li
+                                            key={invoice.id}
+                                            className="flex items-center justify-between gap-2 rounded border border-vw-grey/10 p-2"
+                                        >
+                                            <div className="space-y-0.5">
+                                                <a
+                                                    href={`/storage/${invoice.file_path}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-sm text-blue-600 underline"
+                                                >
+                                                    {invoice.label ?? `Invoice ${index + 1}`}
+                                                </a>
+                                                {invoice.uploaded_at && (
+                                                    <p className="text-xs text-vw-grey">
+                                                        Uploaded{' '}
+                                                        {new Date(invoice.uploaded_at).toLocaleString(
+                                                            'id-ID'
+                                                        )}
+                                                        {invoice.uploaded_by?.name &&
+                                                            ` by ${invoice.uploaded_by.name}`}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            {order.status !== 'completed' && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-red-600 hover:text-red-700"
+                                                    onClick={() => handleDeleteInvoice(invoice.id)}
+                                                >
+                                                    Delete
+                                                </Button>
                                             )}
-                                            {order.invoice_uploaded_by?.name &&
-                                                ` by ${order.invoice_uploaded_by.name}`}
-                                        </p>
-                                    )}
-                                </div>
+                                        </li>
+                                    ))}
+                                </ul>
                             ) : (
                                 <p className="text-sm text-vw-grey">No invoice uploaded yet.</p>
                             )}
 
                             {order.status !== 'completed' && (
                                 <form onSubmit={handleInvoiceUpload} className="space-y-2">
-                                    <Label htmlFor="invoice_pdf">
-                                        {order.invoice_pdf_path
-                                            ? 'Replace invoice'
-                                            : 'Upload invoice'}{' '}
-                                        (PDF)
+                                    <Label htmlFor="invoice_pdfs">
+                                        Upload invoice PDF(s) — {remainingSlots} slot
+                                        {remainingSlots === 1 ? '' : 's'} remaining
                                     </Label>
                                     <Input
-                                        id="invoice_pdf"
+                                        id="invoice_pdfs"
                                         type="file"
                                         accept="application/pdf"
-                                        onChange={(e) =>
-                                            invoiceForm.setData(
-                                                'invoice_pdf',
-                                                e.target.files[0]
-                                            )
-                                        }
+                                        multiple
+                                        disabled={remainingSlots <= 0}
+                                        onChange={handleInvoiceFilesChange}
                                     />
-                                    {invoiceForm.errors.invoice_pdf && (
+                                    {invoiceForm.errors.invoice_pdfs && (
                                         <p className="text-xs text-red-600">
-                                            {invoiceForm.errors.invoice_pdf}
+                                            {invoiceForm.errors.invoice_pdfs}
                                         </p>
                                     )}
                                     <Button
                                         type="submit"
                                         disabled={
-                                            invoiceForm.processing || !invoiceForm.data.invoice_pdf
+                                            invoiceForm.processing ||
+                                            invoiceForm.data.invoice_pdfs.length === 0 ||
+                                            remainingSlots <= 0
                                         }
                                         size="sm"
                                     >

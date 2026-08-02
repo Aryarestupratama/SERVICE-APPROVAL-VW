@@ -13,43 +13,37 @@ class ServiceOrderSeeder extends Seeder
         // ID user: 1 = admin, 2 = Budi (SA), 3 = Sarah (SA) — sesuai UserSeeder
         // ID vehicle: 1 = Tiguan (Andi), 2 = Polo (Rina), 3 = Golf (Hendra)
 
-        // --- Service Order #1: tahap "scheduled" (appointment/preparation), belum ada aktivitas pengerjaan ---
+        // --- Service Order #1: tahap "appointment" (belum ada aktivitas pengerjaan) ---
         $order1Id = DB::table('service_orders')->insertGetId([
             'vehicle_id' => 1,
             'service_advisor_id' => 2,
             'technician_id' => null,
             'work_order_number' => 1,
-            'status' => 'scheduled',
+            'status' => 'appointment',
             'items_approval_status' => 'pending',
             'inspection_fee' => 150000,
             'inspection_fee_note' => 'Biaya cek diagnostik standar',
             'personal_message' => null,
             'inspection_token' => null,
             'inspection_token_expires_at' => null,
-            'invoice_pdf_path' => null,
-            'invoice_uploaded_at' => null,
-            'invoice_uploaded_by' => null,
             'finalized_at' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        // --- Service Order #2: tahap "in_progress" (check-in & work process, item masih menunggu approval customer) ---
+        // --- Service Order #2: tahap "work_in_progress" (check-in & work process, item masih menunggu approval customer) ---
         $order2Id = DB::table('service_orders')->insertGetId([
             'vehicle_id' => 2,
             'service_advisor_id' => 2,
             'technician_id' => 2, // SA yang sama plotting dirinya sbg pengerjaan, contoh dummy
             'work_order_number' => 2,
-            'status' => 'in_progress',
+            'status' => 'work_in_progress',
             'items_approval_status' => 'pending',
             'inspection_fee' => 100000,
             'inspection_fee_note' => 'Biaya cek rem & suspensi',
             'personal_message' => 'Halo Kak Rina, berikut hasil inspeksi kendaraan Anda. Mohon dicek videonya ya.',
             'inspection_token' => Str::random(32),
             'inspection_token_expires_at' => now()->addDays(7),
-            'invoice_pdf_path' => null,
-            'invoice_uploaded_at' => null,
-            'invoice_uploaded_by' => null,
             'finalized_at' => null,
             'created_at' => now()->subDays(2),
             'updated_at' => now()->subDays(2),
@@ -76,7 +70,7 @@ class ServiceOrderSeeder extends Seeder
             'discount_item_percent' => 0,
             'discount_labour_percent' => 0,
             'final_price_snapshot' => null, // belum di-approve, belum dikunci
-            'is_urgent' => true,
+            'group' => 'safety',
             'status' => 'pending',
             'decided_at' => null,
             'created_at' => now(),
@@ -92,7 +86,7 @@ class ServiceOrderSeeder extends Seeder
             'discount_item_percent' => 0,
             'discount_labour_percent' => 0,
             'final_price_snapshot' => null,
-            'is_urgent' => false,
+            'group' => 'durability',
             'status' => 'pending',
             'decided_at' => null,
             'created_at' => now(),
@@ -112,11 +106,21 @@ class ServiceOrderSeeder extends Seeder
             'personal_message' => 'Halo Kak Hendra, servis sudah selesai, berikut rinciannya.',
             'inspection_token' => Str::random(32),
             'inspection_token_expires_at' => now()->subDays(3), // sudah lewat, karena sudah final
-            'invoice_pdf_path' => 'invoices/order-3-work-order-3.pdf',
-            'invoice_uploaded_at' => now()->subDays(3),
-            'invoice_uploaded_by' => 3, // Sarah (SA) yang upload
             'finalized_at' => now()->subDays(3),
             'created_at' => now()->subDays(10),
+            'updated_at' => now()->subDays(3),
+        ]);
+
+        // Invoice final sekarang baris terpisah di service_order_invoices (bisa lebih
+        // dari 1 file) — dummy ini cuma 1 baris, label tampil "Invoice 1" diturunkan
+        // dari sort_order + 1 di frontend, sama seperti pola label video.
+        DB::table('service_order_invoices')->insert([
+            'service_order_id' => $order3Id,
+            'file_path' => 'invoices/order-3-work-order-3.pdf',
+            'sort_order' => 0,
+            'uploaded_at' => now()->subDays(3),
+            'uploaded_by' => 3, // Sarah (SA) yang upload
+            'created_at' => now()->subDays(3),
             'updated_at' => now()->subDays(3),
         ]);
 
@@ -156,7 +160,7 @@ class ServiceOrderSeeder extends Seeder
             'discount_item_percent' => 0,
             'discount_labour_percent' => 0,
             'final_price_snapshot' => $item3aFinal,
-            'is_urgent' => false,
+            'group' => 'related',
             'status' => 'approved',
             'decided_at' => now()->subDays(5),
             'created_at' => now()->subDays(10),
@@ -173,7 +177,7 @@ class ServiceOrderSeeder extends Seeder
             'discount_item_percent' => 0,
             'discount_labour_percent' => 0,
             'final_price_snapshot' => null,
-            'is_urgent' => true,
+            'group' => 'related',
             'status' => 'rejected',
             'decided_at' => now()->subDays(5),
             'created_at' => now()->subDays(10),
@@ -204,8 +208,5 @@ class ServiceOrderSeeder extends Seeder
                 'updated_at' => now()->subDays(5),
             ],
         ]);
-
-        // Tidak ada lagi insert ke tabel `invoices` — invoice sekarang PDF upload
-        // yang path/metadata-nya sudah ditempel langsung di kolom service_orders di atas.
     }
 }
