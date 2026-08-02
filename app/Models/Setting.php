@@ -12,10 +12,15 @@ class Setting extends Model
         'hero_image_path',
         'address',
         'phone',
-        'whatsapp_number',
         'google_maps_url',
+        'google_maps_embed_url',
         'website_url',
         'ppn_percent',
+
+        // Thank You section (Revisi Besar #2, poin 9)
+        'era_phone',
+        'booking_whatsapp_phone',
+        'survey_form_url',
     ];
 
     protected function casts(): array

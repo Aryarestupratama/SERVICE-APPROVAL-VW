@@ -42,9 +42,17 @@ class InspectionReportController extends Controller
                 'logo_path' => $settings->logo_path,
                 'address' => $settings->address,
                 'phone' => $settings->phone,
-                'whatsapp_number' => $settings->whatsapp_number,
                 'google_maps_url' => $settings->google_maps_url,
+                'google_maps_embed_url' => $settings->google_maps_embed_url,
+                'website_url' => $settings->website_url,
                 'ppn_percent' => (float) $settings->ppn_percent,
+
+                // Thank You section (Revisi Besar #2, poin 9) — hanya dipakai
+                // JSX saat order.status === 'completed', tapi dikirim selalu
+                // supaya controller tidak perlu tahu logika kondisional ini.
+                'era_phone' => $settings->era_phone,
+                'booking_whatsapp_phone' => $settings->booking_whatsapp_phone,
+                'survey_form_url' => $settings->survey_form_url,
             ],
             'order' => [
                 'id' => $serviceOrder->id,

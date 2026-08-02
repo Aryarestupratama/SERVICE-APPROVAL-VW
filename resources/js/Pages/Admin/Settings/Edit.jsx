@@ -11,10 +11,13 @@ export default function Edit({ settings }) {
         workshop_name: settings?.workshop_name ?? '',
         address: settings?.address ?? '',
         phone: settings?.phone ?? '',
-        whatsapp_number: settings?.whatsapp_number ?? '',
         google_maps_url: settings?.google_maps_url ?? '',
+        google_maps_embed_url: settings?.google_maps_embed_url ?? '',
         website_url: settings?.website_url ?? '',
         ppn_percent: settings?.ppn_percent ?? '11',
+        era_phone: settings?.era_phone ?? '',
+        booking_whatsapp_phone: settings?.booking_whatsapp_phone ?? '',
+        survey_form_url: settings?.survey_form_url ?? '',
         logo: null,
         hero_image: null,
         _method: 'put',
@@ -67,29 +70,14 @@ export default function Edit({ settings }) {
                         {errors.address && <p className="text-sm text-urgent">{errors.address}</p>}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="phone">Phone</Label>
-                            <Input
-                                id="phone"
-                                value={data.phone}
-                                onChange={(e) => setData('phone', e.target.value)}
-                            />
-                            {errors.phone && <p className="text-sm text-urgent">{errors.phone}</p>}
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="whatsapp_number">WhatsApp Number</Label>
-                            <Input
-                                id="whatsapp_number"
-                                value={data.whatsapp_number}
-                                onChange={(e) => setData('whatsapp_number', e.target.value)}
-                                placeholder="62812xxxxxxx"
-                            />
-                            {errors.whatsapp_number && (
-                                <p className="text-sm text-urgent">{errors.whatsapp_number}</p>
-                            )}
-                        </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="phone">Phone</Label>
+                        <Input
+                            id="phone"
+                            value={data.phone}
+                            onChange={(e) => setData('phone', e.target.value)}
+                        />
+                        {errors.phone && <p className="text-sm text-urgent">{errors.phone}</p>}
                     </div>
 
                     <div className="space-y-1.5">
@@ -102,6 +90,23 @@ export default function Edit({ settings }) {
                         {errors.google_maps_url && (
                             <p className="text-sm text-urgent">{errors.google_maps_url}</p>
                         )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label htmlFor="google_maps_embed_url">Google Maps Embed URL (optional)</Label>
+                        <Input
+                            id="google_maps_embed_url"
+                            value={data.google_maps_embed_url}
+                            onChange={(e) => setData('google_maps_embed_url', e.target.value)}
+                            placeholder="https://www.google.com/maps/embed?pb=..."
+                        />
+                        {errors.google_maps_embed_url && (
+                            <p className="text-sm text-urgent">{errors.google_maps_embed_url}</p>
+                        )}
+                        <p className="text-xs text-vw-grey">
+                            The "src" URL from Google Maps' Embed HTML code, used to show an interactive
+                            map on the public report page. Leave empty to show a link-only map.
+                        </p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -140,6 +145,55 @@ export default function Edit({ settings }) {
                             Changing this does not affect items that are already approved
                             (their price is locked at approval time).
                         </p>
+                    </div>
+                </div>
+
+                <div className="rounded-lg border border-vw-grey/20 bg-white p-6 space-y-4">
+                    <h2 className="text-sm font-semibold text-gray-900">Thank You Page</h2>
+                    <p className="text-xs text-vw-grey">
+                        Shown to customers on the public report page once their order status is
+                        "Completed".
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="era_phone">ERA (Emergency Road Assist) Phone</Label>
+                            <Input
+                                id="era_phone"
+                                value={data.era_phone}
+                                onChange={(e) => setData('era_phone', e.target.value)}
+                                placeholder="14023"
+                            />
+                            {errors.era_phone && (
+                                <p className="text-sm text-urgent">{errors.era_phone}</p>
+                            )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="booking_whatsapp_phone">Booking WhatsApp Number</Label>
+                            <Input
+                                id="booking_whatsapp_phone"
+                                value={data.booking_whatsapp_phone}
+                                onChange={(e) => setData('booking_whatsapp_phone', e.target.value)}
+                                placeholder="62812xxxxxxx"
+                            />
+                            {errors.booking_whatsapp_phone && (
+                                <p className="text-sm text-urgent">{errors.booking_whatsapp_phone}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label htmlFor="survey_form_url">Survey Form URL</Label>
+                        <Input
+                            id="survey_form_url"
+                            value={data.survey_form_url}
+                            onChange={(e) => setData('survey_form_url', e.target.value)}
+                            placeholder="https://forms.gle/..."
+                        />
+                        {errors.survey_form_url && (
+                            <p className="text-sm text-urgent">{errors.survey_form_url}</p>
+                        )}
                     </div>
                 </div>
 

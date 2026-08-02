@@ -25,12 +25,17 @@ class SettingController extends Controller
             'workshop_name' => ['required', 'string', 'max:255'],
             'address' => ['required', 'string'],
             'phone' => ['required', 'string', 'max:30'],
-            'whatsapp_number' => ['required', 'string', 'max:30'],
             'google_maps_url' => ['required', 'url', 'max:500'],
+            'google_maps_embed_url' => ['nullable', 'url', 'max:1000'],
             'website_url' => ['nullable', 'url', 'max:500'],
             'ppn_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'hero_image' => ['nullable', 'image', 'max:4096'],
+
+            // Thank You section (Revisi Besar #2, poin 9)
+            'era_phone' => ['nullable', 'string', 'max:30'],
+            'booking_whatsapp_phone' => ['nullable', 'string', 'max:30'],
+            'survey_form_url' => ['nullable', 'url', 'max:500'],
         ]);
 
         $settings = Setting::first() ?? new Setting();
@@ -39,10 +44,14 @@ class SettingController extends Controller
             'workshop_name' => $validated['workshop_name'],
             'address' => $validated['address'],
             'phone' => $validated['phone'],
-            'whatsapp_number' => $validated['whatsapp_number'],
             'google_maps_url' => $validated['google_maps_url'],
+            'google_maps_embed_url' => $validated['google_maps_embed_url'] ?? null,
             'website_url' => $validated['website_url'] ?? null,
             'ppn_percent' => $validated['ppn_percent'],
+
+            'era_phone' => $validated['era_phone'] ?? null,
+            'booking_whatsapp_phone' => $validated['booking_whatsapp_phone'] ?? null,
+            'survey_form_url' => $validated['survey_form_url'] ?? null,
         ]);
 
         if ($request->hasFile('logo')) {

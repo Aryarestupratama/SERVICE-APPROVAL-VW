@@ -15,10 +15,16 @@ return new class extends Migration
             $table->string('hero_image_path')->nullable();
             $table->text('address');
             $table->string('phone');
-            $table->string('whatsapp_number'); // format 62xxx
-            $table->string('google_maps_url');
+            $table->string('google_maps_url');        // link pendek, untuk tombol "Buka di Google Maps"
+            $table->string('google_maps_embed_url')->nullable(); // src iframe, untuk peta embed
             $table->string('website_url')->nullable();
             $table->decimal('ppn_percent', 5, 2)->default(11.00);
+
+            // Thank You section (Revisi Besar #2, poin 9)
+            $table->string('era_phone')->nullable();              // contoh: "14023"
+            $table->string('booking_whatsapp_phone')->nullable(); // pengganti whatsapp_number lama, format 62xxx
+            $table->string('survey_form_url')->nullable();        // link survey eksternal
+
             $table->timestamps();
         });
     }

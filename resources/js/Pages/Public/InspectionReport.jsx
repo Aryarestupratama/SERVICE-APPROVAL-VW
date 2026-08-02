@@ -1,7 +1,7 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
-import { Phone, Mail, MessageCircle, FileText } from 'lucide-react';
+import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink } from 'lucide-react';
 
 function StatusStamp({ status }) {
     if (status === 'pending') {
@@ -49,6 +49,10 @@ const INVOICE_VISIBLE_STATUSES = ['quality_control', 'invoice_preparation', 'com
 // yang ditampilkan masih estimasi karena customer masih bisa approve/reject.
 const FINAL_PRICING_STATUSES = ['quality_control', 'invoice_preparation', 'completed'];
 
+// Thank You section — muncul HANYA saat order sudah completed (PROJECT-RULES.md
+// bagian 2, poin 9). Beda dengan CTA "Contact SA" yang khusus invoice_preparation.
+const THANK_YOU_VISIBLE_STATUSES = ['completed'];
+
 // Harga tampil per item: pakai final_price_snapshot kalau sudah terkunci
 // (approved), kalau belum (pending/rejected) hitung on-the-fly dari
 // cost_item/cost_labour dikurangi diskon masing-masing.
@@ -70,6 +74,32 @@ function itemSubtotal(item) {
     const labourAfterDiscount = item.cost_labour * (1 - (item.discount_labour_percent ?? 0) / 100);
 
     return itemAfterDiscount + labourAfterDiscount;
+}
+
+// Convert berbagai format link YouTube (watch?v=, youtu.be/, sudah embed/)
+// jadi URL embed yang valid untuk iframe. Return null kalau bukan YouTube
+// atau tidak bisa di-parse (fallback ke <video> tag native).
+function youtubeEmbedUrl(url) {
+    if (!url) return null;
+
+    try {
+        const parsed = new URL(url);
+        let videoId = null;
+
+        if (parsed.hostname.includes('youtu.be')) {
+            videoId = parsed.pathname.slice(1);
+        } else if (parsed.hostname.includes('youtube.com')) {
+            if (parsed.pathname === '/watch') {
+                videoId = parsed.searchParams.get('v');
+            } else if (parsed.pathname.startsWith('/embed/')) {
+                return url; // sudah embed URL
+            }
+        }
+
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    } catch {
+        return null;
+    }
 }
 
 // "Invoice 1", "Invoice 2", dst — di-derive dari sort_order, sama pola dengan
@@ -154,6 +184,10 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
         ? `https://wa.me/${serviceAdvisor.phone.replace(/\D/g, '')}`
         : null;
 
+    const bookingWaHref = settings.booking_whatsapp_phone
+        ? `https://wa.me/${settings.booking_whatsapp_phone.replace(/\D/g, '')}`
+        : null;
+
     // Section invoice hanya relevan mulai quality_control/invoice_preparation/
     // completed — daftar diambil dari order.invoices (relasi), bisa kosong
     // kalau SA belum sempat upload meski statusnya sudah masuk tahap ini.
@@ -161,6 +195,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
     const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
     const invoices = sortedInvoices(order.invoices);
+    const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
 
     return (
         <PublicLayout>
@@ -210,9 +245,35 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     )}
 
                     {videos.length > 0 ? (
-                        <div className="mt-3 flex aspect-video items-center justify-center rounded-lg border border-dashed border-vw-grey/40 bg-vw-grey-light text-sm text-vw-grey">
-                            Video player — {videos.find((v) => v.id === activeVideo)?.label}
-                        </div>
+                        (() => {
+                            const current = videos.find((v) => v.id === activeVideo);
+                            const embedUrl = current ? youtubeEmbedUrl(current.video_url) : null;
+
+                            if (embedUrl) {
+                                return (
+                                    <div className="mt-3 aspect-video overflow-hidden rounded-lg">
+                                        <iframe
+                                            key={current.id}
+                                            src={embedUrl}
+                                            title={current.label}
+                                            className="h-full w-full"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    </div>
+                                );
+                            }
+
+                            // Bukan link YouTube (kemungkinan besar video_source: upload) — pakai <video> native
+                            return (
+                                <video
+                                    key={current.id}
+                                    src={current.video_url}
+                                    controls
+                                    className="mt-3 aspect-video w-full rounded-lg bg-black"
+                                />
+                            );
+                        })()
                     ) : (
                         <p className="mt-3 text-sm text-vw-grey">No video available yet.</p>
                     )}
@@ -432,6 +493,74 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     </>
                 )}
 
+                {/* Thank You — muncul HANYA saat status completed (Revisi Besar #2, poin 9) */}
+                {showThankYouSection && (
+                    <>
+                        <hr className="my-8 border-vw-grey-light" />
+                        <section className="px-6">
+                            <div className="rounded-xl border border-approved/20 bg-approved/5 px-5 py-5 text-center">
+                                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-approved/10">
+                                    <CheckCircle2 className="h-5 w-5 text-approved" />
+                                </span>
+                                <h2 className="mt-3 text-base font-bold text-gray-900">Thank You!</h2>
+                                <p className="mt-1 text-sm text-gray-700">
+                                    Thank you for trusting {settings.workshop_name ?? 'VW PIK'} with your
+                                    vehicle service. We hope to see you again soon.
+                                </p>
+                            </div>
+
+                            <div className="mt-4 space-y-2">
+                                {settings.era_phone && (
+                                    <div className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                            <Phone className="h-4 w-4" />
+                                        </span>
+                                        <span>
+                                            <span className="block font-medium text-gray-900">
+                                                Emergency Road Assist (ERA)
+                                            </span>
+                                            <span className="font-mono text-xs text-vw-grey">
+                                                {settings.era_phone}
+                                            </span>
+                                        </span>
+                                    </div>
+                                )}
+
+                                {bookingWaHref && (
+                                    <a
+                                        href={bookingWaHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                    >
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                            <MessageCircle className="h-4 w-4" />
+                                        </span>
+                                        <span>
+                                            <span className="block font-medium text-gray-900">
+                                                Book your next service
+                                            </span>
+                                            <span className="text-xs text-vw-grey">Chat with us on WhatsApp</span>
+                                        </span>
+                                    </a>
+                                )}
+
+                                {settings.survey_form_url && (
+                                    <a
+                                        href={settings.survey_form_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center justify-center gap-2 rounded-lg bg-vw-blue px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+                                    >
+                                        Share Your Feedback
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                )}
+                            </div>
+                        </section>
+                    </>
+                )}
+
                 <hr className="my-8 border-vw-grey-light" />
 
                 {/* CTA Hubungi SA — hanya muncul saat order sedang menunggu tindak lanjut customer */}
@@ -498,12 +627,52 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     <div>
                         <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Location</h2>
                         <p className="mt-2 text-sm text-gray-700">{settings.address ?? '[Address]'}</p>
-                        <button
-                            type="button"
-                            className="mt-3 rounded-full border border-vw-blue px-4 py-1.5 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
-                        >
-                            Book a service
-                        </button>
+
+                        {settings.google_maps_embed_url && (
+                            <iframe
+                                src={settings.google_maps_embed_url}
+                                width="100%"
+                                height="200"
+                                style={{ border: 0 }}
+                                allowFullScreen=""
+                                loading="lazy"
+                                referrerPolicy="strict-origin-when-cross-origin"
+                                className="mt-3 rounded-lg"
+                            />
+                        )}
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {settings.google_maps_url && (
+                                <a
+                                    href={settings.google_maps_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="rounded-full border border-vw-grey px-4 py-1.5 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                >
+                                    Open in Maps
+                                </a>
+                            )}
+                            {settings.website_url && (
+                                <a
+                                    href={settings.website_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="rounded-full border border-vw-grey px-4 py-1.5 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                >
+                                    Visit Website
+                                </a>
+                            )}
+                            {bookingWaHref && (
+                                <a
+                                    href={bookingWaHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="rounded-full border border-vw-blue px-4 py-1.5 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
+                                >
+                                    Book a service
+                                </a>
+                            )}
+                        </div>
                     </div>
                 </section>
             </div>
