@@ -9,6 +9,7 @@ use App\Models\InspectionItemLog;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderEstimationDocument;
 use App\Models\ServiceOrderInvoice;
+use App\Models\ServiceOrderPaymentReceipt;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Setting;
@@ -34,14 +35,6 @@ class ServiceOrderController extends Controller
         'quality_control' => ['invoice_preparation'],
         'invoice_preparation' => ['completed'],
     ];
-
-    /**
-     * Batas maksimal jumlah invoice PDF per order — sesuai PROJECT-RULES
-     * Revisi Besar #2 poin 8 ("bisa lebih dari 1 file, tergantung permintaan
-     * customer, misal dipecah per part"). Tidak ada batas eksplisit di dokumen,
-     * dipatok longgar mengikuti pola yang sama dengan estimation form (5 dokumen).
-     */
-    private const MAX_INVOICES_PER_ORDER = 5;
 
     public function index(Request $request)
     {
@@ -204,8 +197,10 @@ class ServiceOrderController extends Controller
             'technician',
             'videos',
             'inspectionItems',
-            'invoices.uploadedBy',
+            'invoice.uploadedBy',
             'estimationDocuments.uploadedBy',
+            'customerPaymentReceipt',
+            'staffPaymentReceipt.uploadedBy',
         ]);
 
         $settings = Setting::current();
@@ -226,7 +221,6 @@ class ServiceOrderController extends Controller
             // tunggal, sama seperti dipakai InspectionItemPricingService di backend.
             'settings' => $settings,
             'groups' => InspectionItem::GROUPS,
-            'maxInvoices' => self::MAX_INVOICES_PER_ORDER,
             'breakdownByGroup' => $breakdownByGroup,
         ]);
     }
@@ -563,76 +557,146 @@ class ServiceOrderController extends Controller
     }
 
     /**
-     * Upload satu atau lebih file invoice PDF sekaligus — APPEND ke daftar yang
-     * sudah ada, bukan replace (beda dari perilaku lama saat masih single-file).
-     * Untuk mengganti/menghapus satu file tertentu, pakai deleteInvoice().
+     * Upload/replace invoice PDF — REPLACE, bukan append (revisi balik ke
+     * 1 WO : 1 invoice, PROJECT-RULES.md bagian 2 & TODO bagian 7).
+     * updateOrCreate berdasarkan service_order_id (constraint unique),
+     * upload ulang otomatis ganti file lama.
      */
     public function uploadInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Guard longgar dulu: boleh selama belum 'completed', supaya SA masih
-        // bisa menambah/mengganti invoice sebelum order ditutup.
         if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
             return back()->with('error', 'Order sudah completed, invoice tidak bisa diubah lagi.');
         }
 
-        $existingCount = $serviceOrder->invoices()->count();
-
         $validated = $request->validate([
-            'invoice_pdfs' => ['required', 'array', 'min:1'],
-            'invoice_pdfs.*' => [
-                'file',
-                'mimes:pdf',
-                'max:10240', // max 10MB per file
-            ],
+            'invoice_pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
         ]);
 
-        $incomingCount = count($validated['invoice_pdfs']);
-        if ($existingCount + $incomingCount > self::MAX_INVOICES_PER_ORDER) {
-            return back()->with(
-                'error',
-                'Maksimal ' . self::MAX_INVOICES_PER_ORDER . ' invoice PDF per order. Saat ini sudah ada ' . $existingCount . '.'
-            );
-        }
+        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+            $existing = $serviceOrder->invoice;
 
-        DB::transaction(function () use ($request, $serviceOrder, $existingCount) {
-            foreach ($request->file('invoice_pdfs') as $index => $file) {
-                $path = $file->store('invoices', 'public');
+            if ($existing && $existing->file_path) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
 
-                $serviceOrder->invoices()->create([
+            $path = $request->file('invoice_pdf')->store('invoices', 'public');
+
+            ServiceOrderInvoice::updateOrCreate(
+                ['service_order_id' => $serviceOrder->id],
+                [
                     'file_path' => $path,
-                    'sort_order' => $existingCount + $index,
                     'uploaded_at' => now(),
                     'uploaded_by' => $request->user()->id,
-                ]);
-            }
+                ]
+            );
         });
 
         return back()->with('success', 'Invoice PDF berhasil diupload.');
     }
 
     /**
-     * Hapus satu baris invoice tertentu. sort_order baris-baris yang tersisa
-     * TIDAK di-reindex otomatis — labelnya ("Invoice 1", dst) memang boleh ada
-     * gap, konsisten dengan pola ServiceOrderVideo yang juga tidak reindex.
+     * Hapus invoice milik order ini. Tidak perlu parameter invoice id lagi
+     * karena maksimal 1 baris per order.
      */
-    public function deleteInvoice(Request $request, ServiceOrder $serviceOrder, ServiceOrderInvoice $invoice)
+    public function deleteInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        if ($invoice->service_order_id !== $serviceOrder->id) {
-            abort(404);
-        }
-
         if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
             return back()->with('error', 'Order sudah completed, invoice tidak bisa dihapus lagi.');
+        }
+
+        $invoice = $serviceOrder->invoice;
+
+        if (!$invoice) {
+            return back()->with('error', 'Tidak ada invoice untuk dihapus.');
         }
 
         Storage::disk('public')->delete($invoice->file_path);
         $invoice->delete();
 
         return back()->with('success', 'Invoice PDF berhasil dihapus.');
+    }
+
+    /**
+     * Update invoice_number & bill_to (input manual SA) — PROJECT-RULES.md
+     * TODO bagian 7 poin 5. Hanya bisa diubah selama invoice_preparation.
+     */
+    public function updatePaymentDetails(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
+            return back()->with('error', 'Payment details hanya bisa diubah saat status Invoice Preparation.');
+        }
+
+        $validated = $request->validate([
+            'invoice_number' => ['nullable', 'string', 'max:255'],
+            'bill_to' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $serviceOrder->update($validated);
+
+        return back()->with('success', 'Payment details berhasil disimpan.');
+    }
+
+    /**
+     * Upload/replace receipt versi SA (bukti transfer yang diterima kasir/SA,
+     * berbeda dari bukti bayar yang diupload customer sendiri).
+     */
+    public function uploadStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
+            return back()->with('error', 'Receipt hanya bisa diupload saat status Invoice Preparation.');
+        }
+
+        $validated = $request->validate([
+            'receipt' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+        ]);
+
+        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+            $existing = $serviceOrder->staffPaymentReceipt;
+
+            if ($existing && $existing->file_path) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
+
+            $path = $request->file('receipt')->store('payment-receipts', 'public');
+
+            ServiceOrderPaymentReceipt::updateOrCreate(
+                [
+                    'service_order_id' => $serviceOrder->id,
+                    'uploader_type' => ServiceOrderPaymentReceipt::UPLOADER_STAFF,
+                ],
+                [
+                    'file_path' => $path,
+                    'uploaded_at' => now(),
+                    'uploaded_by' => $request->user()->id,
+                ]
+            );
+        });
+
+        return back()->with('success', 'Receipt berhasil diupload.');
+    }
+
+    public function deleteStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        $receipt = $serviceOrder->staffPaymentReceipt;
+
+        if (!$receipt) {
+            return back()->with('error', 'Tidak ada receipt untuk dihapus.');
+        }
+
+        Storage::disk('public')->delete($receipt->file_path);
+        $receipt->delete();
+
+        return back()->with('success', 'Receipt berhasil dihapus.');
     }
 
     /**

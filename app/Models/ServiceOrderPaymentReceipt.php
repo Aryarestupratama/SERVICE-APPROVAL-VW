@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class ServiceOrderInvoice extends Model
+class ServiceOrderPaymentReceipt extends Model
 {
+    public const UPLOADER_CUSTOMER = 'customer';
+    public const UPLOADER_STAFF = 'staff';
+
     protected $fillable = [
         'service_order_id',
+        'uploader_type',
         'file_path',
         'uploaded_at',
         'uploaded_by',

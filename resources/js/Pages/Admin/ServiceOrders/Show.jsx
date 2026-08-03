@@ -113,10 +113,6 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-function sortedInvoices(invoices) {
-    return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
-}
-
 // Map estimationDocuments (array, bisa cuma sebagian group yang ada baris-nya)
 // jadi lookup by group.
 function estimationDocsByGroup(docs) {
@@ -155,7 +151,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
     const [editingItemId, setEditingItemId] = useState(null);
 
     const { setData, patch, processing } = useForm({ status: '' });
-    const invoiceForm = useForm({ invoice_pdfs: [] });
+    const invoiceForm = useForm({ invoice_pdf: null });
     const estimationForm = useForm({ group: '', pdf: null });
     const addItemForm = useForm({ ...EMPTY_ITEM_FORM });
     const editItemForm = useForm({ ...EMPTY_ITEM_FORM });
@@ -163,9 +159,8 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
     const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
     const revertTarget = REVERT_TRANSITIONS[order.status] ?? null;
 
-    const invoices = sortedInvoices(order.invoices);
-    const hasInvoice = invoices.length > 0;
-    const remainingSlots = (maxInvoices ?? 5) - invoices.length;
+    const invoice = order.invoice;
+    const hasInvoice = !!invoice;
 
     // Invoice PDF section disembunyikan selama work_in_progress (dan appointment/
     // quality_control), baru muncul mulai invoice_preparation — permintaan owner.
@@ -203,8 +198,8 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         );
     };
 
-    const handleInvoiceFilesChange = (e) => {
-        invoiceForm.setData('invoice_pdfs', Array.from(e.target.files));
+    const handleInvoiceFileChange = (e) => {
+        invoiceForm.setData('invoice_pdf', e.target.files[0]);
     };
 
     const handleInvoiceUpload = (e) => {
@@ -216,11 +211,11 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         });
     };
 
-    const handleDeleteInvoice = (invoiceId) => {
+    const handleDeleteInvoice = () => {
         if (!confirm('Hapus invoice PDF ini?')) return;
 
         router.delete(
-            route('admin.service-orders.delete-invoice', [order.id, invoiceId]),
+            route('admin.service-orders.delete-invoice', order.id),
             { preserveScroll: true }
         );
     };
@@ -346,6 +341,72 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             .reduce((sum, item) => sum + Number(item.final_price_snapshot ?? 0), 0) ?? 0;
 
     const isCompletedBlocked = !hasInvoice && availableTransitions.includes('completed');
+
+    const paymentDetailsForm = useForm({
+        invoice_number: order.invoice_number ?? '',
+        bill_to: order.bill_to ?? '',
+    });
+    const staffReceiptForm = useForm({ receipt: null });
+
+    const showPaymentSection = ['invoice_preparation', 'completed'].includes(order.status);
+    const canEditPayment = order.status === 'invoice_preparation';
+
+    const hasReceipt = !!(order.customer_payment_receipt || order.staff_payment_receipt);
+    const hasPaymentDetails = !!(order.invoice_number && order.bill_to);
+    const canReportToCashier = hasReceipt && hasPaymentDetails;
+
+    const BANK_ACCOUNTS = [
+        { bank: 'Bank Mandiri IDR', account: 'PT Wahana Wirawan — No. A/C 1240012993409' },
+        { bank: 'Bank Central Asia IDR', account: 'PT Wahana Wirawan — No. A/C 7160263789' },
+    ];
+    const CASHIER_WA_GROUP_URL = 'https://chat.whatsapp.com/Jqsdzukbkjk1hXMzAzXR1Q?s=sh&p=i&ilr=2&amv=2';
+
+    const handlePaymentDetailsSubmit = (e) => {
+        e.preventDefault();
+        paymentDetailsForm.patch(route('admin.service-orders.update-payment-details', order.id), {
+            preserveScroll: true,
+        });
+    };
+
+    const handleStaffReceiptChange = (e) => {
+        staffReceiptForm.setData('receipt', e.target.files[0]);
+    };
+
+    const handleStaffReceiptUpload = (e) => {
+        e.preventDefault();
+        staffReceiptForm.post(route('admin.service-orders.upload-staff-payment-receipt', order.id), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => staffReceiptForm.reset(),
+        });
+    };
+
+    const handleDeleteStaffReceipt = () => {
+        if (!confirm('Hapus receipt ini?')) return;
+        router.delete(route('admin.service-orders.delete-staff-payment-receipt', order.id), {
+            preserveScroll: true,
+        });
+    };
+
+    const [copied, setCopied] = useState(false);
+
+    // Teks polos untuk clipboard (tidak perlu encodeURIComponent lagi karena
+    // bukan untuk URL query, cuma untuk clipboard).
+    const cashierMessageText =
+        `Konfirmasi pembayaran WO: ${order.work_order_number ?? '-'}\n` +
+        `Invoice: ${order.invoice_number ?? '-'}\n` +
+        `Bill To: ${order.bill_to ?? '-'}\n` +
+        `Mohon dicek, terima kasih.`;
+
+    const handleCopyMessage = async () => {
+        try {
+            await navigator.clipboard.writeText(cashierMessageText);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            alert('Gagal menyalin teks. Silakan salin manual.');
+        }
+    };
 
     return (
         <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
@@ -1049,82 +1110,238 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                     {showInvoiceSection && (
                         <Card>
                             <CardHeader>
-                                <CardTitle>Invoice PDF{invoices.length > 1 ? 's' : ''}</CardTitle>
+                                <CardTitle>Invoice PDF</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 {hasInvoice ? (
-                                    <ul className="space-y-2">
-                                        {invoices.map((invoice, index) => (
-                                            <li
-                                                key={invoice.id}
-                                                className="flex items-center justify-between gap-2 rounded border border-vw-grey/10 p-2"
+                                    <div className="flex items-center justify-between gap-2 rounded border border-vw-grey/10 p-2">
+                                        <div className="space-y-0.5">
+                                            <a
+                                                href={`/storage/${invoice.file_path}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-blue-600 underline"
                                             >
-                                                <div className="space-y-0.5">
-                                                    <a
-                                                        href={`/storage/${invoice.file_path}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-sm text-blue-600 underline"
-                                                    >
-                                                        {invoice.label ?? `Invoice ${index + 1}`}
-                                                    </a>
-                                                    {invoice.uploaded_at && (
-                                                        <p className="text-xs text-vw-grey">
-                                                            Uploaded {formatDate(invoice.uploaded_at)}
-                                                            {invoice.uploaded_by?.name &&
-                                                                ` by ${invoice.uploaded_by.name}`}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                {order.status !== 'completed' && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-red-600 hover:text-red-700"
-                                                        onClick={() => handleDeleteInvoice(invoice.id)}
-                                                    >
-                                                        Delete
-                                                    </Button>
-                                                )}
-                                            </li>
-                                        ))}
-                                    </ul>
+                                                View Invoice
+                                            </a>
+                                            {invoice.uploaded_at && (
+                                                <p className="text-xs text-vw-grey">
+                                                    Uploaded {formatDate(invoice.uploaded_at)}
+                                                    {invoice.uploaded_by?.name && ` by ${invoice.uploaded_by.name}`}
+                                                </p>
+                                            )}
+                                        </div>
+                                        {order.status !== 'completed' && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-red-600 hover:text-red-700"
+                                                onClick={handleDeleteInvoice}
+                                            >
+                                                Delete
+                                            </Button>
+                                        )}
+                                    </div>
                                 ) : (
                                     <p className="text-sm text-vw-grey">No invoice uploaded yet.</p>
                                 )}
 
                                 {order.status !== 'completed' && (
                                     <form onSubmit={handleInvoiceUpload} className="space-y-2">
-                                        <Label htmlFor="invoice_pdfs">
-                                            Upload invoice PDF(s) — {remainingSlots} slot
-                                            {remainingSlots === 1 ? '' : 's'} remaining
+                                        <Label htmlFor="invoice_pdf">
+                                            {hasInvoice ? 'Replace invoice PDF' : 'Upload invoice PDF'}
                                         </Label>
                                         <Input
-                                            id="invoice_pdfs"
+                                            id="invoice_pdf"
                                             type="file"
                                             accept="application/pdf"
-                                            multiple
-                                            disabled={remainingSlots <= 0}
-                                            onChange={handleInvoiceFilesChange}
+                                            onChange={handleInvoiceFileChange}
                                         />
-                                        {invoiceForm.errors.invoice_pdfs && (
+                                        {invoiceForm.errors.invoice_pdf && (
                                             <p className="text-xs text-red-600">
-                                                {invoiceForm.errors.invoice_pdfs}
+                                                {invoiceForm.errors.invoice_pdf}
                                             </p>
                                         )}
                                         <Button
                                             type="submit"
-                                            disabled={
-                                                invoiceForm.processing ||
-                                                invoiceForm.data.invoice_pdfs.length === 0 ||
-                                                remainingSlots <= 0
-                                            }
+                                            disabled={invoiceForm.processing || !invoiceForm.data.invoice_pdf}
                                             size="sm"
                                         >
-                                            {invoiceForm.processing ? 'Uploading...' : 'Upload'}
+                                            {invoiceForm.processing ? 'Uploading...' : hasInvoice ? 'Replace' : 'Upload'}
                                         </Button>
                                     </form>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {showPaymentSection && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Payment</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {/* Info rekening — statis, PT Wahana Wirawan */}
+                                <div className="space-y-1.5 rounded-md bg-vw-grey-light p-3 text-xs">
+                                    {BANK_ACCOUNTS.map((acc) => (
+                                        <div key={acc.bank}>
+                                            <p className="font-semibold text-gray-900">{acc.bank}</p>
+                                            <p className="text-vw-grey">{acc.account}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Invoice number & bill to */}
+                                {canEditPayment ? (
+                                    <form onSubmit={handlePaymentDetailsSubmit} className="space-y-2">
+                                        <div className="space-y-1.5">
+                                            <Label>Invoice Number</Label>
+                                            <Input
+                                                value={paymentDetailsForm.data.invoice_number}
+                                                onChange={(e) =>
+                                                    paymentDetailsForm.setData('invoice_number', e.target.value)
+                                                }
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Bill To</Label>
+                                            <Input
+                                                value={paymentDetailsForm.data.bill_to}
+                                                onChange={(e) => paymentDetailsForm.setData('bill_to', e.target.value)}
+                                            />
+                                        </div>
+                                        <Button type="submit" size="sm" disabled={paymentDetailsForm.processing}>
+                                            {paymentDetailsForm.processing ? 'Saving...' : 'Save'}
+                                        </Button>
+                                    </form>
+                                ) : (
+                                    <div className="space-y-1 text-sm">
+                                        <p><span className="text-vw-grey">Invoice Number:</span> {order.invoice_number ?? '—'}</p>
+                                        <p><span className="text-vw-grey">Bill To:</span> {order.bill_to ?? '—'}</p>
+                                    </div>
+                                )}
+
+                                {/* Receipt customer (read-only, upload dari halaman publik) */}
+                                <div className="border-t border-vw-grey/10 pt-3">
+                                    <p className="text-sm font-medium text-gray-900">Customer Receipt</p>
+                                    {order.customer_payment_receipt ? (
+                                        <a
+                                            href={`/storage/${order.customer_payment_receipt.file_path}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-blue-600 underline"
+                                        >
+                                            View receipt
+                                        </a>
+                                    ) : (
+                                        <p className="text-sm text-vw-grey">Not uploaded by customer yet.</p>
+                                    )}
+                                </div>
+
+                                {/* Receipt versi SA */}
+                                <div className="border-t border-vw-grey/10 pt-3">
+                                    <p className="text-sm font-medium text-gray-900">Staff Receipt</p>
+                                    {order.staff_payment_receipt ? (
+                                        <div className="flex items-center justify-between">
+                                            <a
+                                                href={`/storage/${order.staff_payment_receipt.file_path}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-blue-600 underline"
+                                            >
+                                                View receipt
+                                            </a>
+                                            {canEditPayment && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-red-600 hover:text-red-700"
+                                                    onClick={handleDeleteStaffReceipt}
+                                                >
+                                                    Delete
+                                                </Button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-vw-grey">No receipt uploaded yet.</p>
+                                    )}
+                                    {canEditPayment && (
+                                        <form onSubmit={handleStaffReceiptUpload} className="mt-2 flex items-center gap-2">
+                                            <Input
+                                                type="file"
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                className="text-xs"
+                                                onChange={handleStaffReceiptChange}
+                                            />
+                                            <Button
+                                                type="submit"
+                                                size="sm"
+                                                disabled={staffReceiptForm.processing || !staffReceiptForm.data.receipt}
+                                            >
+                                                {staffReceiptForm.processing ? 'Uploading...' : 'Upload'}
+                                            </Button>
+                                        </form>
+                                    )}
+                                </div>
+
+                                {/* Report to Cashier — download receipt + copy pesan template secara
+                                    terpisah, karena link grup WA (beda dari wa.me personal) tidak
+                                    mendukung auto-isi teks pesan. */}
+                                {canEditPayment && (
+                                    <div className="border-t border-vw-grey/10 pt-3 space-y-2">
+                                        {!canReportToCashier && (
+                                            <p className="text-xs text-amber-600">
+                                                Fill in Invoice Number, Bill To, and upload at least one receipt
+                                                before reporting to cashier.
+                                            </p>
+                                        )}
+
+                                        {(order.customer_payment_receipt || order.staff_payment_receipt) && (
+                                            <a
+                                                href={`/storage/${
+                                                    (order.staff_payment_receipt ?? order.customer_payment_receipt).file_path
+                                                }`}
+                                                download
+                                                className="block w-full rounded-md border border-vw-grey px-4 py-2 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                            >
+                                                Download Receipt
+                                            </a>
+                                        )}
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="w-full"
+                                            onClick={handleCopyMessage}
+                                            disabled={!canReportToCashier}
+                                        >
+                                            {copied ? 'Copied!' : 'Copy Message'}
+                                        </Button>
+                                        {canReportToCashier ? (
+                                            <a
+                                                href={CASHIER_WA_GROUP_URL}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="block w-full rounded-md bg-vw-blue px-4 py-2 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
+                                            >
+                                                Open Cashier WA Group
+                                            </a>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                disabled
+                                                className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-4 py-2 text-center text-xs font-semibold text-white"
+                                            >
+                                                Open Cashier WA Group
+                                            </button>
+                                        )}
+                                        <p className="text-xs text-vw-grey">
+                                            1) Download the receipt · 2) Copy the message · 3) Open the group and paste
+                                            the message + attach the receipt manually.
+                                        </p>
+                                    </div>
                                 )}
                             </CardContent>
                         </Card>

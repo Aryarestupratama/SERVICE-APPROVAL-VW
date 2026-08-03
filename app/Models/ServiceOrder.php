@@ -35,6 +35,8 @@ class ServiceOrder extends Model
         'inspection_token',
         'inspection_token_expires_at',
         'finalized_at',
+        'invoice_number',
+        'bill_to',
     ];
 
     protected function casts(): array
@@ -100,16 +102,16 @@ class ServiceOrder extends Model
         return $this->hasMany(ServiceOrderEstimationDocument::class);
     }
 
-    public function invoices()
-    {
-        return $this->hasMany(ServiceOrderInvoice::class)->orderBy('sort_order');
-    }
-
     // Helper cek link publik masih valid atau sudah expired
     public function isInspectionLinkExpired(): bool
     {
         return $this->inspection_token_expires_at !== null
             && $this->inspection_token_expires_at->isPast();
+    }
+
+    public function invoice()
+    {
+        return $this->hasOne(ServiceOrderInvoice::class);
     }
 
     // Halaman publik & guard status 'completed' wajib cek ini — order dianggap
@@ -118,6 +120,18 @@ class ServiceOrder extends Model
     // lagi kolom invoice_pdf_path yang sudah dihapus).
     public function hasInvoiceUploaded(): bool
     {
-        return $this->invoices()->exists();
+        return $this->invoice()->exists();
+    }
+
+    public function customerPaymentReceipt()
+    {
+        return $this->hasOne(ServiceOrderPaymentReceipt::class)
+            ->where('uploader_type', ServiceOrderPaymentReceipt::UPLOADER_CUSTOMER);
+    }
+
+    public function staffPaymentReceipt()
+    {
+        return $this->hasOne(ServiceOrderPaymentReceipt::class)
+            ->where('uploader_type', ServiceOrderPaymentReceipt::UPLOADER_STAFF);
     }
 }

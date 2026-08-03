@@ -42,6 +42,12 @@ return new class extends Migration
             $table->timestamp('inspection_token_expires_at')->nullable();
 
             $table->timestamp('finalized_at')->nullable();
+
+            // Input manual SA saat status invoice_preparation (PROJECT-RULES.md
+            // TODO bagian 7 poin 5 — alur pembayaran).
+            $table->string('invoice_number')->nullable();
+            $table->string('bill_to')->nullable();
+
             $table->timestamps();
         });
     }

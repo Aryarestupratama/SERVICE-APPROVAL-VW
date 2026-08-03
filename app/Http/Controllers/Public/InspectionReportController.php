@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServiceOrder;
+use App\Models\ServiceOrderPaymentReceipt;
 use App\Models\Setting;
 use App\Services\InspectionItemPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class InspectionReportController extends Controller
@@ -15,7 +17,7 @@ class InspectionReportController extends Controller
     public function show(string $token)
     {
         $serviceOrder = ServiceOrder::where('inspection_token', $token)
-            ->with(['vehicle.customer', 'serviceAdvisor', 'videos', 'inspectionItems', 'invoices', 'estimationDocuments'])
+            ->with(['vehicle.customer', 'serviceAdvisor', 'videos', 'inspectionItems', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'])
             ->firstOrFail();
 
         if ($serviceOrder->isInspectionLinkExpired()) {
@@ -62,6 +64,8 @@ class InspectionReportController extends Controller
                 'personal_message' => $serviceOrder->personal_message,
                 'inspection_fee' => (float) $serviceOrder->inspection_fee,
                 'inspection_fee_note' => $serviceOrder->inspection_fee_note,
+                'invoice_number' => $serviceOrder->invoice_number,
+                'bill_to' => $serviceOrder->bill_to,
             ],
             'vehicle' => [
                 'plate_number' => $serviceOrder->vehicle->plate_number,
@@ -95,15 +99,15 @@ class InspectionReportController extends Controller
                 'group' => $item->group,
                 'status' => $item->status,
             ]),
-            // Invoice bisa lebih dari 1 file — kosong kalau belum masuk status yang
-            // relevan, supaya frontend tidak perlu tahu logika status.
-            'invoices' => $showInvoiceViewer
-                ? $serviceOrder->invoices->map(fn ($invoice) => [
-                    'id' => $invoice->id,
-                    'file_path' => $invoice->file_path,
-                    'label' => $invoice->label,
-                ])
-                : [],
+            // Invoice sekarang 1 file per order (revisi balik ke 1 WO : 1 invoice,
+            // PROJECT-RULES.md bagian 2 & TODO bagian 7) — null kalau belum masuk
+            // status yang relevan ATAU SA belum sempat upload.
+            'invoice' => $showInvoiceViewer && $serviceOrder->invoice
+                ? [
+                    'id' => $serviceOrder->invoice->id,
+                    'file_path' => $serviceOrder->invoice->file_path,
+                ]
+                : null,
             // Estimation form per kelompok — hanya kirim yang benar-benar sudah
             // ada file-nya (pdf_path terisi), dan hanya saat work_in_progress.
             'estimationDocuments' => $showEstimationViewer
@@ -116,6 +120,12 @@ class InspectionReportController extends Controller
                     ])
                     ->values()
                 : [],
+            'customerPaymentReceipt' => $serviceOrder->customerPaymentReceipt
+                ? [
+                    'file_path' => $serviceOrder->customerPaymentReceipt->file_path,
+                    'uploaded_at' => $serviceOrder->customerPaymentReceipt->uploaded_at,
+                ]
+                : null,
         ]);
     }
 
@@ -243,5 +253,49 @@ class InspectionReportController extends Controller
         });
 
         return back()->with('success', 'Your decisions have been submitted.');
+    }
+
+    /**
+     * Customer upload bukti bayar (transfer) selama status invoice_preparation.
+     * Sama pola dengan submitDecisions() — akses via token, tidak perlu login.
+     */
+    public function uploadPaymentReceipt(Request $request, string $token)
+    {
+        $serviceOrder = ServiceOrder::where('inspection_token', $token)->firstOrFail();
+
+        if ($serviceOrder->isInspectionLinkExpired()) {
+            abort(410, 'This link has expired.');
+        }
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
+            abort(409, 'Payment receipt can only be uploaded while invoice is being prepared.');
+        }
+
+        $validated = $request->validate([
+            'receipt' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+        ]);
+
+        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+            $existing = $serviceOrder->customerPaymentReceipt;
+
+            if ($existing && $existing->file_path) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
+
+            $path = $request->file('receipt')->store('payment-receipts', 'public');
+
+            ServiceOrderPaymentReceipt::updateOrCreate(
+                [
+                    'service_order_id' => $serviceOrder->id,
+                    'uploader_type' => ServiceOrderPaymentReceipt::UPLOADER_CUSTOMER,
+                ],
+                [
+                    'file_path' => $path,
+                    'uploaded_at' => now(),
+                ]
+            );
+        });
+
+        return back()->with('success', 'Payment receipt uploaded.');
     }
 }

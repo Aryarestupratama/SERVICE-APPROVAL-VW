@@ -22,8 +22,11 @@ Route::get('/', function () {
 Route::get('/report/{token}', [InspectionReportController::class, 'show'])
     ->name('public.inspection-report');
 
-    Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionReportController::class, 'submitDecisions'])
+Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionReportController::class, 'submitDecisions'])
     ->name('public.report.decide');
+
+Route::post('report/{token}/payment-receipt', [InspectionReportController::class, 'uploadPaymentReceipt'])
+    ->name('public.report.upload-payment-receipt');
 
 Route::middleware(['auth', 'verified'])
     ->prefix('admin')
@@ -74,9 +77,16 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'uploadInvoice'])
                 ->name('service-orders.upload-invoice');
 
-            Route::delete('service-orders/{serviceOrder}/invoices/{invoice}',
+            Route::delete('service-orders/{serviceOrder}/invoice', 
                 [ServiceOrderController::class, 'deleteInvoice'])
-                ->name('service-orders.delete-invoice');
+                ->name('admin.service-orders.delete-invoice');
+
+            Route::patch('service-orders/{serviceOrder}/payment-details', [ServiceOrderController::class, 'updatePaymentDetails'])
+                ->name('admin.service-orders.update-payment-details');
+            Route::post('service-orders/{serviceOrder}/payment-receipt/staff', [ServiceOrderController::class, 'uploadStaffPaymentReceipt'])
+                ->name('admin.service-orders.upload-staff-payment-receipt');
+            Route::delete('service-orders/{serviceOrder}/payment-receipt/staff', [ServiceOrderController::class, 'deleteStaffPaymentReceipt'])
+                ->name('admin.service-orders.delete-staff-payment-receipt');
         });
 
         // Admin-only — staff & workshop config

@@ -10,14 +10,33 @@ module.exports = {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Inter', ...defaultTheme.fontFamily.sans],
+                // Font VW resmi (VW Head / VW Text) belum tersedia — akses Frontify
+                // masih perlu request lisensi (lihat PROJECT-RULES.md bagian 11).
+                // Sesuai Panduan Gaya Desain Web: "Opsi cadangan dalam kode hanya
+                // boleh berupa 'sans serif' dan 'monospace'." — TIDAK BOLEH pakai
+                // font pihak ketiga (Inter, Google Fonts, dsb) sebagai pengganti,
+                // walau sementara. Jangan tambah font lain di sini sampai lisensi
+                // resmi didapat dan aset font asli di-drop ke /resources/fonts.
+                sans: [...defaultTheme.fontFamily.sans],
             },
             colors: {
                 // --- token VW yang sudah ada, JANGAN dihapus ---
+                // TODO verifikasi: hex di bawah ini belum dicocokkan ke kode warna
+                // resmi VW Brand Portal/Frontify (dokumen yang jadi acuan project
+                // ini belum mencantumkan kode hex resmi). Jangan anggap final
+                // sebelum dicek langsung ke Frontify / Brand Portal.
                 'vw-blue': '#001E50',
                 'vw-light-blue': '#00B0F0',
                 'vw-grey': '#767676',
                 'vw-grey-light': '#F2F2F2',
+
+                // Catatan brand: merah/hijau di bawah ini TIDAK ADA di palet resmi
+                // VW (primer: VW Dark Blue + putih; sekunder: New Horizon 20).
+                // Dipertahankan HANYA untuk status badge admin internal (urgent,
+                // approved) — bukan untuk tombol approve/reject di halaman publik
+                // customer (InspectionReport.jsx). Tombol customer-facing WAJIB
+                // pakai vw-blue/putih sesuai aturan CTA resmi. Lihat keputusan di
+                // PROJECT-RULES.md bagian 11.
                 urgent: '#D32F2F',
                 approved: '#2E7D32',
 

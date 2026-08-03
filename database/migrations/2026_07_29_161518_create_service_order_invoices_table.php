@@ -10,11 +10,10 @@ return new class extends Migration
     {
         Schema::create('service_order_invoices', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('service_order_id')->constrained()->cascadeOnDelete();
+            // unique() -> revisi balik ke 1 WO : 1 invoice (PROJECT-RULES.md
+            // bagian 2 & TODO bagian 7), sebelumnya multi-PDF pakai sort_order.
+            $table->foreignId('service_order_id')->unique()->constrained()->cascadeOnDelete();
             $table->string('file_path');
-            // sort_order menentukan urutan tampil ("Invoice 1", "Invoice 2", dst)
-            // di halaman admin & publik — bukan urutan waktu upload.
-            $table->unsignedInteger('sort_order')->default(0);
             $table->timestamp('uploaded_at');
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();

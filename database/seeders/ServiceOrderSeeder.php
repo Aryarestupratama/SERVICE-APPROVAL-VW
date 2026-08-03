@@ -111,13 +111,11 @@ class ServiceOrderSeeder extends Seeder
             'updated_at' => now()->subDays(3),
         ]);
 
-        // Invoice final sekarang baris terpisah di service_order_invoices (bisa lebih
-        // dari 1 file) — dummy ini cuma 1 baris, label tampil "Invoice 1" diturunkan
-        // dari sort_order + 1 di frontend, sama seperti pola label video.
+        // Invoice final: 1 baris per order di service_order_invoices (1 WO : 1
+        // invoice, bukan multi-file lagi).
         DB::table('service_order_invoices')->insert([
             'service_order_id' => $order3Id,
             'file_path' => 'invoices/order-3-work-order-3.pdf',
-            'sort_order' => 0,
             'uploaded_at' => now()->subDays(3),
             'uploaded_by' => 3, // Sarah (SA) yang upload
             'created_at' => now()->subDays(3),

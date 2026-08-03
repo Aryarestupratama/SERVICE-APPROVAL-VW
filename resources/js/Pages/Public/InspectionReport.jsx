@@ -102,15 +102,9 @@ function youtubeEmbedUrl(url) {
     }
 }
 
-// "Invoice 1", "Invoice 2", dst — di-derive dari sort_order, sama pola dengan
-// admin Show.jsx (belum ada kolom `label` tersendiri di service_order_invoices).
-function sortedInvoices(invoices) {
-    return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
-}
-
 export default function InspectionReport({
     token, settings, order, vehicle, customer, serviceAdvisor,
-    videos, items: initialItems, invoices: initialInvoices, estimationDocuments
+    videos, items: initialItems, invoice, estimationDocuments, customerPaymentReceipt
 }) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
     const [items, setItems] = useState(initialItems);
@@ -198,7 +192,33 @@ export default function InspectionReport({
     const showEstimationSection = ESTIMATION_VISIBLE_STATUSES.includes(order.status);
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
     const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
-    const invoices = sortedInvoices(initialInvoices);
+
+    const [receiptFile, setReceiptFile] = useState(null);
+    const [uploadingReceipt, setUploadingReceipt] = useState(false);
+
+    const showPaymentSection = order.status === 'invoice_preparation';
+
+    const BANK_ACCOUNTS = [
+        { bank: 'Bank Mandiri IDR', account: 'PT Wahana Wirawan — No. A/C 1240012993409' },
+        { bank: 'Bank Central Asia IDR', account: 'PT Wahana Wirawan — No. A/C 7160263789' },
+    ];
+
+    const handleReceiptUpload = (e) => {
+        e.preventDefault();
+        if (!receiptFile) return;
+
+        setUploadingReceipt(true);
+        router.post(
+            route('public.report.upload-payment-receipt', token),
+            { receipt: receiptFile },
+            {
+                forceFormData: true,
+                onSuccess: () => setReceiptFile(null),
+                onFinish: () => setUploadingReceipt(false),
+            }
+        );
+    };
+
     const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
 
     return (
@@ -524,33 +544,85 @@ export default function InspectionReport({
                                 Invoice Form
                             </h2>
 
-                            {invoices.length > 0 ? (
-                                <div className="mt-3 space-y-2">
-                                    {invoices.map((invoice, index) => (
-                                        <a
-                                            key={invoice.id}
-                                            href={`/storage/${invoice.file_path}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
-                                        >
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                                <FileText className="h-4 w-4" />
-                                            </span>
-                                            <span>
-                                                <span className="block font-medium text-gray-900">
-                                                    View {invoice.label ?? `Invoice ${index + 1}`} (PDF)
-                                                </span>
-                                                <span className="text-xs text-vw-grey">Opens in a new tab</span>
-                                            </span>
-                                        </a>
-                                    ))}
+                            {invoice ? (
+                                <div className="mt-3">
+                                    <a
+                                        href={`/storage/${invoice.file_path}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
+                                    >
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
+                                            <FileText className="h-4 w-4" />
+                                        </span>
+                                        <span>
+                                            <span className="block font-medium text-gray-900">View Invoice (PDF)</span>
+                                            <span className="text-xs text-vw-grey">Opens in a new tab</span>
+                                        </span>
+                                    </a>
                                 </div>
                             ) : (
                                 <p className="mt-3 rounded-md bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
                                     Invoice is being prepared and will appear here shortly.
                                 </p>
                             )}
+                        </section>
+                    </>
+                )}
+
+                {showPaymentSection && (
+                    <>
+                        <hr className="my-8 border-vw-grey-light" />
+                        <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
+                                Payment
+                            </h2>
+
+                            <div className="mt-3 space-y-2">
+                                {BANK_ACCOUNTS.map((acc) => (
+                                    <div
+                                        key={acc.bank}
+                                        className="rounded-md border border-vw-grey/15 px-4 py-3 text-sm"
+                                    >
+                                        <p className="font-semibold text-gray-900">{acc.bank}</p>
+                                        <p className="text-vw-grey">{acc.account}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {(order.invoice_number || order.bill_to) && (
+                                <div className="mt-3 space-y-1 text-sm text-gray-700">
+                                    {order.invoice_number && <p>Invoice Number: {order.invoice_number}</p>}
+                                    {order.bill_to && <p>Bill To: {order.bill_to}</p>}
+                                </div>
+                            )}
+
+                            <div className="mt-4">
+                                <p className="text-sm font-medium text-gray-900">Upload your payment receipt</p>
+                                {customerPaymentReceipt ? (
+                                    <p className="mt-1 text-sm text-approved">
+                                        Receipt already uploaded — you can upload again to replace it.
+                                    </p>
+                                ) : (
+                                    <p className="mt-1 text-sm text-vw-grey">No receipt uploaded yet.</p>
+                                )}
+
+                                <form onSubmit={handleReceiptUpload} className="mt-2 flex items-center gap-2">
+                                    <input
+                                        type="file"
+                                        accept=".pdf,.jpg,.jpeg,.png"
+                                        className="text-xs"
+                                        onChange={(e) => setReceiptFile(e.target.files[0])}
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={uploadingReceipt || !receiptFile}
+                                        className="rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50"
+                                    >
+                                        {uploadingReceipt ? 'Uploading...' : 'Upload'}
+                                    </button>
+                                </form>
+                            </div>
                         </section>
                     </>
                 )}
