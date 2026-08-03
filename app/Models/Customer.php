@@ -63,9 +63,4 @@ class Customer extends Model
             'id'            // local key di Vehicle
         );
     }
-
-    public function bookings()
-    {
-        return $this->hasMany(Booking::class);
-    }
 }

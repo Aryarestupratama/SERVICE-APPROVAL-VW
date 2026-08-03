@@ -12,6 +12,7 @@ use App\Models\ServiceOrderInvoice;
 use App\Models\ServiceOrderPaymentReceipt;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\CustomerVehicle;
 use App\Models\Setting;
 use App\Services\InspectionItemPricingService;
 use Illuminate\Http\Request;
@@ -55,7 +56,8 @@ class ServiceOrderController extends Controller
     {
         return Inertia::render('Admin/ServiceOrders/Create', [
             'customers' => Customer::select('id', 'name', 'phone')->orderBy('name')->get(),
-            'vehicles' => Vehicle::select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
+            'vehicles' => Vehicle::with('customers:id')
+                ->select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
                 ->orderBy('plate_number')
                 ->get(),
             'technicians' => User::where('role', 'chief_technician')
@@ -121,11 +123,23 @@ class ServiceOrderController extends Controller
             $customerId = $validated['customer_id']
                 ?? Customer::create($validated['new_customer'])->id;
 
-            $vehicleId = $validated['vehicle_id']
-                ?? Vehicle::create([
-                    ...$validated['new_vehicle'],
+            if ($validated['vehicle_id']) {
+                $vehicleId = $validated['vehicle_id'];
+            } else {
+                // customer_id sengaja TIDAK diisi manual di sini — biarkan
+                // CustomerVehicleObserver yang mengisi vehicles.customer_id
+                // (shortcut denormalized) begitu pivot primary dibuat, supaya
+                // satu-satunya jalur penulisan customer_id tetap lewat observer.
+                $vehicle = Vehicle::create($validated['new_vehicle']);
+
+                CustomerVehicle::create([
+                    'vehicle_id' => $vehicle->id,
                     'customer_id' => $customerId,
-                ])->id;
+                    'is_primary' => true,
+                ]);
+
+                $vehicleId = $vehicle->id;
+            }
 
            $order = ServiceOrder::create([
                 'vehicle_id' => $vehicleId,

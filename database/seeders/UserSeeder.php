@@ -11,14 +11,6 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         User::create([
-            'name' => 'Admin VW PIK',
-            'email' => 'admin@vwpik.test',
-            'password' => Hash::make('password'),
-            'role' => 'admin',
-            'phone' => '081234567890',
-        ]);
-
-        User::create([
             'name' => 'Mariyono',
             'email' => 'mariyono@vw.co.id',
             'password' => Hash::make('password'),
@@ -43,20 +35,28 @@ class UserSeeder extends Seeder
         ]);
 
         User::create([
-            'name' => 'Agus Wijaya',
-            'email' => 'agus.tech@vwpik.test',
+            'name' => 'Genta Sunarya',
+            'email' => 'genta.sunarya@vw.co.id',
             'password' => Hash::make('password'),
             'role' => 'chief_technician',
-            'phone' => '081233344455',
+            'phone' => '081319614931',
             'email_verified_at' => now(),
         ]);
 
         User::create([
-            'name' => 'Rudi Hartono',
-            'email' => 'rudi.tech@vwpik.test',
+            'name' => 'Rojabim Maruf',
+            'email' => 'rojabim.maruf@vw.co.id',
             'password' => Hash::make('password'),
             'role' => 'chief_technician',
-            'phone' => '081266677788',
+            'phone' => '081212764645',
+            'email_verified_at' => now(),
+        ]);
+        User::create([
+            'name' => 'Slamet Nurohim',
+            'email' => 'slamet.nurohim@vw.co.id',
+            'password' => Hash::make('password'),
+            'role' => 'chief_technician',
+            'phone' => '087777333135',
             'email_verified_at' => now(),
         ]);
     }

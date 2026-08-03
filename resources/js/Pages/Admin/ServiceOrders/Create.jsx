@@ -154,7 +154,9 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
     const filteredVehicles =
         customerMode === 'existing' && data.customer_id
-            ? vehicles.filter((v) => v.customer_id === data.customer_id)
+            ? vehicles.filter((v) =>
+                (v.customers ?? []).some((c) => c.id === data.customer_id)
+            )
             : [];
 
     // Transform payload sebelum dikirim ke backend.

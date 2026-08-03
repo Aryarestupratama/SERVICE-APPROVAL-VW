@@ -79,14 +79,19 @@ Route::middleware(['auth', 'verified'])
 
             Route::delete('service-orders/{serviceOrder}/invoice', 
                 [ServiceOrderController::class, 'deleteInvoice'])
-                ->name('admin.service-orders.delete-invoice');
+                ->name('service-orders.delete-invoice');
 
-            Route::patch('service-orders/{serviceOrder}/payment-details', [ServiceOrderController::class, 'updatePaymentDetails'])
-                ->name('admin.service-orders.update-payment-details');
-            Route::post('service-orders/{serviceOrder}/payment-receipt/staff', [ServiceOrderController::class, 'uploadStaffPaymentReceipt'])
-                ->name('admin.service-orders.upload-staff-payment-receipt');
-            Route::delete('service-orders/{serviceOrder}/payment-receipt/staff', [ServiceOrderController::class, 'deleteStaffPaymentReceipt'])
-                ->name('admin.service-orders.delete-staff-payment-receipt');
+            Route::patch('service-orders/{serviceOrder}/payment-details',
+                [ServiceOrderController::class, 'updatePaymentDetails'])
+                ->name('service-orders.update-payment-details');
+
+            Route::post('service-orders/{serviceOrder}/payment-receipt/staff',
+                [ServiceOrderController::class, 'uploadStaffPaymentReceipt'])
+                ->name('service-orders.upload-staff-payment-receipt');
+
+            Route::delete('service-orders/{serviceOrder}/payment-receipt/staff',
+                [ServiceOrderController::class, 'deleteStaffPaymentReceipt'])
+                ->name('service-orders.delete-staff-payment-receipt');
         });
 
         // Admin-only — staff & workshop config

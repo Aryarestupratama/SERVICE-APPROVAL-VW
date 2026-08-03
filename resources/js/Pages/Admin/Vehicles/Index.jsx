@@ -4,6 +4,8 @@ import { router, useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
+import { Checkbox } from '@/Components/ui/checkbox';
+import { Badge } from '@/Components/ui/badge';
 import {
     Select,
     SelectContent,
@@ -11,6 +13,19 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/Components/ui/select';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/Components/ui/popover';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/Components/ui/command';
 import {
     Dialog,
     DialogContent,
@@ -23,10 +38,152 @@ import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
 
+/**
+ * Multi-select customer + penanda primary.
+ * - customer_ids: array of number
+ * - primary_customer_id: number|'' — HARUS salah satu dari customer_ids
+ *   (dijaga di sini + divalidasi ulang di backend, lihat VehicleController::validateVehicle()).
+ */
+function CustomerMultiSelect({ customers, customerIds, primaryCustomerId, onChange, error, primaryError }) {
+    const [popoverOpen, setPopoverOpen] = useState(false);
+
+    const selectedCustomers = useMemo(
+        () => customers.filter((c) => customerIds.includes(c.id)),
+        [customers, customerIds]
+    );
+
+    const toggleCustomer = (customerId) => {
+        let nextIds;
+        let nextPrimary = primaryCustomerId;
+
+        if (customerIds.includes(customerId)) {
+            nextIds = customerIds.filter((id) => id !== customerId);
+            // Kalau yang di-uncheck adalah primary saat ini, primary jadi kosong —
+            // user wajib pilih ulang primary dari sisa customer yang ada.
+            if (primaryCustomerId === customerId) {
+                nextPrimary = nextIds[0] ?? '';
+            }
+        } else {
+            nextIds = [...customerIds, customerId];
+            // Customer pertama yang dipilih otomatis jadi primary default,
+            // supaya user tidak wajib buka dropdown primary kalau cuma 1 PIC.
+            if (!primaryCustomerId) {
+                nextPrimary = customerId;
+            }
+        }
+
+        onChange(nextIds, nextPrimary);
+    };
+
+    const removeCustomer = (customerId) => toggleCustomer(customerId);
+
+    return (
+        <div className="space-y-3">
+            <div className="space-y-1.5">
+                <Label>Customers (PIC)</Label>
+                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-start font-normal"
+                        >
+                            {customerIds.length > 0
+                                ? `${customerIds.length} customer${customerIds.length > 1 ? 's' : ''} selected`
+                                : 'Select customers'}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                        <Command>
+                            <CommandInput placeholder="Search customer..." />
+                            <CommandList>
+                                <CommandEmpty>No customer found.</CommandEmpty>
+                                <CommandGroup>
+                                    {customers.map((customer) => (
+                                        <CommandItem
+                                            key={customer.id}
+                                            onSelect={() => toggleCustomer(customer.id)}
+                                            className="cursor-pointer"
+                                        >
+                                            <Checkbox
+                                                checked={customerIds.includes(customer.id)}
+                                                className="mr-2"
+                                                onCheckedChange={() => toggleCustomer(customer.id)}
+                                            />
+                                            {customer.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+                {error && <p className="text-sm text-urgent">{error}</p>}
+            </div>
+
+            {selectedCustomers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                    {selectedCustomers.map((customer) => (
+                        <Badge key={customer.id} variant="secondary" className="gap-1">
+                            {customer.name}
+                            {customer.id === primaryCustomerId && (
+                                <span className="text-vw-light-blue">(Primary)</span>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => removeCustomer(customer.id)}
+                                className="ml-1 text-muted-foreground hover:text-urgent"
+                                aria-label={`Remove ${customer.name}`}
+                            >
+                                ×
+                            </button>
+                        </Badge>
+                    ))}
+                </div>
+            )}
+
+            {customerIds.length > 1 && (
+                <div className="space-y-1.5">
+                    <Label htmlFor="primary_customer_id">Primary Customer</Label>
+                    <Select
+                        value={primaryCustomerId ? String(primaryCustomerId) : ''}
+                        onValueChange={(value) => onChange(customerIds, Number(value))}
+                    >
+                        <SelectTrigger id="primary_customer_id">
+                            <SelectValue placeholder="Select primary customer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {selectedCustomers.map((customer) => (
+                                <SelectItem key={customer.id} value={String(customer.id)}>
+                                    {customer.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    {primaryError && <p className="text-sm text-urgent">{primaryError}</p>}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
+
+    // vehicle.customers = daftar PIC lengkap (dari relasi belongsToMany, prop dikirim
+    // controller index() lewat with(['customer', 'customers'])). Kalau prop ini belum
+    // di-eager-load di baris tertentu (seharusnya selalu ada), fallback ke customer primary saja.
+    const initialCustomerIds = () =>
+        (vehicle?.customers ?? (vehicle?.customer ? [vehicle.customer] : [])).map((c) => c.id);
+
+    const initialPrimaryId = () => {
+        const primary = (vehicle?.customers ?? []).find((c) => c.pivot?.is_primary);
+        return primary?.id ?? vehicle?.customer?.id ?? '';
+    };
+
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
-        customer_id: vehicle?.customer_id ?? '',
+        customer_ids: initialCustomerIds(),
+        primary_customer_id: initialPrimaryId(),
         plate_number: vehicle?.plate_number ?? '',
         brand: vehicle?.brand ?? '',
         vin: vehicle?.vin ?? '',
@@ -38,7 +195,8 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
         if (open) {
             clearErrors();
             setData({
-                customer_id: vehicle?.customer_id ?? '',
+                customer_ids: initialCustomerIds(),
+                primary_customer_id: initialPrimaryId(),
                 plate_number: vehicle?.plate_number ?? '',
                 brand: vehicle?.brand ?? '',
                 vin: vehicle?.vin ?? '',
@@ -47,6 +205,14 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
             });
         }
     }, [open, vehicle]);
+
+    const handleCustomerChange = (customerIds, primaryCustomerId) => {
+        setData((current) => ({
+            ...current,
+            customer_ids: customerIds,
+            primary_customer_id: primaryCustomerId,
+        }));
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -80,32 +246,14 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                     </DialogHeader>
 
                     <div className="space-y-4 py-4">
-                        {/* Customer hanya bisa dipilih saat tambah baru — tidak ikut di-update saat edit,
-                            karena controller update() tidak menerima customer_id.
-                            "Edit vehicle: pindah customer" masih belum diputuskan owner. */}
-                        {!isEdit && (
-                            <div className="space-y-1.5">
-                                <Label htmlFor="customer_id">Customer</Label>
-                                <Select
-                                    value={data.customer_id ? String(data.customer_id) : ''}
-                                    onValueChange={(value) => setData('customer_id', value)}
-                                >
-                                    <SelectTrigger id="customer_id">
-                                        <SelectValue placeholder="Select customer" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {customers.map((customer) => (
-                                            <SelectItem key={customer.id} value={String(customer.id)}>
-                                                {customer.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {errors.customer_id && (
-                                    <p className="text-sm text-urgent">{errors.customer_id}</p>
-                                )}
-                            </div>
-                        )}
+                        <CustomerMultiSelect
+                            customers={customers}
+                            customerIds={data.customer_ids}
+                            primaryCustomerId={data.primary_customer_id}
+                            onChange={handleCustomerChange}
+                            error={errors.customer_ids}
+                            primaryError={errors.primary_customer_id}
+                        />
 
                         <div className="space-y-1.5">
                             <Label htmlFor="plate_number">Plate Number</Label>
@@ -120,8 +268,7 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             )}
                         </div>
 
-                        {/* Brand sekarang enum terbatas (Audi, VW) — bukan free text lagi,
-                            sesuai keputusan owner 2026-07-31 (bagian 7B PROJECT-RULES.md) */}
+                        {/* Brand enum terbatas (Audi, VW) — sesuai PROJECT-RULES.md bagian 2 */}
                         <div className="space-y-1.5">
                             <Label htmlFor="brand">Brand</Label>
                             <Select
@@ -142,7 +289,7 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
                         </div>
 
-                        {/* VIN/Chasis Number (nama kolom DB tetap: vin) wajib unique, CHAR(17) — lihat PROJECT-RULES.md bagian 2 */}
+                        {/* VIN/Chasis Number (nama kolom DB tetap: vin) wajib unique, CHAR(17) */}
                         <div className="space-y-1.5">
                             <Label htmlFor="vin">VIN/Chasis Number</Label>
                             <Input
@@ -293,11 +440,33 @@ export default function Index({ vehicles, search, customers, brands }) {
                 cell: ({ row }) => row.original.year ?? '—',
             },
             {
-                id: 'customer',
-                header: 'Customer',
-                meta: { label: 'Customer' },
-                accessorFn: (row) => row.customer?.name ?? '',
-                cell: ({ row }) => row.original.customer?.name ?? '—',
+                // Ganti dari kolom 'customer' tunggal ke daftar semua PIC (relasi customers()),
+                // supaya list vehicle langsung menunjukkan siapa saja PIC-nya, bukan cuma primary.
+                id: 'customers',
+                header: 'Customers (PIC)',
+                meta: { label: 'Customers (PIC)' },
+                enableSorting: false,
+                accessorFn: (row) =>
+                    (row.customers ?? []).map((c) => c.name).join(', '),
+                cell: ({ row }) => {
+                    const customerList = row.original.customers ?? [];
+                    if (customerList.length === 0) return '—';
+                    return (
+                        <div className="flex flex-wrap gap-1">
+                            {customerList.map((customer) => (
+                                <Badge
+                                    key={customer.id}
+                                    variant={customer.pivot?.is_primary ? 'default' : 'secondary'}
+                                >
+                                    {customer.name}
+                                    {customer.pivot?.is_primary && (
+                                        <span className="ml-1 text-[10px] opacity-80">Primary</span>
+                                    )}
+                                </Badge>
+                            ))}
+                        </div>
+                    );
+                },
             },
             {
                 id: 'actions',
