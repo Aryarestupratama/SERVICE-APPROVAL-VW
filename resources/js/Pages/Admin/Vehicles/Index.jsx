@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm, Link } from '@inertiajs/react';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/Components/ui/table';
+import { router, useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -27,6 +19,9 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+import { DataTable } from '@/Components/DataTable/DataTable';
+import { useDataTable } from '@/Components/DataTable/useDataTable';
+import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
 
 function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
@@ -147,14 +142,14 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
                         </div>
 
-                        {/* NIK (nama kolom DB: vin) wajib unique, CHAR(17) — sesuai keputusan owner 2026-07-31 */}
+                        {/* VIN/Chasis Number (nama kolom DB tetap: vin) wajib unique, CHAR(17) — lihat PROJECT-RULES.md bagian 2 */}
                         <div className="space-y-1.5">
-                            <Label htmlFor="vin">NIK (Nomor Identitas Kendaraan)</Label>
+                            <Label htmlFor="vin">VIN/Chasis Number</Label>
                             <Input
                                 id="vin"
                                 value={data.vin}
                                 onChange={(e) => setData('vin', e.target.value.toUpperCase())}
-                                placeholder="17-character NIK"
+                                placeholder="17-character VIN/Chasis Number"
                                 maxLength={17}
                                 className="uppercase"
                             />
@@ -267,93 +262,88 @@ export default function Index({ vehicles, search, customers, brands }) {
         setFormOpen(true);
     };
 
+    const columns = useMemo(
+        () => [
+            {
+                accessorKey: 'plate_number',
+                header: 'Plate Number',
+                meta: { label: 'Plate Number' },
+                cell: ({ row }) => (
+                    <span className="font-medium">{row.original.plate_number}</span>
+                ),
+            },
+            {
+                id: 'brand_model',
+                header: 'Brand / Model',
+                meta: { label: 'Brand / Model' },
+                accessorFn: (row) => `${row.brand} ${row.model}`,
+            },
+            {
+                accessorKey: 'vin',
+                header: 'VIN/Chasis Number',
+                meta: { label: 'VIN/Chasis Number' },
+                cell: ({ row }) => (
+                    <span className="font-mono text-xs">{row.original.vin ?? '—'}</span>
+                ),
+            },
+            {
+                accessorKey: 'year',
+                header: 'Year',
+                meta: { label: 'Year' },
+                cell: ({ row }) => row.original.year ?? '—',
+            },
+            {
+                id: 'customer',
+                header: 'Customer',
+                meta: { label: 'Customer' },
+                accessorFn: (row) => row.customer?.name ?? '',
+                cell: ({ row }) => row.original.customer?.name ?? '—',
+            },
+            {
+                id: 'actions',
+                header: '',
+                enableSorting: false,
+                enableHiding: false,
+                cell: ({ row }) => (
+                    <div className="space-x-3 whitespace-nowrap text-right">
+                        <button
+                            type="button"
+                            onClick={() => openEditForm(row.original)}
+                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                        >
+                            Edit
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDeletingVehicle(row.original)}
+                            className="text-sm font-medium text-urgent hover:underline"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                ),
+            },
+        ],
+        []
+    );
+
+    const table = useDataTable({ data: vehicles.data, columns });
+
     return (
         <AdminLayout title="Vehicles">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by plate, NIK, model, or customer..."
-                    className="max-w-xs"
-                />
-                <Button onClick={openAddForm}>Add Vehicle</Button>
-            </div>
-
-            <div className="rounded-lg border border-vw-grey/20 bg-white">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Plate Number</TableHead>
-                            <TableHead>Brand / Model</TableHead>
-                            <TableHead>NIK</TableHead>
-                            <TableHead>Year</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead className="w-1"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {vehicles.data.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={6} className="py-8 text-center text-vw-grey">
-                                    No vehicles found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                        {vehicles.data.map((vehicle) => (
-                            <TableRow key={vehicle.id}>
-                                <TableCell className="font-medium">
-                                    {vehicle.plate_number}
-                                </TableCell>
-                                <TableCell>
-                                    {vehicle.brand} {vehicle.model}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">
-                                    {vehicle.vin ?? '—'}
-                                </TableCell>
-                                <TableCell>{vehicle.year ?? '—'}</TableCell>
-                                <TableCell>{vehicle.customer?.name ?? '—'}</TableCell>
-                                <TableCell className="space-x-3 whitespace-nowrap text-right">
-                                    <button
-                                        type="button"
-                                        onClick={() => openEditForm(vehicle)}
-                                        className="text-sm font-medium text-vw-light-blue hover:underline"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setDeletingVehicle(vehicle)}
-                                        className="text-sm font-medium text-urgent hover:underline"
-                                    >
-                                        Delete
-                                    </button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {vehicles.links.length > 3 && (
-                <div className="mt-4 flex flex-wrap gap-1">
-                    {vehicles.links.map((link, i) => (
-                        <Link
-                            key={i}
-                            href={link.url ?? '#'}
-                            preserveScroll
-                            preserveState
-                            className={`rounded-md px-3 py-1.5 text-sm ${
-                                link.active
-                                    ? 'bg-vw-blue text-white'
-                                    : link.url
-                                    ? 'text-vw-grey hover:bg-vw-grey-light'
-                                    : 'cursor-not-allowed text-vw-grey/40'
-                            }`}
-                            dangerouslySetInnerHTML={{ __html: link.label }}
-                        />
-                    ))}
-                </div>
-            )}
+            <DataTable
+                table={table}
+                links={vehicles.links}
+                emptyMessage="No vehicles found."
+                searchSlot={
+                    <DataTableSearchInput
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by plate, VIN/chasis number, model, or customer..."
+                    />
+                }
+                primaryAction={<Button onClick={openAddForm}>Add Vehicle</Button>}
+            />
 
             <VehicleFormDialog
                 open={formOpen}

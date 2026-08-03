@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm, Link } from '@inertiajs/react';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/Components/ui/table';
+import { router, useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -27,6 +19,9 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+import { DataTable } from '@/Components/DataTable/DataTable';
+import { useDataTable } from '@/Components/DataTable/useDataTable';
+import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
 
 // Terima input user dalam bentuk apapun (boleh diawali 0, 62, atau langsung tanpa awalan)
 // dan kembalikan hanya bagian digit SETELAH kode negara, tanpa leading zero.
@@ -232,7 +227,6 @@ export default function Index({ customers, search, titles }) {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deletingCustomer, setDeletingCustomer] = useState(null);
 
-    // Debounce search — kirim request setelah user berhenti ngetik 400ms
     useEffect(() => {
         const timeout = setTimeout(() => {
             if (searchTerm !== (search ?? '')) {
@@ -256,88 +250,85 @@ export default function Index({ customers, search, titles }) {
         setFormOpen(true);
     };
 
+    // useMemo karena columns butuh closure ke openEditForm/setDeletingCustomer —
+    // dibuat di dalam komponen (beda dari Service Orders yang columns-nya
+    // di module scope, karena di sana nggak butuh closure apapun).
+    const columns = useMemo(
+        () => [
+            {
+                id: 'name',
+                header: 'Name',
+                meta: { label: 'Name' },
+                accessorFn: (row) => row.name,
+                cell: ({ row }) => (
+                    <span className="font-medium">
+                        {row.original.title ? `${row.original.title} ` : ''}
+                        {row.original.name}
+                    </span>
+                ),
+            },
+            {
+                accessorKey: 'phone',
+                header: 'Phone',
+                meta: { label: 'Phone' },
+            },
+            {
+                accessorKey: 'email',
+                header: 'Email',
+                meta: { label: 'Email' },
+                cell: ({ row }) => row.original.email ?? '—',
+            },
+            {
+                id: 'vehicles',
+                header: 'Vehicles',
+                meta: { label: 'Vehicles' },
+                accessorFn: (row) => row.vehicles?.length ?? 0,
+            },
+            {
+                id: 'actions',
+                header: '',
+                enableSorting: false,
+                enableHiding: false,
+                cell: ({ row }) => (
+                    <div className="space-x-3 whitespace-nowrap text-right">
+                        <button
+                            type="button"
+                            onClick={() => openEditForm(row.original)}
+                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                        >
+                            Edit
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDeletingCustomer(row.original)}
+                            className="text-sm font-medium text-urgent hover:underline"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                ),
+            },
+        ],
+        []
+    );
+
+    const table = useDataTable({ data: customers.data, columns });
+
     return (
         <AdminLayout title="Customers">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by name or phone..."
-                    className="max-w-xs"
-                />
-                <Button onClick={openAddForm}>Add Customer</Button>
-            </div>
-
-            <div className="rounded-lg border border-vw-grey/20 bg-white">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Vehicles</TableHead>
-                            <TableHead className="w-1"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {customers.data.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={5} className="py-8 text-center text-vw-grey">
-                                    No customers found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                        {customers.data.map((customer) => (
-                            <TableRow key={customer.id}>
-                                <TableCell className="font-medium">
-                                    {customer.title ? `${customer.title} ` : ''}
-                                    {customer.name}
-                                </TableCell>
-                                <TableCell>{customer.phone}</TableCell>
-                                <TableCell>{customer.email ?? '—'}</TableCell>
-                                <TableCell>{customer.vehicles?.length ?? 0}</TableCell>
-                                <TableCell className="space-x-3 whitespace-nowrap text-right">
-                                    <button
-                                        type="button"
-                                        onClick={() => openEditForm(customer)}
-                                        className="text-sm font-medium text-vw-light-blue hover:underline"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setDeletingCustomer(customer)}
-                                        className="text-sm font-medium text-urgent hover:underline"
-                                    >
-                                        Delete
-                                    </button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {customers.links.length > 3 && (
-                <div className="mt-4 flex flex-wrap gap-1">
-                    {customers.links.map((link, i) => (
-                        <Link
-                            key={i}
-                            href={link.url ?? '#'}
-                            preserveScroll
-                            preserveState
-                            className={`rounded-md px-3 py-1.5 text-sm ${
-                                link.active
-                                    ? 'bg-vw-blue text-white'
-                                    : link.url
-                                    ? 'text-vw-grey hover:bg-vw-grey-light'
-                                    : 'cursor-not-allowed text-vw-grey/40'
-                            }`}
-                            dangerouslySetInnerHTML={{ __html: link.label }}
-                        />
-                    ))}
-                </div>
-            )}
+            <DataTable
+                table={table}
+                links={customers.links}
+                emptyMessage="No customers found."
+                searchSlot={
+                    <DataTableSearchInput
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by name or phone..." // sesuaikan per halaman
+                    />
+                }
+                primaryAction={<Button onClick={openAddForm}>Add Customer</Button>}
+            />
 
             <CustomerFormDialog
                 open={formOpen}

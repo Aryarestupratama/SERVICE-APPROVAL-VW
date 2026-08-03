@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm, Link, usePage } from '@inertiajs/react';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/Components/ui/table';
+import { useForm, usePage, router } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -28,6 +20,9 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+import { DataTable } from '@/Components/DataTable/DataTable';
+import { useDataTable } from '@/Components/DataTable/useDataTable';
+import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
 
 const ROLE_LABEL = {
     admin: 'Admin',
@@ -275,91 +270,87 @@ export default function Index({ users, search }) {
         setFormOpen(true);
     };
 
+    // useMemo karena butuh closure ke openEditForm, setDeletingUser, dan
+    // auth.user.id (untuk cegah user hapus akunnya sendiri).
+    const columns = useMemo(
+        () => [
+            {
+                accessorKey: 'name',
+                header: 'Name',
+                meta: { label: 'Name' },
+                cell: ({ row }) => (
+                    <span className="font-medium">{row.original.name}</span>
+                ),
+            },
+            {
+                accessorKey: 'email',
+                header: 'Email',
+                meta: { label: 'Email' },
+            },
+            {
+                accessorKey: 'phone',
+                header: 'Phone',
+                meta: { label: 'Phone' },
+                cell: ({ row }) => row.original.phone ?? '—',
+            },
+            {
+                accessorKey: 'role',
+                header: 'Role',
+                meta: { label: 'Role' },
+                filterFn: 'equals',
+                cell: ({ row }) => (
+                    <Badge variant={ROLE_BADGE_VARIANT[row.original.role]}>
+                        {ROLE_LABEL[row.original.role] ?? row.original.role}
+                    </Badge>
+                ),
+            },
+            {
+                id: 'actions',
+                header: '',
+                enableSorting: false,
+                enableHiding: false,
+                cell: ({ row }) => (
+                    <div className="space-x-3 whitespace-nowrap text-right">
+                        <button
+                            type="button"
+                            onClick={() => openEditForm(row.original)}
+                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                        >
+                            Edit
+                        </button>
+                        {row.original.id !== auth.user.id && (
+                            <button
+                                type="button"
+                                onClick={() => setDeletingUser(row.original)}
+                                className="text-sm font-medium text-urgent hover:underline"
+                            >
+                                Delete
+                            </button>
+                        )}
+                    </div>
+                ),
+            },
+        ],
+        [auth.user.id]
+    );
+
+    const table = useDataTable({ data: users.data, columns });
+
     return (
         <AdminLayout title="Staff Accounts">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by name or email..."
-                    className="max-w-xs"
-                />
-                <Button onClick={openAddForm}>Add Staff Account</Button>
-            </div>
-
-            <div className="rounded-lg border border-vw-grey/20 bg-white">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead className="w-1"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {users.data.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={5} className="py-8 text-center text-vw-grey">
-                                    No staff accounts found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                        {users.data.map((user) => (
-                            <TableRow key={user.id}>
-                                <TableCell className="font-medium">{user.name}</TableCell>
-                                <TableCell>{user.email}</TableCell>
-                                <TableCell>{user.phone ?? '—'}</TableCell>
-                                <TableCell>
-                                    <Badge variant={ROLE_BADGE_VARIANT[user.role]}>
-                                        {ROLE_LABEL[user.role] ?? user.role}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell className="space-x-3 whitespace-nowrap text-right">
-                                    <button
-                                        type="button"
-                                        onClick={() => openEditForm(user)}
-                                        className="text-sm font-medium text-vw-light-blue hover:underline"
-                                    >
-                                        Edit
-                                    </button>
-                                    {user.id !== auth.user.id && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setDeletingUser(user)}
-                                            className="text-sm font-medium text-urgent hover:underline"
-                                        >
-                                            Delete
-                                        </button>
-                                    )}
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {users.links.length > 3 && (
-                <div className="mt-4 flex flex-wrap gap-1">
-                    {users.links.map((link, i) => (
-                        <Link
-                            key={i}
-                            href={link.url ?? '#'}
-                            preserveScroll
-                            preserveState
-                            className={`rounded-md px-3 py-1.5 text-sm ${
-                                link.active
-                                    ? 'bg-vw-blue text-white'
-                                    : link.url
-                                    ? 'text-vw-grey hover:bg-vw-grey-light'
-                                    : 'cursor-not-allowed text-vw-grey/40'
-                            }`}
-                            dangerouslySetInnerHTML={{ __html: link.label }}
-                        />
-                    ))}
-                </div>
-            )}
+            <DataTable
+                table={table}
+                links={users.links}
+                emptyMessage="No staff accounts found."
+                searchSlot={
+                    <DataTableSearchInput
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by name or email..." // sesuaikan per halaman
+                    />
+                }
+                primaryAction={<Button onClick={openAddForm}>Add Staff Account</Button>}
+            />
 
             <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />
             <DeleteConfirmDialog

@@ -12,6 +12,7 @@ use App\Models\ServiceOrderInvoice;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Setting;
+use App\Services\InspectionItemPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -190,7 +191,7 @@ class ServiceOrderController extends Controller
             ->with('success', 'Service order berhasil dibuat.');
     }
 
-    public function show(Request $request, ServiceOrder $serviceOrder)
+    public function show(Request $request, ServiceOrder $serviceOrder, InspectionItemPricingService $pricingService)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
@@ -207,14 +208,26 @@ class ServiceOrderController extends Controller
             'estimationDocuments.uploadedBy',
         ]);
 
+        $settings = Setting::current();
+
+        // Breakdown estimasi (subtotal/VAT/grand total) per group — live calculation
+        // dari SEMUA item apapun statusnya, VAT rate SEKARANG (bukan snapshot).
+        // Dipindah ke backend (sebelumnya inline di Show.jsx groupBreakdown()) supaya
+        // satu sumber angka dengan InspectionItemPricingService::grandTotalForOrder().
+        $breakdownByGroup = $pricingService->breakdownByGroup(
+            $serviceOrder->inspectionItems,
+            (float) $settings->ppn_percent
+        );
+
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
             // Dibutuhkan Show.jsx untuk breakdown PPN (Subtotal/PPN/Grand Total)
             // di kartu Inspection Items — settings.ppn_percent sumber kebenaran
             // tunggal, sama seperti dipakai InspectionItemPricingService di backend.
-            'settings' => Setting::current(),
+            'settings' => $settings,
             'groups' => InspectionItem::GROUPS,
             'maxInvoices' => self::MAX_INVOICES_PER_ORDER,
+            'breakdownByGroup' => $breakdownByGroup,
         ]);
     }
 

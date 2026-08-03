@@ -113,19 +113,6 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-// Breakdown subtotal/VAT/grand total per kelompok — di-scope filter per group.
-function groupBreakdown(items, group, vatPercent) {
-    const groupItems = items.filter((item) => item.group === group);
-    const subtotal = groupItems.reduce((sum, item) => sum + itemSubtotal(item), 0);
-    const vatAmount = subtotal * (vatPercent / 100);
-    return {
-        items: groupItems,
-        subtotal,
-        vatAmount,
-        grandTotal: subtotal + vatAmount,
-    };
-}
-
 function sortedInvoices(invoices) {
     return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
 }
@@ -150,7 +137,7 @@ const EMPTY_ITEM_FORM = {
     group: '',
 };
 
-export default function Show({ order, settings, maxInvoices }) {
+export default function Show({ order, settings, maxInvoices, breakdownByGroup }) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === 'admin';
 
@@ -483,7 +470,7 @@ export default function Show({ order, settings, maxInvoices }) {
                         // menambahkan item pertama ke group ini (dipicu dari selector di atas).
                         if (groupItems.length === 0 && addingToGroup !== group) return null;
 
-                        const breakdown = groupBreakdown(order.inspection_items ?? [], group, vatPercent);
+                        const breakdown = breakdownByGroup?.[group] ?? { subtotal: 0, vat_amount: 0, grand_total: 0 };
                         const doc = docsByGroup[group];
                         const hasFile = doc?.pdf_path;
 
@@ -849,12 +836,12 @@ export default function Show({ order, settings, maxInvoices }) {
                                             </div>
                                             <div className="flex items-center justify-between text-sm">
                                                 <p className="text-vw-grey">VAT ({vatPercent}%)</p>
-                                                <p className="text-gray-900">{formatCurrency(breakdown.vatAmount)}</p>
+                                                <p className="text-gray-900">{formatCurrency(breakdown.vat_amount)}</p>
                                             </div>
                                             <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
                                                 <p className="font-semibold text-gray-900">Group Total</p>
                                                 <p className="font-semibold text-gray-900">
-                                                    {formatCurrency(breakdown.grandTotal)}
+                                                    {formatCurrency(breakdown.grand_total)}
                                                 </p>
                                             </div>
                                         </div>

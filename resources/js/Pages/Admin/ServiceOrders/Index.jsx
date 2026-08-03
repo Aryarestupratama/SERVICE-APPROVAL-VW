@@ -1,125 +1,154 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Link } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/Components/ui/table';
 import { Badge } from '@/Components/ui/badge';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/Components/ui/select';
+import { DataTable } from '@/Components/DataTable/DataTable';
+import { useDataTable } from '@/Components/DataTable/useDataTable';
 
 const STATUS_VARIANT = {
-    draft: 'secondary',
-    sent: 'secondary',
-    awaiting_approval: 'default',
-    approved: 'success',
-    all_rejected_cancelled: 'destructive',
-    in_progress: 'default',
+    appointment: 'secondary',
+    work_in_progress: 'default',
+    quality_control: 'default',
+    invoice_preparation: 'default',
     completed: 'success',
-    invoiced: 'success',
+    all_rejected_cancelled: 'destructive',
 };
 
 const STATUS_LABEL = {
-    draft: 'Draft',
-    sent: 'Sent',
-    awaiting_approval: 'Awaiting Approval',
-    approved: 'Approved',
-    all_rejected_cancelled: 'Rejected & Cancelled',
-    in_progress: 'In Progress',
+    appointment: 'Appointment',
+    work_in_progress: 'Work in Progress',
+    quality_control: 'Quality Control',
+    invoice_preparation: 'Invoice Preparation',
     completed: 'Completed',
-    invoiced: 'Invoiced',
+    all_rejected_cancelled: 'Rejected & Cancelled',
 };
 
+function formatCurrency(value) {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+    }).format(value);
+}
+
+const columns = [
+    {
+        accessorKey: 'work_order_number',
+        header: 'Work Order Number',
+        meta: { label: 'Work Order Number' },
+        cell: ({ row }) => (
+            <span className="font-medium">{row.original.work_order_number}</span>
+        ),
+    },
+    {
+        id: 'customer',
+        header: 'Customer',
+        meta: { label: 'Customer' },
+        accessorFn: (row) => row.vehicle?.customer?.name ?? '',
+        cell: ({ row }) => (
+            <span className="font-medium">{row.original.vehicle?.customer?.name ?? '—'}</span>
+        ),
+    },
+    {
+        id: 'vehicle',
+        header: 'Vehicle',
+        meta: { label: 'Vehicle' },
+        enableSorting: false,
+        accessorFn: (row) =>
+            row.vehicle ? `${row.vehicle.brand} ${row.vehicle.model} ${row.vehicle.plate_number}` : '',
+        cell: ({ row }) => {
+            const v = row.original.vehicle;
+            return v ? `${v.brand} ${v.model} · ${v.plate_number}` : '—';
+        },
+    },
+    {
+        id: 'service_advisor',
+        header: 'Service Advisor',
+        meta: { label: 'Service Advisor' },
+        accessorFn: (row) => row.service_advisor?.name ?? '',
+        cell: ({ row }) => row.original.service_advisor?.name ?? '—',
+    },
+    {
+        accessorKey: 'status',
+        header: 'Status',
+        meta: { label: 'Status' },
+        filterFn: 'equals',
+        cell: ({ row }) => (
+            <Badge variant={STATUS_VARIANT[row.original.status] ?? 'default'}>
+                {STATUS_LABEL[row.original.status] ?? row.original.status}
+            </Badge>
+        ),
+    },
+    {
+        accessorKey: 'inspection_fee',
+        header: 'Inspection Fee',
+        meta: { label: 'Inspection Fee' },
+        cell: ({ row }) => (
+            <div className="text-right">{formatCurrency(row.original.inspection_fee)}</div>
+        ),
+    },
+    {
+        id: 'actions',
+        header: '',
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+            <Link
+                href={route('admin.service-orders.show', row.original.id)}
+                className="text-sm font-medium text-vw-light-blue hover:underline"
+            >
+                View
+            </Link>
+        ),
+    },
+];
+
 export default function Index({ orders }) {
+    const table = useDataTable({ data: orders.data, columns });
+
+    const statusColumn = table.getColumn('status');
+    const activeStatusFilter = statusColumn?.getFilterValue() ?? '';
+
     return (
         <AdminLayout title="Service Orders">
-            <div className="mb-4 flex justify-end">
-                <Button asChild>
-                    <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
-                </Button>
-            </div>
-            <div className="rounded-lg border border-vw-grey/20 bg-white">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Work Order Number</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead>Vehicle</TableHead>
-                            <TableHead>Service Advisor</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Inspection Fee</TableHead>
-                            <TableHead className="w-1"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {orders.data.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={7} className="py-8 text-center text-vw-grey">
-                                    No service orders yet.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                        {orders.data.map((order) => (
-                            <TableRow key={order.id}>
-                                <TableCell className="font-medium">{order.work_order_number}</TableCell>
-                                <TableCell className="font-medium">
-                                    {order.vehicle?.customer?.name ?? '—'}
-                                </TableCell>
-                                <TableCell>
-                                    {order.vehicle
-                                        ? `${order.vehicle.brand} ${order.vehicle.model} · ${order.vehicle.plate_number}`
-                                        : '—'}
-                                </TableCell>
-                                <TableCell>{order.service_advisor?.name ?? '—'}</TableCell>
-                                <TableCell>
-                                    <Badge variant={STATUS_VARIANT[order.status] ?? 'default'}>
-                                        {STATUS_LABEL[order.status] ?? order.status}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {new Intl.NumberFormat('id-ID', {
-                                        style: 'currency',
-                                        currency: 'IDR',
-                                        maximumFractionDigits: 0,
-                                    }).format(order.inspection_fee)}
-                                </TableCell>
-                                <TableCell>
-                                    <Link
-                                        href={route('admin.service-orders.show', order.id)}
-                                        className="text-sm font-medium text-vw-light-blue hover:underline"
-                                    >
-                                        View
-                                    </Link>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {/* Pagination */}
-            {orders.links.length > 3 && (
-                <div className="mt-4 flex flex-wrap gap-1">
-                    {orders.links.map((link, i) => (
-                        <Link
-                            key={i}
-                            href={link.url ?? '#'}
-                            preserveScroll
-                            className={`rounded-md px-3 py-1.5 text-sm ${
-                                link.active
-                                    ? 'bg-vw-blue text-white'
-                                    : link.url
-                                    ? 'text-vw-grey hover:bg-vw-grey-light'
-                                    : 'cursor-not-allowed text-vw-grey/40'
-                            }`}
-                            dangerouslySetInnerHTML={{ __html: link.label }}
-                        />
-                    ))}
-                </div>
-            )}
+            <DataTable
+                table={table}
+                links={orders.links}
+                emptyMessage="No service orders yet."
+                searchPlaceholder="Search customer, WO number..."
+                filterSlot={
+                    <Select
+                        value={activeStatusFilter || 'all'}
+                        onValueChange={(value) =>
+                            statusColumn?.setFilterValue(value === 'all' ? undefined : value)
+                        }
+                    >
+                        <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Filter by status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                }
+                primaryAction={
+                    <Button asChild>
+                        <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
+                    </Button>
+                }
+            />
         </AdminLayout>
     );
 }

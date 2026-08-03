@@ -79,4 +79,60 @@ class InspectionItemPricingService
 
         return round($total, 2);
     }
+
+    /**
+     * Breakdown subtotal/VAT/grand total per kelompok (group) — versi ESTIMASI,
+     * live calculation dari semua item apapun statusnya (pending/approved/rejected),
+     * pakai VAT rate yang berlaku SAAT INI (bukan snapshot).
+     *
+     * Beda dengan grandTotalForOrder() yang cuma hitung item approved pakai
+     * final_price_snapshot yang sudah dikunci — dua-duanya sengaja dipertahankan
+     * terpisah (dikonfirmasi owner 2026-08-03): satu untuk "kalau semua item
+     * disetujui hari ini segini totalnya", satu untuk "yang sudah pasti approved".
+     */
+    public function breakdownByGroup(iterable $inspectionItems, ?float $vatPercent = null): array
+    {
+        $vatPercent ??= (float) Setting::current()->ppn_percent;
+
+        $itemsByGroup = [];
+        foreach ($inspectionItems as $item) {
+            $itemsByGroup[$item->group][] = $item;
+        }
+
+        $result = [];
+        foreach ($itemsByGroup as $group => $items) {
+            $subtotal = array_reduce(
+                $items,
+                fn ($carry, $item) => $carry + $this->itemSubtotal($item),
+                0.0
+            );
+            $vatAmount = $subtotal * ($vatPercent / 100);
+
+            $result[$group] = [
+                'subtotal' => round($subtotal, 2),
+                'vat_amount' => round($vatAmount, 2),
+                'grand_total' => round($subtotal + $vatAmount, 2),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Subtotal 1 item SEBELUM VAT — (part - diskon) + (labour - diskon).
+     * Dipakai untuk breakdown estimasi (belum tentu approved/locked).
+     */
+    private function itemSubtotal(InspectionItem $item): float
+    {
+        $itemAfterDiscount = $this->applyDiscount(
+            (float) $item->cost_item,
+            (float) $item->discount_item_percent
+        );
+        $labourAfterDiscount = $this->applyDiscount(
+            (float) $item->cost_labour,
+            (float) $item->discount_labour_percent
+        );
+
+        return $itemAfterDiscount + $labourAfterDiscount;
+    }
 }
