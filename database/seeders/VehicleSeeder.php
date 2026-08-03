@@ -9,7 +9,7 @@ class VehicleSeeder extends Seeder
 {
     public function run(): void
     {
-        DB::table('vehicles')->insert([
+        $vehicles = [
             [
                 'customer_id' => 1, // Andi Wijaya
                 'plate_number' => 'B 1234 ABC',
@@ -17,8 +17,6 @@ class VehicleSeeder extends Seeder
                 'vin' => 'WVWZZZ1KZAM123456',
                 'model' => 'Tiguan',
                 'year' => 2021,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
             [
                 'customer_id' => 2, // Rina Kusuma
@@ -27,8 +25,6 @@ class VehicleSeeder extends Seeder
                 'vin' => 'WVWZZZ6RZKY654321',
                 'model' => 'Polo',
                 'year' => 2019,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
             [
                 'customer_id' => 3, // Hendra Gunawan
@@ -37,9 +33,27 @@ class VehicleSeeder extends Seeder
                 'vin' => 'WVWZZZAUZNP789012',
                 'model' => 'Golf',
                 'year' => 2022,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
-        ]);
+        ];
+
+        $now = now();
+
+        foreach ($vehicles as $vehicle) {
+            $customerId = $vehicle['customer_id'];
+
+            $vehicleId = DB::table('vehicles')->insertGetId([
+                ...$vehicle,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('customer_vehicle')->insert([
+                'customer_id' => $customerId,
+                'vehicle_id' => $vehicleId,
+                'is_primary' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
     }
 }

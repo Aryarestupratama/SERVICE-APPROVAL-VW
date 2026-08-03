@@ -41,7 +41,15 @@ class Customer extends Model
 
     public function vehicles()
     {
-        return $this->hasMany(Vehicle::class);
+        return $this->belongsToMany(Vehicle::class, 'customer_vehicle')
+            ->using(CustomerVehicle::class)
+            ->withPivot('is_primary')
+            ->withTimestamps();
+    }
+
+    public function primaryVehicles()
+    {
+        return $this->hasMany(Vehicle::class); // via vehicles.customer_id, shortcut
     }
 
     public function serviceOrders()

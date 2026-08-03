@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('vehicles', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('customer_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete();
             $table->string('plate_number')->index();
             $table->enum('brand', ['Audi', 'VW'])->default('VW');
             $table->char('vin', 17)->unique();
