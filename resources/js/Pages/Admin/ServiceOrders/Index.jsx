@@ -45,6 +45,7 @@ export default function Index({ orders }) {
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead>Work Order Number</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead>Vehicle</TableHead>
                             <TableHead>Service Advisor</TableHead>
@@ -56,13 +57,14 @@ export default function Index({ orders }) {
                     <TableBody>
                         {orders.data.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={6} className="py-8 text-center text-vw-grey">
+                                <TableCell colSpan={7} className="py-8 text-center text-vw-grey">
                                     No service orders yet.
                                 </TableCell>
                             </TableRow>
                         )}
                         {orders.data.map((order) => (
                             <TableRow key={order.id}>
+                                <TableCell className="font-medium">{order.work_order_number}</TableCell>
                                 <TableCell className="font-medium">
                                     {order.vehicle?.customer?.name ?? '—'}
                                 </TableCell>

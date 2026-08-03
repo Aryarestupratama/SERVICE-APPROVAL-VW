@@ -1,12 +1,12 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
-import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
 
 function StatusStamp({ status }) {
     if (status === 'pending') {
         return (
-            <span className="inline-flex -rotate-6 items-center rounded-full border-2 border-dashed border-vw-grey px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-vw-grey">
+            <span className="inline-flex items-center rounded-sm border border-vw-grey/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-vw-grey">
                 Waiting Approval
             </span>
         );
@@ -14,7 +14,7 @@ function StatusStamp({ status }) {
     const isApproved = status === 'approved';
     return (
         <span
-            className={`inline-flex -rotate-6 items-center rounded-full border-2 border-dashed px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider
+            className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider
                 ${isApproved ? 'border-approved text-approved' : 'border-vw-grey text-vw-grey'}`}
         >
             {isApproved ? 'Approved' : 'Rejected'}
@@ -108,7 +108,10 @@ function sortedInvoices(invoices) {
     return [...(invoices ?? [])].sort((a, b) => a.sort_order - b.sort_order);
 }
 
-export default function InspectionReport({ token, settings, order, vehicle, customer, serviceAdvisor, videos, items: initialItems }) {
+export default function InspectionReport({
+    token, settings, order, vehicle, customer, serviceAdvisor,
+    videos, items: initialItems, invoices: initialInvoices, estimationDocuments
+}) {
     const [activeVideo, setActiveVideo] = useState(videos[0]?.id ?? null);
     const [items, setItems] = useState(initialItems);
     const [showModal, setShowModal] = useState(false);
@@ -189,51 +192,89 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
         : null;
 
     // Section invoice hanya relevan mulai quality_control/invoice_preparation/
-    // completed — daftar diambil dari order.invoices (relasi), bisa kosong
-    // kalau SA belum sempat upload meski statusnya sudah masuk tahap ini.
+    // completed — daftar diambil dari prop invoices terpisah (bukan nested di
+    // order), bisa kosong kalau SA belum sempat upload meski status sudah masuk
+    // tahap ini.
     const showEstimationSection = ESTIMATION_VISIBLE_STATUSES.includes(order.status);
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
     const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
-    const invoices = sortedInvoices(order.invoices);
+    const invoices = sortedInvoices(initialInvoices);
     const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
 
     return (
         <PublicLayout>
             <Head title="Inspection Report" />
 
-            <div className="mx-auto max-w-2xl pb-24">
-                {/* 1. Hero / Branding */}
-                <section className="bg-vw-blue px-6 pb-10 pt-12 text-white">
-                    <p className="font-mono text-xs uppercase tracking-[0.2em] text-vw-light-blue">
-                        Report No. {String(order.id).padStart(6, '0')}
-                    </p>
-                    <h1 className="mt-2 text-2xl font-bold tracking-tight">
-                        {settings.workshop_name ?? '[Workshop Name]'}
-                    </h1>
-                    <p className="mt-1 text-sm text-white/70">Vehicle Inspection Report</p>
+            <div className="w-full pb-24">
+                {/* 1. Hero / Branding — full-bleed image (kalau ada) + overlay navy,
+                    logo mengambang di atas, headline di bawah dekat overlay gelap
+                    supaya kontras teks tetap terjaga tanpa bergantung posisi gambar. */}
+                <section className="relative overflow-hidden bg-vw-blue">
+                    {settings.hero_image_path ? (
+                        <>
+                            <img
+                                src={`/storage/${settings.hero_image_path}`}
+                                alt=""
+                                className="absolute inset-0 h-full w-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-vw-blue via-vw-blue/80 to-vw-blue/20" />
+                        </>
+                    ) : (
+                        <div className="absolute inset-0 bg-gradient-to-br from-vw-blue to-[#001233]" />
+                    )}
+
+                    <div className="relative px-6 pb-8 pt-6 sm:px-10 lg:px-16 xl:px-24">
+                        {settings.logo_path ? (
+                            <img
+                                src={`/storage/${settings.logo_path}`}
+                                alt={settings.workshop_name ?? 'Workshop'}
+                                className="h-8 w-auto"
+                            />
+                        ) : (
+                            <span className="text-sm font-semibold uppercase tracking-widest text-white">
+                                {settings.workshop_name ?? '[Workshop Name]'}
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="relative px-6 pb-10 pt-24 text-white sm:px-10 sm:pt-32 lg:px-16 xl:px-24">
+                        <p className="font-mono text-xs uppercase tracking-[0.2em] text-white/60">
+                            Report No. {String(order.id).padStart(6, '0')}
+                        </p>
+                        <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+                            Vehicle Inspection Report
+                        </h1>
+                        <p className="mt-1 text-sm text-white/70">
+                            {settings.workshop_name ?? '[Workshop Name]'}
+                        </p>
+                    </div>
                 </section>
 
                 {/* 2. Video Personal */}
-                <section className="px-6 pt-8">
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
+                <section className="px-6 pt-8 sm:px-10 lg:px-16 xl:px-24">
+                    <div className="flex items-center justify-between rounded-md border border-vw-grey/15 bg-vw-grey-light px-4 py-3">
+                        <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">Plate Number</p>
+                            <p className="mt-0.5 font-mono text-sm font-semibold text-gray-900">{vehicle.plate_number}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">Customer</p>
+                            <p className="mt-0.5 text-sm font-medium text-gray-900">{customer.name}</p>
+                        </div>
+                    </div>
+
+                    <h2 className="mt-6 text-xs font-bold uppercase tracking-widest text-vw-grey">
                         Inspection Video
                     </h2>
 
-                    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-mono text-sm text-gray-700">
-                        <span>
-                            Plate <span className="font-semibold">{vehicle.plate_number}</span>
-                        </span>
-                        <span className="text-vw-grey">{customer.name}</span>
-                    </div>
-
                     {videos.length > 0 && (
-                        <div className="mt-4 flex gap-2 overflow-x-auto">
+                        <div className="mt-3 flex gap-2 overflow-x-auto">
                             {videos.map((video) => (
                                 <button
                                     key={video.id}
                                     type="button"
                                     onClick={() => setActiveVideo(video.id)}
-                                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors
+                                    className={`shrink-0 rounded-sm px-3 py-1.5 text-xs font-semibold transition-colors
                                         ${activeVideo === video.id
                                             ? 'bg-vw-blue text-white'
                                             : 'bg-vw-grey-light text-vw-grey hover:bg-vw-grey-light/70'}`}
@@ -251,7 +292,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                             if (embedUrl) {
                                 return (
-                                    <div className="mt-3 aspect-video overflow-hidden rounded-lg">
+                                    <div className="mt-3 aspect-video overflow-hidden rounded-md">
                                         <iframe
                                             key={current.id}
                                             src={embedUrl}
@@ -270,7 +311,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     key={current.id}
                                     src={current.video_url}
                                     controls
-                                    className="mt-3 aspect-video w-full rounded-lg bg-black"
+                                    className="mt-3 aspect-video w-full rounded-md bg-black"
                                 />
                             );
                         })()
@@ -279,7 +320,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     )}
 
                     {order.personal_message && (
-                        <p className="mt-4 rounded-lg bg-vw-grey-light px-4 py-3 text-sm italic text-gray-700">
+                        <p className="mt-4 rounded-md bg-vw-grey-light px-4 py-3 text-sm italic text-gray-700">
                             "{order.personal_message}"
                         </p>
                     )}
@@ -287,14 +328,39 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                 <hr className="my-8 border-vw-grey-light" />
 
+                {/* Quality Control notice — muncul HANYA saat status quality_control,
+                    memberi tahu customer kendaraan sedang di-check & dicuci sebelum
+                    tahap invoice (PROJECT-RULES bagian 7 poin 8). */}
+                {order.status === 'quality_control' && (
+                    <>
+                        <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
+                            <div className="flex items-center gap-4 rounded-md border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-vw-blue/10">
+                                    <Sparkles className="h-5 w-5 text-vw-blue" />
+                                </span>
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-900">
+                                        Your vehicle is being checked and washed
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-vw-grey">
+                                        Final quality control is in progress. We'll notify you once
+                                        the invoice is ready.
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+                        <hr className="my-8 border-vw-grey-light" />
+                    </>
+                )}
+
                 {/* 3. Service Inspection Result */}
-                <section className="px-6">
+                <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
                     <div className="flex items-center justify-between gap-2">
                         <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
                             Inspection Items
                         </h2>
                         <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide
+                            className={`rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide
                                 ${isPricingFinal ? 'bg-approved/10 text-approved' : 'bg-amber-100 text-amber-700'}`}
                         >
                             {isPricingFinal ? 'Final Price' : 'Estimated Price'}
@@ -302,13 +368,13 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     </div>
 
                     {isLocked && !hasPendingItems && (
-                        <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
+                        <p className="mt-3 rounded-md bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
                             All items have been decided for this report.
                         </p>
                     )}
 
                     {isLocked && hasPendingItems && !canDecide && (
-                        <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
+                        <p className="mt-3 rounded-md bg-vw-grey-light px-4 py-2 text-sm font-medium text-gray-700">
                             This report is no longer accepting new decisions.
                         </p>
                     )}
@@ -320,7 +386,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-medium text-gray-900">{item.name}</span>
                                         {item.group && (
-                                            <span className="rounded bg-vw-grey-light px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-vw-grey">
+                                            <span className="rounded-sm border border-vw-grey/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-vw-grey">
                                                 {GROUP_LABEL[item.group] ?? item.group}
                                             </span>
                                         )}
@@ -340,14 +406,14 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                             <button
                                                 type="button"
                                                 onClick={() => handleDecision(item.id, 'approved')}
-                                                className="rounded-full border border-approved px-2.5 py-0.5 text-xs font-semibold text-approved hover:bg-approved hover:text-white"
+                                                className="rounded-sm border border-approved px-2.5 py-1 text-xs font-semibold text-approved hover:bg-approved hover:text-white"
                                             >
                                                 Approve
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleDecision(item.id, 'rejected')}
-                                                className="rounded-full border border-vw-grey px-2.5 py-0.5 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                                className="rounded-sm border border-vw-grey px-2.5 py-1 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                             >
                                                 Reject
                                             </button>
@@ -395,7 +461,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                         <button
                             type="button"
                             onClick={() => setShowModal(true)}
-                            className="mt-6 w-full rounded-lg bg-vw-blue py-3 text-sm font-semibold text-white transition-opacity"
+                            className="mt-6 w-full rounded-md bg-vw-blue py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
                         >
                             Submit Decision
                         </button>
@@ -407,32 +473,27 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     )}
                 </section>
 
-                {/* Invoice viewer — muncul mulai status quality_control/
-                    invoice_preparation/completed. Sekarang render daftar dari
-                    order.invoices (bisa lebih dari 1 file), bukan 1 link tunggal.
-                    Kalau order sudah di tahap ini tapi SA belum sempat upload,
-                    tampilkan pesan "belum tersedia" alih-alih menyembunyikan
-                    section total. */}
-                {/* Estimation Form — muncul HANYA saat work_in_progress, list PDF per group */}
+                {/* Estimation Form — muncul HANYA saat work_in_progress, list PDF per group.
+                    Dibaca dari prop estimationDocuments (top-level), bukan order.estimationDocuments. */}
                 {showEstimationSection && (
                     <>
                         <hr className="my-8 border-vw-grey-light" />
-                        <section className="px-6">
+                        <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
                                 Estimation Form
                             </h2>
 
-                            {order.estimationDocuments?.length > 0 ? (
+                            {estimationDocuments?.length > 0 ? (
                                 <div className="mt-3 space-y-2">
-                                    {order.estimationDocuments.map((doc) => (
+                                    {estimationDocuments.map((doc) => (
                                         <a
                                             key={doc.id}
                                             href={`/storage/${doc.pdf_path}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                            className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
                                         >
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                                 <FileText className="h-4 w-4" />
                                             </span>
                                             <span>
@@ -445,7 +506,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     ))}
                                 </div>
                             ) : (
-                                <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
+                                <p className="mt-3 rounded-md bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
                                     Estimation form is being prepared and will appear here shortly.
                                 </p>
                             )}
@@ -453,11 +514,12 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                     </>
                 )}
 
-                {/* Invoice Form — muncul mulai quality_control/invoice_preparation/completed */}
+                {/* Invoice Form — muncul mulai quality_control/invoice_preparation/completed.
+                    Dibaca dari prop invoices (top-level, via sortedInvoices), bukan order.invoices. */}
                 {showInvoiceSection && (
                     <>
                         <hr className="my-8 border-vw-grey-light" />
-                        <section className="px-6">
+                        <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">
                                 Invoice Form
                             </h2>
@@ -470,9 +532,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                             href={`/storage/${invoice.file_path}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                            className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
                                         >
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                                 <FileText className="h-4 w-4" />
                                             </span>
                                             <span>
@@ -485,7 +547,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     ))}
                                 </div>
                             ) : (
-                                <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
+                                <p className="mt-3 rounded-md bg-vw-grey-light px-4 py-2 text-sm text-vw-grey">
                                     Invoice is being prepared and will appear here shortly.
                                 </p>
                             )}
@@ -497,9 +559,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                 {showThankYouSection && (
                     <>
                         <hr className="my-8 border-vw-grey-light" />
-                        <section className="px-6">
-                            <div className="rounded-xl border border-approved/20 bg-approved/5 px-5 py-5 text-center">
-                                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-approved/10">
+                        <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
+                            <div className="rounded-md border border-approved/20 bg-approved/5 px-5 py-5 text-center">
+                                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-sm bg-approved/10">
                                     <CheckCircle2 className="h-5 w-5 text-approved" />
                                 </span>
                                 <h2 className="mt-3 text-base font-bold text-gray-900">Thank You!</h2>
@@ -511,8 +573,8 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                             <div className="mt-4 space-y-2">
                                 {settings.era_phone && (
-                                    <div className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700">
-                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                    <div className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                             <Phone className="h-4 w-4" />
                                         </span>
                                         <span>
@@ -531,9 +593,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                         href={bookingWaHref}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-3 rounded-lg border border-vw-grey/20 px-4 py-3 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                        className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
                                     >
-                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                             <MessageCircle className="h-4 w-4" />
                                         </span>
                                         <span>
@@ -550,7 +612,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                         href={settings.survey_form_url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center justify-center gap-2 rounded-lg bg-vw-blue px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+                                        className="flex items-center justify-center gap-2 rounded-md bg-vw-blue px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
                                     >
                                         Share Your Feedback
                                         <ExternalLink className="h-3.5 w-3.5" />
@@ -565,10 +627,10 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
                 {/* CTA Hubungi SA — hanya muncul saat order sedang menunggu tindak lanjut customer */}
                 {order.status === 'invoice_preparation' && waHref && (
-                    <section className="px-6">
-                        <div className="flex items-center justify-between gap-4 rounded-xl border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
+                    <section className="px-6 sm:px-10 lg:px-16 xl:px-24">
+                        <div className="flex items-center justify-between gap-4 rounded-md border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
                             <div>
-                                <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                                <span className="inline-block rounded-sm bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
                                     Ready for Pickup
                                 </span>
                                 <p className="mt-1.5 text-sm font-semibold text-gray-900">Waiting on your response</p>
@@ -580,7 +642,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 href={waHref}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex shrink-0 items-center gap-1.5 rounded-full bg-vw-blue px-4 py-2 text-xs font-semibold text-white hover:opacity-90"
+                                className="flex shrink-0 items-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90"
                             >
                                 <MessageCircle className="h-3.5 w-3.5" />
                                 Contact SA
@@ -592,7 +654,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                 <hr className="my-8 border-vw-grey-light" />
 
                 {/* 4 & 5. Contact + Location */}
-                <section className="grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
+                <section className="grid grid-cols-1 gap-6 px-6 sm:grid-cols-2 sm:px-10 lg:px-16 xl:px-24">
                     <div>
                         <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Contact</h2>
                         <p className="mt-2 font-medium text-gray-900">{serviceAdvisor.name}</p>
@@ -604,9 +666,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     href={waHref}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-2.5 rounded-lg border border-vw-grey/20 px-3 py-2 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                    className="flex items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
                                 >
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                         <Phone className="h-4 w-4" />
                                     </span>
                                     <span className="font-mono">{serviceAdvisor.phone}</span>
@@ -614,9 +676,9 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                             )}
                             <a
                                 href={`mailto:${serviceAdvisor.email}`}
-                                className="flex items-center gap-2.5 rounded-lg border border-vw-grey/20 px-3 py-2 text-sm text-gray-700 hover:border-vw-blue hover:text-vw-blue"
+                                className="flex items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
                             >
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vw-grey-light">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                     <Mail className="h-4 w-4" />
                                 </span>
                                 <span className="truncate font-mono">{serviceAdvisor.email}</span>
@@ -637,7 +699,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 allowFullScreen=""
                                 loading="lazy"
                                 referrerPolicy="strict-origin-when-cross-origin"
-                                className="mt-3 rounded-lg"
+                                className="mt-3 rounded-md"
                             />
                         )}
 
@@ -647,7 +709,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     href={settings.google_maps_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="rounded-full border border-vw-grey px-4 py-1.5 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                    className="rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                 >
                                     Open in Maps
                                 </a>
@@ -657,7 +719,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     href={settings.website_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="rounded-full border border-vw-grey px-4 py-1.5 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                    className="rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                 >
                                     Visit Website
                                 </a>
@@ -667,7 +729,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                     href={bookingWaHref}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="rounded-full border border-vw-blue px-4 py-1.5 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
+                                    className="rounded-md border border-vw-blue px-4 py-2 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
                                 >
                                     Book a service
                                 </a>
@@ -679,8 +741,8 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
 
             {/* Modal konfirmasi final */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-                    <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-vw-blue/40 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-xl">
                         <h3 className="text-base font-bold text-gray-900">Confirm your decision</h3>
                         <p className="mt-1 text-sm text-vw-grey">
                             This action is final and cannot be changed afterwards for the items below.
@@ -725,7 +787,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 type="button"
                                 onClick={() => setShowModal(false)}
                                 disabled={submitting}
-                                className="flex-1 rounded-lg border border-vw-grey py-2 text-sm font-semibold text-vw-grey"
+                                className="flex-1 rounded-md border border-vw-grey py-2 text-sm font-semibold text-vw-grey"
                             >
                                 Cancel
                             </button>
@@ -733,7 +795,7 @@ export default function InspectionReport({ token, settings, order, vehicle, cust
                                 type="button"
                                 onClick={handleConfirmSubmit}
                                 disabled={submitting}
-                                className="flex-1 rounded-lg bg-vw-blue py-2 text-sm font-semibold text-white disabled:opacity-50"
+                                className="flex-1 rounded-md bg-vw-blue py-2 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50"
                             >
                                 {submitting ? 'Submitting...' : 'Confirm & Submit'}
                             </button>

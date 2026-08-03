@@ -123,6 +123,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const [vehicleMode, setVehicleMode] = useState('existing');
 
     const { data, setData, post, processing, errors, transform } = useForm({
+        work_order_number: '',
         customer_id: '',
         new_customer: { name: '', phone: '', email: '' },
         vehicle_id: '',
@@ -231,6 +232,26 @@ export default function Create({ customers, vehicles, technicians, brands, group
     return (
         <AdminLayout title="New Service Order">
             <form onSubmit={handleSubmit} className="space-y-6 pb-24">
+                {/* Work Order Number — input manual oleh SA, sesuai nomor fisik dari bengkel */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Work Order</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-1.5">
+                            <Label>Work Order Number</Label>
+                            <Input
+                                value={data.work_order_number}
+                                onChange={(e) => setData('work_order_number', e.target.value)}
+                                placeholder="e.g. WO-2026-0001"
+                            />
+                            {errors.work_order_number && (
+                                <p className="text-sm text-urgent">{errors.work_order_number}</p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* Customer */}
                 <Card>
                     <CardHeader>

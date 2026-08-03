@@ -42,6 +42,22 @@ Route::middleware(['auth', 'verified'])
             Route::resource('vehicles', VehicleController::class);
             Route::resource('service-orders', ServiceOrderController::class);
 
+            Route::post('service-orders/{serviceOrder}/inspection-items',
+                [ServiceOrderController::class, 'storeInspectionItem'])
+                ->name('service-orders.inspection-items.store');
+
+            Route::patch('service-orders/{serviceOrder}/inspection-items/{inspectionItem}',
+                [ServiceOrderController::class, 'updateInspectionItem'])
+                ->name('service-orders.inspection-items.update');
+
+            Route::delete('service-orders/{serviceOrder}/inspection-items/{inspectionItem}',
+                [ServiceOrderController::class, 'destroyInspectionItem'])
+                ->name('service-orders.inspection-items.destroy');
+
+            Route::post('service-orders/{serviceOrder}/inspection-items/{inspectionItem}/reopen',
+                [ServiceOrderController::class, 'reopenInspectionItem'])
+                ->name('service-orders.inspection-items.reopen');
+
             Route::patch('service-orders/{serviceOrder}/status',
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
@@ -72,6 +88,10 @@ Route::middleware(['auth', 'verified'])
                 ->name('settings.edit');
             Route::put('settings', [SettingController::class, 'update'])
                 ->name('settings.update');
+
+            Route::patch('service-orders/{serviceOrder}/revert-status',
+                [ServiceOrderController::class, 'revertStatus'])
+                ->name('service-orders.revert-status');
         });
     });
 

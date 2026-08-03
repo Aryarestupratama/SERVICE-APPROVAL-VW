@@ -18,7 +18,7 @@ class ServiceOrderSeeder extends Seeder
             'vehicle_id' => 1,
             'service_advisor_id' => 2,
             'technician_id' => null,
-            'work_order_number' => 1,
+            'work_order_number' => 'WSWO-0001',
             'status' => 'appointment',
             'items_approval_status' => 'pending',
             'inspection_fee' => 150000,
@@ -36,7 +36,7 @@ class ServiceOrderSeeder extends Seeder
             'vehicle_id' => 2,
             'service_advisor_id' => 2,
             'technician_id' => 2, // SA yang sama plotting dirinya sbg pengerjaan, contoh dummy
-            'work_order_number' => 2,
+            'work_order_number' => 'WSWO-0002',
             'status' => 'work_in_progress',
             'items_approval_status' => 'pending',
             'inspection_fee' => 100000,
@@ -98,7 +98,7 @@ class ServiceOrderSeeder extends Seeder
             'vehicle_id' => 3,
             'service_advisor_id' => 3,
             'technician_id' => 3,
-            'work_order_number' => 3,
+            'work_order_number' => 'WSWO-0003',
             'status' => 'completed',
             'items_approval_status' => 'partially_approved', // 1 approved, 1 rejected
             'inspection_fee' => 150000,

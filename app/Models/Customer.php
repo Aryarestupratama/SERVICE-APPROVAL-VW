@@ -27,14 +27,14 @@ class Customer extends Model
                 // Buang semua karakter selain digit (spasi, strip, kurung, dsb)
                 $digits = preg_replace('/\D/', '', $value);
 
-                // Normalisasi ke format 62xxx tanpa tanda "+" duplikat
+                // Normalisasi ke format 62xxx tanpa tanda "+" di depan
                 if (str_starts_with($digits, '0')) {
                     $digits = '62' . substr($digits, 1);
                 } elseif (! str_starts_with($digits, '62')) {
                     $digits = '62' . $digits;
                 }
 
-                return '+' . $digits;
+                return $digits;
             },
         );
     }

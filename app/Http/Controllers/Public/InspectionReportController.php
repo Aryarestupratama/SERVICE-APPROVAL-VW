@@ -40,6 +40,7 @@ class InspectionReportController extends Controller
             'settings' => [
                 'workshop_name' => $settings->workshop_name,
                 'logo_path' => $settings->logo_path,
+                'hero_image_path' => $settings->hero_image_path,
                 'address' => $settings->address,
                 'phone' => $settings->phone,
                 'google_maps_url' => $settings->google_maps_url,

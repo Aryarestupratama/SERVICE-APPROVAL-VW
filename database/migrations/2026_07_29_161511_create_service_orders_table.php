@@ -14,7 +14,9 @@ return new class extends Migration
             $table->foreignId('service_advisor_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('technician_id')->nullable()->constrained('users')->nullOnDelete();
 
-            $table->unsignedBigInteger('work_order_number')->unique();
+            // Nomor WO fisik dari bengkel, diinput manual oleh SA (bukan auto-generate lagi).
+            // String bebas karena format bisa campuran angka/huruf/prefix.
+            $table->string('work_order_number')->unique();
 
             $table->enum('status', [
                 'appointment',

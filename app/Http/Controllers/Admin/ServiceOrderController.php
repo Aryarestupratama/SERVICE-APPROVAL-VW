@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\InspectionItem;
+use App\Models\InspectionItemLog;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderEstimationDocument;
 use App\Models\ServiceOrderInvoice;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Setting;
-use App\Services\WorkOrderNumberGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -76,6 +76,9 @@ class ServiceOrderController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            // Nomor WO fisik dari bengkel, diinput manual oleh SA.
+            'work_order_number' => ['required', 'string', 'max:255', 'unique:service_orders,work_order_number'],
+
             // Customer: pilih yang sudah ada, ATAU isi data baru
             'customer_id' => ['nullable', 'exists:customers,id'],
             'new_customer' => ['nullable', 'array'],
@@ -130,16 +133,14 @@ class ServiceOrderController extends Controller
                     'customer_id' => $customerId,
                 ])->id;
 
-            $order = ServiceOrder::create([
+           $order = ServiceOrder::create([
                 'vehicle_id' => $vehicleId,
                 'service_advisor_id' => $request->user()->id,
                 'technician_id' => $validated['technician_id'] ?? null,
-                // TODO (bagian 7C #3): work_order_number SEHARUSNYA dari
-                // App\Services\WorkOrderNumberGenerator (atomic, race-safe) —
-                // service class-nya belum dibuat. Ini placeholder sementara
-                // SUPAYA TIDAK CRASH, TAPI RAWAN RACE CONDITION kalau 2 SA
-                // submit order bersamaan. Ganti begitu service class jadi.
-                'work_order_number' => app(WorkOrderNumberGenerator::class)->generate(),
+                // Nomor WO fisik, diinput manual oleh SA (bukan auto-generate lagi
+                // via WorkOrderNumberGenerator — TODO lama bagian 7C #3 sudah tidak
+                // relevan, keputusan owner 2026-08-0x mengubah alur ini jadi manual).
+                'work_order_number' => $validated['work_order_number'],
                 'status' => ServiceOrder::STATUS_APPOINTMENT,
                 'items_approval_status' => 'pending',
                 'inspection_fee' => $validated['inspection_fee'],
@@ -260,6 +261,218 @@ class ServiceOrderController extends Controller
 
         return back()->with('success', 'Status berhasil diperbarui.');
     }
+
+    /**
+     * Admin mundurkan status order kembali ke work_in_progress — dipakai saat
+     * ada miss komunikasi soal item yang perlu diubah setelah lewat negosiasi
+     * (TODO bagian 7 poin 8). Role SA TIDAK bisa memanggil ini — route ini
+     * sudah di-guard middleware role:admin, tapi kita cek ulang di sini juga
+     * untuk defense-in-depth.
+     */
+    public function revertStatus(Request $request, ServiceOrder $serviceOrder)
+    {
+        if ($request->user()->role !== 'admin') {
+            abort(403, 'Only admin can revert order status.');
+        }
+
+        $currentStatus = $serviceOrder->status;
+        $target = self::REVERT_TRANSITIONS[$currentStatus] ?? null;
+
+        if ($target === null) {
+            return back()->with('error', "Status '{$currentStatus}' tidak bisa dimundurkan.");
+        }
+
+        // finalized_at direset karena negosiasi dibuka lagi — guard di
+        // updateStatus() (naik ke quality_control) akan menolak sampai
+        // customer/SA menyelesaikan ulang semua item pending.
+        $serviceOrder->update([
+            'status' => $target,
+            'finalized_at' => null,
+        ]);
+
+        return back()->with('success', "Status dikembalikan ke {$target}.");
+    }
+
+    /**
+     * Buka lagi item yang 'rejected' supaya bisa dinegosiasikan ulang oleh
+     * customer lewat link publik yang sama (TODO bagian 7 poin 8 & poin
+     * "reopen inspection item rejected"). Item 'approved' TIDAK bisa direopen
+     * di sini — itu dikunci permanen (isLocked()), sesuai keputusan owner.
+     *
+     * Hanya bisa dipanggil selama order status work_in_progress. Kalau order
+     * sudah lewat tahap itu, admin harus revertStatus() dulu.
+     */
+    public function reopenInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($inspectionItem->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Item hanya bisa dibuka ulang saat status Work In Progress.');
+        }
+
+        if ($inspectionItem->status !== 'rejected') {
+            return back()->with('error', 'Hanya item dengan status Rejected yang bisa dibuka ulang.');
+        }
+
+        DB::transaction(function () use ($inspectionItem, $request, $serviceOrder) {
+            $oldStatus = $inspectionItem->status;
+
+            $inspectionItem->update([
+                'status' => 'pending',
+                'decided_at' => null,
+                // final_price_snapshot sudah pasti null untuk item rejected
+                // (tidak pernah dikunci), tidak perlu di-reset eksplisit.
+            ]);
+
+            $inspectionItem->logs()->create([
+                'old_status' => $oldStatus,
+                'new_status' => 'pending',
+                'actor_type' => 'staff',
+                'actor_id' => $request->user()->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            $this->recalculateApprovalStatus($serviceOrder);
+        });
+
+        return back()->with('success', 'Item berhasil dibuka ulang, menunggu keputusan customer.');
+    }
+
+    /**
+     * Tambah item inspeksi baru selama negosiasi berjalan (work_in_progress).
+     * Item baru selalu mulai dari status 'pending'.
+     */
+    public function storeInspectionItem(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Item hanya bisa ditambahkan saat status Work In Progress.');
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'cost_item' => ['required', 'numeric', 'min:0'],
+            'cost_labour' => ['required', 'numeric', 'min:0'],
+            'discount_item_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'group' => ['required', Rule::in(InspectionItem::GROUPS)],
+        ]);
+
+        DB::transaction(function () use ($validated, $serviceOrder) {
+            $serviceOrder->inspectionItems()->create([
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'cost_item' => $validated['cost_item'],
+                'cost_labour' => $validated['cost_labour'],
+                'discount_item_percent' => $validated['discount_item_percent'] ?? 0,
+                'discount_labour_percent' => $validated['discount_labour_percent'] ?? 0,
+                'group' => $validated['group'],
+                'status' => 'pending',
+            ]);
+
+            // Item pending baru berarti negosiasi belum final lagi — reset
+            // supaya guard naik ke quality_control ikut kena.
+            $this->recalculateApprovalStatus($serviceOrder);
+        });
+
+        return back()->with('success', 'Item berhasil ditambahkan.');
+    }
+
+    /**
+     * Edit item yang belum dikunci (pending/rejected). Item 'approved'
+     * (isLocked() true) TIDAK BISA diedit — dikunci permanen.
+     */
+    public function updateInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($inspectionItem->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Item hanya bisa diubah saat status Work In Progress.');
+        }
+
+        if ($inspectionItem->isLocked()) {
+            return back()->with('error', 'Item yang sudah disetujui customer (approved) tidak bisa diubah.');
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'cost_item' => ['required', 'numeric', 'min:0'],
+            'cost_labour' => ['required', 'numeric', 'min:0'],
+            'discount_item_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'group' => ['required', Rule::in(InspectionItem::GROUPS)],
+        ]);
+
+        DB::transaction(function () use ($validated, $inspectionItem, $serviceOrder) {
+            $wasRejected = $inspectionItem->status === 'rejected';
+
+            $inspectionItem->update([
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'cost_item' => $validated['cost_item'],
+                'cost_labour' => $validated['cost_labour'],
+                'discount_item_percent' => $validated['discount_item_percent'] ?? 0,
+                'discount_labour_percent' => $validated['discount_labour_percent'] ?? 0,
+                'group' => $validated['group'],
+            ]);
+
+            // Edit item yang tadinya rejected TIDAK otomatis reset status jadi
+            // pending — itu tanggung jawab endpoint reopenInspectionItem() yang
+            // terpisah, supaya SA sadar betul dia sedang "membuka ulang"
+            // keputusan customer, bukan efek samping dari edit harga.
+            if (!$wasRejected) {
+                $this->recalculateApprovalStatus($serviceOrder);
+            }
+        });
+
+        return back()->with('success', 'Item berhasil diperbarui.');
+    }
+
+    /**
+     * Hapus item yang belum dikunci (pending/rejected). Item 'approved'
+     * TIDAK BISA dihapus.
+     */
+    public function destroyInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($inspectionItem->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+            return back()->with('error', 'Item hanya bisa dihapus saat status Work In Progress.');
+        }
+
+        if ($inspectionItem->isLocked()) {
+            return back()->with('error', 'Item yang sudah disetujui customer (approved) tidak bisa dihapus.');
+        }
+
+        // Guard tambahan: minimal harus ada 1 item tersisa di order — mencegah
+        // SA menghapus semua item sampai order jadi kosong tanpa disadari.
+        if ($serviceOrder->inspectionItems()->count() <= 1) {
+            return back()->with('error', 'Order harus punya minimal 1 item inspeksi.');
+        }
+
+        DB::transaction(function () use ($inspectionItem, $serviceOrder) {
+            $inspectionItem->delete();
+            $this->recalculateApprovalStatus($serviceOrder);
+        });
+
+        return back()->with('success', 'Item berhasil dihapus.');
+    } 
 
     /**
      * Upload/replace 1 PDF estimation form untuk 1 kelompok tertentu.
@@ -410,21 +623,66 @@ class ServiceOrderController extends Controller
     }
 
     /**
-     * Cek SA/teknisi hanya bisa akses order miliknya sendiri.
-     * Admin selalu lolos.
+     * Semua admin & SA bisa akses order apapun (bukan cuma order miliknya
+     * sendiri) — keputusan owner: skema ini sengaja dibuat supaya SA lain
+     * bisa backup/handle order kalau SA yang aslinya berhalangan. Middleware
+     * role:admin,service_advisor di routes sudah membatasi role yang boleh
+     * masuk; method ini jadi murni defense-in-depth (menolak role selain itu),
+     * bukan lagi cek kepemilikan order per-SA.
      */
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void
     {
         $user = $request->user();
 
-        if ($user->role === 'admin') {
-            return;
-        }
-
-        if ($user->role === 'service_advisor' && $serviceOrder->service_advisor_id === $user->id) {
+        if (in_array($user->role, ['admin', 'service_advisor'], true)) {
             return;
         }
 
         abort(403, 'Anda tidak punya akses ke service order ini.');
+    }
+
+    /**
+     * Transisi MUNDUR khusus admin — dipakai reopen item rejected di luar
+     * work_in_progress (TODO bagian 7 poin 8). SA tidak boleh melakukan ini,
+     * hanya admin, sesuai keputusan owner.
+     */
+    private const REVERT_TRANSITIONS = [
+        'quality_control' => 'work_in_progress',
+        'invoice_preparation' => 'work_in_progress',
+        'completed' => 'work_in_progress',
+    ];
+
+    /**
+     * Hitung ulang items_approval_status & finalized_at berdasarkan kondisi
+     * item TERKINI. Dipanggil setiap kali ada perubahan item (tambah/edit/
+     * hapus/reopen) selama work_in_progress, supaya guard naik ke
+     * quality_control (butuh finalized_at terisi) selalu akurat.
+     *
+     * Logika sama persis dengan yang ada di
+     * InspectionReportController::submitDecisions() — sengaja diduplikasi
+     * di sini (bukan diekstrak ke service class) untuk task ini, refactor
+     * penyatuan logic bisa jadi TODO terpisah kalau dirasa perlu nanti.
+     */
+    private function recalculateApprovalStatus(ServiceOrder $serviceOrder): void
+    {
+        $freshItems = $serviceOrder->inspectionItems()->get();
+
+        $stillPending = $freshItems->contains(fn ($item) => $item->status === 'pending');
+        $allRejected = $freshItems->isNotEmpty() && $freshItems->every(fn ($item) => $item->status === 'rejected');
+        $allApproved = $freshItems->isNotEmpty() && $freshItems->every(fn ($item) => $item->status === 'approved');
+
+        $itemsApprovalStatus = match (true) {
+            $allRejected => 'rejected',
+            $allApproved => 'approved',
+            default => 'partially_approved',
+        };
+
+        $updates = ['items_approval_status' => $itemsApprovalStatus];
+
+        // Kalau masih ada item pending, negosiasi belum final —
+        // finalized_at HARUS null supaya guard naik ke quality_control nolak.
+        $updates['finalized_at'] = $stillPending ? null : now();
+
+        $serviceOrder->update($updates);
     }
 }
