@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Textarea } from '@/Components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
+import { Badge } from '@/Components/ui/badge';
+import { Separator } from '@/Components/ui/separator';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+    CardFooter,
+} from '@/Components/ui/card';
 import {
     Select,
     SelectContent,
@@ -26,7 +34,14 @@ import {
     CommandItem,
     CommandList,
 } from '@/Components/ui/command';
-import { Check, ChevronsUpDown, Plus, Trash2 } from 'lucide-react';
+import {
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
+} from '@/Components/ui/accordion';
+import { Alert, AlertTitle, AlertDescription } from '@/Components/ui/alert';
+import { Check, ChevronsUpDown, Plus, Trash2, Pencil, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function EntityCombobox({ items, value, onSelect, placeholder, getLabel, getSubLabel }) {
@@ -84,6 +99,46 @@ function EntityCombobox({ items, value, onSelect, placeholder, getLabel, getSubL
     );
 }
 
+// Input harga dengan pemisah ribuan real-time (mis. 10.000.000) supaya SA
+// tidak salah hitung jumlah nol. Nilai yang dikirim ke form state tetap angka
+// murni tanpa titik (string of digits) — kompatibel langsung dengan validasi
+// backend 'numeric' (lihat ServiceOrderController::store()).
+function CurrencyInput({ id, value, onChange, placeholder }) {
+    const formatDisplay = (val) => {
+        const digits = String(val ?? '').replace(/\D/g, '');
+        if (digits === '') return '';
+        return new Intl.NumberFormat('id-ID').format(Number(digits));
+    };
+
+    const [display, setDisplay] = useState(formatDisplay(value));
+
+    useEffect(() => {
+        setDisplay(formatDisplay(value));
+    }, [value]);
+
+    const handleChange = (e) => {
+        const digits = e.target.value.replace(/\D/g, '');
+        setDisplay(formatDisplay(digits));
+        onChange(digits);
+    };
+
+    return (
+        <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-vw-grey">
+                Rp
+            </span>
+            <Input
+                id={id}
+                inputMode="numeric"
+                value={display}
+                onChange={handleChange}
+                placeholder={placeholder}
+                className="pl-9"
+            />
+        </div>
+    );
+}
+
 // Format angka jadi Rupiah untuk tampilan ringkasan (bukan input).
 function formatIDR(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -94,7 +149,6 @@ function formatIDR(value) {
 }
 
 // Ubah 'related' -> 'Related', 'work_in_progress' -> 'Work In Progress', dst.
-// Dipakai untuk label dropdown Group supaya tidak menampilkan raw enum value.
 function formatGroupLabel(group) {
     return group
         .split('_')
@@ -102,10 +156,8 @@ function formatGroupLabel(group) {
         .join(' ');
 }
 
-// Subtotal per item SEBELUM PPN — dipakai untuk tampilan ringkasan saja.
-// final_price_snapshot (dengan PPN dari settings) tetap dihitung & dikunci
-// di backend oleh InspectionItemPricingService saat item di-approve
-// (bagian 7B & 7 poin 5 PROJECT-RULES) — bukan di sini.
+// Subtotal per item SEBELUM PPN — tampilan saja. final_price_snapshot
+// (dengan PPN) tetap dihitung & dikunci di backend saat item di-approve.
 function itemSubtotal(item) {
     const costItem = Number(item.cost_item) || 0;
     const costLabour = Number(item.cost_labour) || 0;
@@ -118,9 +170,180 @@ function itemSubtotal(item) {
     return netItem + netLabour;
 }
 
+const emptyItemDraft = (defaultGroup) => ({
+    name: '',
+    description: '',
+    cost_item: '',
+    cost_labour: '',
+    discount_item_percent: '',
+    discount_labour_percent: '',
+    group: defaultGroup ?? '',
+});
+
+// Field set item — dipakai bareng untuk form "Add Item" di atas maupun mode
+// edit inline per item di dalam accordion, supaya layoutnya konsisten.
+function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
+    const err = (field) => (errorPrefix ? errors?.[`${errorPrefix}.${field}`] : null);
+
+    return (
+        <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label>Item Name</Label>
+                <Input
+                    value={item.name}
+                    onChange={(e) => onChange('name', e.target.value)}
+                    placeholder="e.g. Brake pad replacement"
+                />
+                {err('name') && <p className="text-sm text-urgent">{err('name')}</p>}
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label>Description (optional)</Label>
+                <Textarea
+                    value={item.description}
+                    onChange={(e) => onChange('description', e.target.value)}
+                    rows={2}
+                />
+            </div>
+
+            <div className="space-y-1.5">
+                <Label>Labour Price</Label>
+                <CurrencyInput
+                    value={item.cost_labour}
+                    onChange={(v) => onChange('cost_labour', v)}
+                    placeholder="0"
+                />
+                {err('cost_labour') && <p className="text-sm text-urgent">{err('cost_labour')}</p>}
+            </div>
+            <div className="space-y-1.5">
+                <Label>Part Price</Label>
+                <CurrencyInput
+                    value={item.cost_item}
+                    onChange={(v) => onChange('cost_item', v)}
+                    placeholder="0"
+                />
+                {err('cost_item') && <p className="text-sm text-urgent">{err('cost_item')}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label>Labour Discount (%)</Label>
+                <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={item.discount_labour_percent}
+                    onChange={(e) => onChange('discount_labour_percent', e.target.value)}
+                />
+                {err('discount_labour_percent') && (
+                    <p className="text-sm text-urgent">{err('discount_labour_percent')}</p>
+                )}
+            </div>
+            <div className="space-y-1.5">
+                <Label>Part Discount (%)</Label>
+                <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={item.discount_item_percent}
+                    onChange={(e) => onChange('discount_item_percent', e.target.value)}
+                />
+                {err('discount_item_percent') && (
+                    <p className="text-sm text-urgent">{err('discount_item_percent')}</p>
+                )}
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label>Group</Label>
+                <Select value={item.group} onValueChange={(v) => onChange('group', v)}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {groups.map((g) => (
+                            <SelectItem key={g} value={g}>
+                                {formatGroupLabel(g)}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {err('group') && <p className="text-sm text-urgent">{err('group')}</p>}
+            </div>
+        </div>
+    );
+}
+
+// Baris item di dalam accordion — mode ringkas (default) atau edit inline.
+function ItemRow({ item, index, groups, errors, onUpdate, onRemove, canRemove }) {
+    const [editing, setEditing] = useState(false);
+
+    if (editing) {
+        return (
+            <div className="space-y-3 rounded-md border border-vw-grey/30 bg-vw-grey-light/40 p-4">
+                <ItemFields
+                    item={item}
+                    groups={groups}
+                    errors={errors}
+                    errorPrefix={`inspection_items.${index}`}
+                    onChange={(field, value) => onUpdate(index, field, value)}
+                />
+                <div className="flex justify-end">
+                    <Button type="button" size="sm" onClick={() => setEditing(false)}>
+                        Done
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex items-start justify-between gap-4 rounded-md border border-vw-grey/20 p-3">
+            <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-gray-900">{item.name || 'Untitled item'}</p>
+                {item.description && (
+                    <p className="truncate text-xs text-vw-grey">{item.description}</p>
+                )}
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-vw-grey">
+                    <span>Labour: {formatIDR(item.cost_labour)}</span>
+                    <span>Part: {formatIDR(item.cost_item)}</span>
+                    {Number(item.discount_labour_percent) > 0 && (
+                        <span>Labour disc. {item.discount_labour_percent}%</span>
+                    )}
+                    {Number(item.discount_item_percent) > 0 && (
+                        <span>Part disc. {item.discount_item_percent}%</span>
+                    )}
+                </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+                <span className="text-sm font-semibold text-gray-900">
+                    {formatIDR(itemSubtotal(item))}
+                </span>
+                <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="text-vw-light-blue"
+                    aria-label="Edit item"
+                >
+                    <Pencil className="h-4 w-4" />
+                </button>
+                {canRemove && (
+                    <button
+                        type="button"
+                        onClick={() => onRemove(index)}
+                        className="text-urgent"
+                        aria-label="Remove item"
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function Create({ customers, vehicles, technicians, brands, groups }) {
     const [customerMode, setCustomerMode] = useState('existing'); // 'existing' | 'new'
     const [vehicleMode, setVehicleMode] = useState('existing');
+    const [draft, setDraft] = useState(emptyItemDraft(groups?.[0]));
 
     const { data, setData, post, processing, errors, transform } = useForm({
         work_order_number: '',
@@ -132,18 +355,10 @@ export default function Create({ customers, vehicles, technicians, brands, group
         personal_message: '',
         inspection_fee: '',
         inspection_fee_note: '',
-        inspection_items: [
-            {
-                name: '',
-                description: '',
-                cost_item: '',
-                cost_labour: '',
-                discount_item_percent: '',
-                discount_labour_percent: '',
-                group: groups?.[0] ?? '',
-            },
-        ],
-        videos: [],
+        inspection_items: [],
+        // Skema baru: 1 video utama saja (link ATAU upload). Video lain (jika
+        // ada) dikirim manual ke WhatsApp customer — lihat note di Card Video.
+        video: { video_source: 'external_link', video_url: '', file: null },
     });
 
     // Reset pilihan vehicle setiap kali customer/mode berubah,
@@ -160,8 +375,6 @@ export default function Create({ customers, vehicles, technicians, brands, group
             : [];
 
     // Transform payload sebelum dikirim ke backend.
-    // PENTING: transform() dipanggil di body komponen (bukan di dalam handleSubmit)
-    // supaya selalu ambil customerMode/vehicleMode terbaru.
     transform((data) => ({
         ...data,
         customer_id: customerMode === 'existing' ? data.customer_id : '',
@@ -169,21 +382,17 @@ export default function Create({ customers, vehicles, technicians, brands, group
         vehicle_id: vehicleMode === 'existing' ? data.vehicle_id : '',
         new_vehicle: vehicleMode === 'new' ? data.new_vehicle : null,
         inspection_items: data.inspection_items,
+        // Hanya kirim video kalau benar-benar diisi (url atau file) — video
+        // tetap opsional, slot kosong tidak perlu memicu validasi backend.
+        videos: data.video.video_url || data.video.file ? [data.video] : [],
     }));
 
-    const addItem = () => {
-        setData('inspection_items', [
-            ...data.inspection_items,
-            {
-                name: '',
-                description: '',
-                cost_item: '',
-                cost_labour: '',
-                discount_item_percent: '',
-                discount_labour_percent: '',
-                group: groups?.[0] ?? '',
-            },
-        ]);
+    const updateDraft = (field, value) => setDraft((d) => ({ ...d, [field]: value }));
+
+    const handleAddItem = () => {
+        if (!draft.name.trim()) return;
+        setData('inspection_items', [...data.inspection_items, draft]);
+        setDraft(emptyItemDraft(groups?.[0]));
     };
 
     const removeItem = (index) => {
@@ -199,30 +408,26 @@ export default function Create({ customers, vehicles, technicians, brands, group
         setData('inspection_items', items);
     };
 
-    const addVideo = () => {
-        setData('videos', [
-            ...data.videos,
-            { video_source: 'external_link', video_url: '', file: null },
-        ]);
+    const updateVideo = (field, value) => {
+        setData('video', { ...data.video, [field]: value });
     };
 
-    const removeVideo = (index) => {
-        setData(
-            'videos',
-            data.videos.filter((_, i) => i !== index)
-        );
-    };
-
-    const updateVideo = (index, field, value) => {
-        const videos = [...data.videos];
-        videos[index] = { ...videos[index], [field]: value };
-        setData('videos', videos);
-    };
+    const itemsByGroup = useMemo(() => {
+        const map = {};
+        data.inspection_items.forEach((item, index) => {
+            const g = item.group || 'ungrouped';
+            if (!map[g]) map[g] = [];
+            map[g].push({ item, index });
+        });
+        return map;
+    }, [data.inspection_items]);
 
     const totalCost = data.inspection_items.reduce(
         (sum, item) => sum + itemSubtotal(item),
         0
     );
+    const feeAmount = Number(data.inspection_fee) || 0;
+    const estimatedTotal = totalCost + feeAmount;
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -233,575 +438,531 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
     return (
         <AdminLayout title="New Service Order">
-            <form onSubmit={handleSubmit} className="space-y-6 pb-24">
-                {/* Work Order Number — input manual oleh SA, sesuai nomor fisik dari bengkel */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Work Order</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="space-y-1.5">
-                            <Label>Work Order Number</Label>
-                            <Input
-                                value={data.work_order_number}
-                                onChange={(e) => setData('work_order_number', e.target.value)}
-                                placeholder="e.g. WO-2026-0001"
-                            />
-                            {errors.work_order_number && (
-                                <p className="text-sm text-urgent">{errors.work_order_number}</p>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Customer */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Customer</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex gap-2">
-                            <Button
-                                type="button"
-                                variant={customerMode === 'existing' ? 'default' : 'outline'}
-                                onClick={() => setCustomerMode('existing')}
-                            >
-                                Existing Customer
-                            </Button>
-                            <Button
-                                type="button"
-                                variant={customerMode === 'new' ? 'default' : 'outline'}
-                                onClick={() => setCustomerMode('new')}
-                            >
-                                <Plus className="mr-1 h-4 w-4" /> New Customer
-                            </Button>
-                        </div>
-
-                        {customerMode === 'existing' ? (
-                            <div className="space-y-1.5">
-                                <Label>Select Customer</Label>
-                                <EntityCombobox
-                                    items={customers}
-                                    value={data.customer_id}
-                                    onSelect={(id) => setData('customer_id', id)}
-                                    placeholder="Search customer..."
-                                    getLabel={(c) => c.name}
-                                    getSubLabel={(c) => c.phone}
-                                />
-                                {errors.customer_id && (
-                                    <p className="text-sm text-urgent">{errors.customer_id}</p>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-1.5">
-                                    <Label>Name</Label>
+            <form onSubmit={handleSubmit}>
+                <div className="grid gap-6 lg:grid-cols-3">
+                    {/* Kolom kiri — input utama */}
+                    <div className="space-y-6 lg:col-span-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Work Order</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="max-w-sm space-y-1.5">
+                                    <Label>Work Order Number</Label>
                                     <Input
-                                        value={data.new_customer.name}
-                                        onChange={(e) =>
-                                            setData('new_customer', {
-                                                ...data.new_customer,
-                                                name: e.target.value,
-                                            })
-                                        }
+                                        value={data.work_order_number}
+                                        onChange={(e) => setData('work_order_number', e.target.value)}
+                                        placeholder="e.g. WO-2026-0001"
                                     />
-                                    {errors['new_customer.name'] && (
-                                        <p className="text-sm text-urgent">{errors['new_customer.name']}</p>
+                                    {errors.work_order_number && (
+                                        <p className="text-sm text-urgent">{errors.work_order_number}</p>
                                     )}
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label>Phone</Label>
-                                    <Input
-                                        value={data.new_customer.phone}
-                                        onChange={(e) =>
-                                            setData('new_customer', {
-                                                ...data.new_customer,
-                                                phone: e.target.value,
-                                            })
-                                        }
-                                    />
-                                    {errors['new_customer.phone'] && (
-                                        <p className="text-sm text-urgent">{errors['new_customer.phone']}</p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5 sm:col-span-2">
-                                    <Label>Email (optional)</Label>
-                                    <Input
-                                        type="email"
-                                        value={data.new_customer.email}
-                                        onChange={(e) =>
-                                            setData('new_customer', {
-                                                ...data.new_customer,
-                                                email: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                            </CardContent>
+                        </Card>
 
-                {/* Vehicle */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Vehicle</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex gap-2">
-                            <Button
-                                type="button"
-                                variant={vehicleMode === 'existing' ? 'default' : 'outline'}
-                                onClick={() => setVehicleMode('existing')}
-                            >
-                                Existing Vehicle
-                            </Button>
-                            <Button
-                                type="button"
-                                variant={vehicleMode === 'new' ? 'default' : 'outline'}
-                                onClick={() => setVehicleMode('new')}
-                            >
-                                <Plus className="mr-1 h-4 w-4" /> New Vehicle
-                            </Button>
-                        </div>
-
-                        {vehicleMode === 'existing' ? (
-                            <div className="space-y-1.5">
-                                <Label>Select Vehicle</Label>
-                                {customerMode === 'new' ? (
-                                    <p className="text-sm text-vw-grey">
-                                        New customers don't have any vehicles yet — please add one below.
-                                    </p>
-                                ) : !data.customer_id ? (
-                                    <p className="text-sm text-vw-grey">
-                                        Select a customer first to see their vehicles.
-                                    </p>
-                                ) : filteredVehicles.length === 0 ? (
-                                    <p className="text-sm text-vw-grey">
-                                        This customer has no vehicles yet — please add one below.
-                                    </p>
-                                ) : (
-                                    <EntityCombobox
-                                        items={filteredVehicles}
-                                        value={data.vehicle_id}
-                                        onSelect={(id) => setData('vehicle_id', id)}
-                                        placeholder="Search plate number..."
-                                        getLabel={(v) => v.plate_number}
-                                        getSubLabel={(v) => `${v.brand} ${v.model}`}
-                                    />
-                                )}
-                                {errors.vehicle_id && (
-                                    <p className="text-sm text-urgent">{errors.vehicle_id}</p>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-1.5">
-                                    <Label>Plate Number</Label>
-                                    <Input
-                                        value={data.new_vehicle.plate_number}
-                                        onChange={(e) =>
-                                            setData('new_vehicle', {
-                                                ...data.new_vehicle,
-                                                plate_number: e.target.value,
-                                            })
-                                        }
-                                    />
-                                    {errors['new_vehicle.plate_number'] && (
-                                        <p className="text-sm text-urgent">
-                                            {errors['new_vehicle.plate_number']}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Brand</Label>
-                                    <Select
-                                        value={data.new_vehicle.brand}
-                                        onValueChange={(value) =>
-                                            setData('new_vehicle', {
-                                                ...data.new_vehicle,
-                                                brand: value,
-                                            })
-                                        }
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select brand" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {brands.map((brand) => (
-                                                <SelectItem key={brand} value={brand}>
-                                                    {brand}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    {errors['new_vehicle.brand'] && (
-                                        <p className="text-sm text-urgent">{errors['new_vehicle.brand']}</p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>VIN/Chasis Number</Label>
-                                    <Input
-                                        value={data.new_vehicle.vin}
-                                        maxLength={17}
-                                        onChange={(e) =>
-                                            setData('new_vehicle', {
-                                                ...data.new_vehicle,
-                                                vin: e.target.value.toUpperCase(),
-                                            })
-                                        }
-                                        placeholder="17-character VIN/Chasis Number"
-                                    />
-                                    {errors['new_vehicle.vin'] && (
-                                        <p className="text-sm text-urgent">{errors['new_vehicle.vin']}</p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Model</Label>
-                                    <Input
-                                        value={data.new_vehicle.model}
-                                        onChange={(e) =>
-                                            setData('new_vehicle', {
-                                                ...data.new_vehicle,
-                                                model: e.target.value,
-                                            })
-                                        }
-                                    />
-                                    {errors['new_vehicle.model'] && (
-                                        <p className="text-sm text-urgent">{errors['new_vehicle.model']}</p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Year (optional)</Label>
-                                    <Input
-                                        type="number"
-                                        value={data.new_vehicle.year ?? ''}
-                                        onChange={(e) =>
-                                            setData('new_vehicle', {
-                                                ...data.new_vehicle,
-                                                year: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Technician & Personal Message */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Assignment & Message</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="space-y-1.5">
-                            <Label>Chief Technician (optional, for records only)</Label>
-                            <Select
-                                value={data.technician_id ? String(data.technician_id) : ''}
-                                onValueChange={(value) => setData('technician_id', value)}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select chief technician" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {technicians.map((tech) => (
-                                        <SelectItem key={tech.id} value={String(tech.id)}>
-                                            {tech.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Personal Message to Customer (optional)</Label>
-                            <Textarea
-                                value={data.personal_message}
-                                onChange={(e) => setData('personal_message', e.target.value)}
-                                placeholder="A short message shown alongside the video..."
-                                rows={3}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Videos */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle>Videos</CardTitle>
-                        <Button type="button" variant="outline" size="sm" onClick={addVideo}>
-                            <Plus className="mr-1 h-4 w-4" /> Add Video
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {data.videos.length === 0 && (
-                            <p className="text-sm text-vw-grey">No videos added yet.</p>
-                        )}
-                        {data.videos.map((video, index) => (
-                            <div
-                                key={index}
-                                className="space-y-3 rounded-md border border-vw-grey/20 p-4"
-                            >
-                                <div className="flex items-center justify-between">
+                        {/* Customer & Vehicle bersebelahan biar hemat ruang di layar lebar */}
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Customer</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
                                     <div className="flex gap-2">
                                         <Button
                                             type="button"
                                             size="sm"
-                                            variant={video.video_source === 'external_link' ? 'default' : 'outline'}
-                                            onClick={() => updateVideo(index, 'video_source', 'external_link')}
+                                            variant={customerMode === 'existing' ? 'default' : 'outline'}
+                                            onClick={() => setCustomerMode('existing')}
+                                        >
+                                            Existing
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={customerMode === 'new' ? 'default' : 'outline'}
+                                            onClick={() => setCustomerMode('new')}
+                                        >
+                                            <Plus className="mr-1 h-4 w-4" /> New
+                                        </Button>
+                                    </div>
+
+                                    {customerMode === 'existing' ? (
+                                        <div className="space-y-1.5">
+                                            <Label>Select Customer</Label>
+                                            <EntityCombobox
+                                                items={customers}
+                                                value={data.customer_id}
+                                                onSelect={(id) => setData('customer_id', id)}
+                                                placeholder="Search customer..."
+                                                getLabel={(c) => c.name}
+                                                getSubLabel={(c) => c.phone}
+                                            />
+                                            {errors.customer_id && (
+                                                <p className="text-sm text-urgent">{errors.customer_id}</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <div className="space-y-1.5">
+                                                <Label>Name</Label>
+                                                <Input
+                                                    value={data.new_customer.name}
+                                                    onChange={(e) =>
+                                                        setData('new_customer', {
+                                                            ...data.new_customer,
+                                                            name: e.target.value,
+                                                        })
+                                                    }
+                                                />
+                                                {errors['new_customer.name'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_customer.name']}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label>Phone</Label>
+                                                <Input
+                                                    value={data.new_customer.phone}
+                                                    onChange={(e) =>
+                                                        setData('new_customer', {
+                                                            ...data.new_customer,
+                                                            phone: e.target.value,
+                                                        })
+                                                    }
+                                                />
+                                                {errors['new_customer.phone'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_customer.phone']}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label>Email (optional)</Label>
+                                                <Input
+                                                    type="email"
+                                                    value={data.new_customer.email}
+                                                    onChange={(e) =>
+                                                        setData('new_customer', {
+                                                            ...data.new_customer,
+                                                            email: e.target.value,
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Vehicle</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="flex gap-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={vehicleMode === 'existing' ? 'default' : 'outline'}
+                                            onClick={() => setVehicleMode('existing')}
+                                        >
+                                            Existing
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={vehicleMode === 'new' ? 'default' : 'outline'}
+                                            onClick={() => setVehicleMode('new')}
+                                        >
+                                            <Plus className="mr-1 h-4 w-4" /> New
+                                        </Button>
+                                    </div>
+
+                                    {vehicleMode === 'existing' ? (
+                                        <div className="space-y-1.5">
+                                            <Label>Select Vehicle</Label>
+                                            {customerMode === 'new' ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    New customers don't have any vehicles yet — add one below.
+                                                </p>
+                                            ) : !data.customer_id ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    Select a customer first to see their vehicles.
+                                                </p>
+                                            ) : filteredVehicles.length === 0 ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    This customer has no vehicles yet — add one below.
+                                                </p>
+                                            ) : (
+                                                <EntityCombobox
+                                                    items={filteredVehicles}
+                                                    value={data.vehicle_id}
+                                                    onSelect={(id) => setData('vehicle_id', id)}
+                                                    placeholder="Search plate number..."
+                                                    getLabel={(v) => v.plate_number}
+                                                    getSubLabel={(v) => `${v.brand} ${v.model}`}
+                                                />
+                                            )}
+                                            {errors.vehicle_id && (
+                                                <p className="text-sm text-urgent">{errors.vehicle_id}</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <div className="space-y-1.5">
+                                                <Label>Plate Number</Label>
+                                                <Input
+                                                    value={data.new_vehicle.plate_number}
+                                                    onChange={(e) =>
+                                                        setData('new_vehicle', {
+                                                            ...data.new_vehicle,
+                                                            plate_number: e.target.value,
+                                                        })
+                                                    }
+                                                />
+                                                {errors['new_vehicle.plate_number'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_vehicle.plate_number']}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1.5">
+                                                    <Label>Brand</Label>
+                                                    <Select
+                                                        value={data.new_vehicle.brand}
+                                                        onValueChange={(value) =>
+                                                            setData('new_vehicle', {
+                                                                ...data.new_vehicle,
+                                                                brand: value,
+                                                            })
+                                                        }
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Brand" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {brands.map((brand) => (
+                                                                <SelectItem key={brand} value={brand}>
+                                                                    {brand}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {errors['new_vehicle.brand'] && (
+                                                        <p className="text-sm text-urgent">
+                                                            {errors['new_vehicle.brand']}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label>Year (optional)</Label>
+                                                    <Input
+                                                        type="number"
+                                                        value={data.new_vehicle.year ?? ''}
+                                                        onChange={(e) =>
+                                                            setData('new_vehicle', {
+                                                                ...data.new_vehicle,
+                                                                year: e.target.value,
+                                                            })
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label>VIN/Chasis Number</Label>
+                                                <Input
+                                                    value={data.new_vehicle.vin}
+                                                    maxLength={17}
+                                                    onChange={(e) =>
+                                                        setData('new_vehicle', {
+                                                            ...data.new_vehicle,
+                                                            vin: e.target.value.toUpperCase(),
+                                                        })
+                                                    }
+                                                    placeholder="17-character VIN/Chasis Number"
+                                                />
+                                                {errors['new_vehicle.vin'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_vehicle.vin']}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label>Model</Label>
+                                                <Input
+                                                    value={data.new_vehicle.model}
+                                                    onChange={(e) =>
+                                                        setData('new_vehicle', {
+                                                            ...data.new_vehicle,
+                                                            model: e.target.value,
+                                                        })
+                                                    }
+                                                />
+                                                {errors['new_vehicle.model'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_vehicle.model']}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* Assignment, message & video bersebelahan */}
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Assignment & Message</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="space-y-1.5">
+                                        <Label>Chief Technician (optional)</Label>
+                                        <Select
+                                            value={data.technician_id ? String(data.technician_id) : ''}
+                                            onValueChange={(value) => setData('technician_id', value)}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select chief technician" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {technicians.map((tech) => (
+                                                    <SelectItem key={tech.id} value={String(tech.id)}>
+                                                        {tech.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Personal Message to Customer (optional)</Label>
+                                        <Textarea
+                                            value={data.personal_message}
+                                            onChange={(e) => setData('personal_message', e.target.value)}
+                                            placeholder="A short message shown alongside the video..."
+                                            rows={4}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Video</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="flex gap-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={data.video.video_source === 'external_link' ? 'default' : 'outline'}
+                                            onClick={() => updateVideo('video_source', 'external_link')}
                                         >
                                             Link
                                         </Button>
                                         <Button
                                             type="button"
                                             size="sm"
-                                            variant={video.video_source === 'upload' ? 'default' : 'outline'}
-                                            onClick={() => updateVideo(index, 'video_source', 'upload')}
+                                            variant={data.video.video_source === 'upload' ? 'default' : 'outline'}
+                                            onClick={() => updateVideo('video_source', 'upload')}
                                         >
                                             Upload
                                         </Button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeVideo(index)}
-                                        className="text-urgent"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
+
+                                    {data.video.video_source === 'external_link' ? (
+                                        <div className="space-y-1.5">
+                                            <Label>Video URL (optional)</Label>
+                                            <Input
+                                                value={data.video.video_url}
+                                                onChange={(e) => updateVideo('video_url', e.target.value)}
+                                                placeholder="https://..."
+                                            />
+                                            {errors['videos.0.video_url'] && (
+                                                <p className="text-sm text-urgent">
+                                                    {errors['videos.0.video_url']}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            <Label>Video File (optional)</Label>
+                                            <Input
+                                                type="file"
+                                                accept="video/mp4,video/quicktime,video/webm"
+                                                onChange={(e) => updateVideo('file', e.target.files[0])}
+                                            />
+                                            {errors['videos.0.file'] && (
+                                                <p className="text-sm text-urgent">{errors['videos.0.file']}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <Alert>
+                                        <Info className="h-4 w-4" />
+                                        <AlertTitle className="text-sm">Only one video here</AlertTitle>
+                                        <AlertDescription className="text-xs">
+                                            Any additional videos will be sent directly to the customer's
+                                            WhatsApp instead of being attached to this report.
+                                        </AlertDescription>
+                                    </Alert>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* Inspection Items */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Inspection Items</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-5">
+                                <div className="rounded-md border border-dashed border-vw-grey/40 p-4">
+                                    <p className="mb-3 text-sm font-medium text-gray-900">Add Item</p>
+                                    <ItemFields
+                                        item={draft}
+                                        groups={groups}
+                                        errors={{}}
+                                        errorPrefix={null}
+                                        onChange={updateDraft}
+                                    />
+                                    <div className="mt-3 flex justify-end">
+                                        <Button
+                                            type="button"
+                                            onClick={handleAddItem}
+                                            disabled={!draft.name.trim()}
+                                        >
+                                            <Plus className="mr-1 h-4 w-4" /> Add Item
+                                        </Button>
+                                    </div>
                                 </div>
 
-                                {video.video_source === 'external_link' ? (
-                                    <div className="space-y-1.5">
-                                        <Label>Video URL</Label>
-                                        <Input
-                                            value={video.video_url}
-                                            onChange={(e) => updateVideo(index, 'video_url', e.target.value)}
-                                            placeholder="https://..."
-                                        />
-                                        {errors[`videos.${index}.video_url`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`videos.${index}.video_url`]}
-                                            </p>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="space-y-1.5">
-                                        <Label>Video File</Label>
-                                        <Input
-                                            type="file"
-                                            accept="video/mp4,video/quicktime,video/webm"
-                                            onChange={(e) => updateVideo(index, 'file', e.target.files[0])}
-                                        />
-                                        {errors[`videos.${index}.file`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`videos.${index}.file`]}
-                                            </p>
-                                        )}
-                                    </div>
+                                {errors.inspection_items && (
+                                    <p className="text-sm text-urgent">{errors.inspection_items}</p>
                                 )}
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
 
-                {/* Inspection Items */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle>Inspection Items</CardTitle>
-                        <Button type="button" variant="outline" size="sm" onClick={addItem}>
-                            <Plus className="mr-1 h-4 w-4" /> Add Item
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {errors.inspection_items && (
-                            <p className="text-sm text-urgent">{errors.inspection_items}</p>
-                        )}
-                        {data.inspection_items.map((item, index) => (
-                            <div
-                                key={index}
-                                className="space-y-3 rounded-md border border-vw-grey/20 p-4"
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1 space-y-1.5">
-                                        <Label>Item Name</Label>
-                                        <Input
-                                            value={item.name}
-                                            onChange={(e) => updateItem(index, 'name', e.target.value)}
-                                            placeholder="e.g. Brake pad replacement"
-                                        />
-                                        {errors[`inspection_items.${index}.name`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.name`]}
-                                            </p>
-                                        )}
-                                    </div>
-                                    {data.inspection_items.length > 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => removeItem(index)}
-                                            className="mt-6 text-urgent"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
+                                {data.inspection_items.length === 0 ? (
+                                    <p className="text-sm text-vw-grey">No items added yet.</p>
+                                ) : (
+                                    <Accordion
+                                        type="multiple"
+                                        defaultValue={Object.keys(itemsByGroup)}
+                                        className="space-y-2"
+                                    >
+                                        {Object.entries(itemsByGroup).map(([group, entries]) => {
+                                            const subtotal = entries.reduce(
+                                                (sum, { item }) => sum + itemSubtotal(item),
+                                                0
+                                            );
+                                            return (
+                                                <AccordionItem
+                                                    key={group}
+                                                    value={group}
+                                                    className="rounded-md border border-vw-grey/20 px-3"
+                                                >
+                                                    <AccordionTrigger className="hover:no-underline">
+                                                        <div className="flex flex-1 items-center justify-between pr-2">
+                                                            <span className="flex items-center gap-2 font-medium text-gray-900">
+                                                                {formatGroupLabel(group)}
+                                                                <Badge variant="secondary">{entries.length}</Badge>
+                                                            </span>
+                                                            <span className="text-sm text-vw-grey">
+                                                                {formatIDR(subtotal)}
+                                                            </span>
+                                                        </div>
+                                                    </AccordionTrigger>
+                                                    <AccordionContent className="space-y-2 pt-1">
+                                                        {entries.map(({ item, index }) => (
+                                                            <ItemRow
+                                                                key={index}
+                                                                item={item}
+                                                                index={index}
+                                                                groups={groups}
+                                                                errors={errors}
+                                                                onUpdate={updateItem}
+                                                                onRemove={removeItem}
+                                                                canRemove={data.inspection_items.length > 1}
+                                                            />
+                                                        ))}
+                                                    </AccordionContent>
+                                                </AccordionItem>
+                                            );
+                                        })}
+                                    </Accordion>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Inspection Fee */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Inspection Fee</CardTitle>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Label>Fee Amount</Label>
+                                    <CurrencyInput
+                                        value={data.inspection_fee}
+                                        onChange={(v) => setData('inspection_fee', v)}
+                                        placeholder="0"
+                                    />
+                                    {errors.inspection_fee && (
+                                        <p className="text-sm text-urgent">{errors.inspection_fee}</p>
                                     )}
                                 </div>
-
-                                <div className="space-y-1.5">
-                                    <Label>Description (optional)</Label>
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label>Fee Note (reason for this fee)</Label>
                                     <Textarea
-                                        value={item.description}
-                                        onChange={(e) => updateItem(index, 'description', e.target.value)}
+                                        value={data.inspection_fee_note}
+                                        onChange={(e) => setData('inspection_fee_note', e.target.value)}
                                         rows={2}
                                     />
                                 </div>
+                            </CardContent>
+                        </Card>
+                    </div>
 
-                                {/* Posisi ditukar: Labour price kiri, Part price kanan
-                                    (PROJECT-RULES Revisi Besar #2, poin 4) */}
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label>Labour Price (IDR)</Label>
-                                        <Input
-                                            type="number"
-                                            value={item.cost_labour}
-                                            onChange={(e) => updateItem(index, 'cost_labour', e.target.value)}
-                                        />
-                                        {errors[`inspection_items.${index}.cost_labour`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.cost_labour`]}
-                                            </p>
-                                        )}
+                    {/* Kolom kanan — ringkasan & submit, sticky supaya tetap
+                        terlihat selagi scroll form yang panjang di kiri */}
+                    <div className="lg:col-span-1">
+                        <div className="sticky top-6 space-y-4">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Order Summary</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3 text-sm">
+                                    <div className="flex justify-between">
+                                        <span className="text-vw-grey">Items</span>
+                                        <span>{data.inspection_items.length}</span>
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <Label>Part Price (IDR)</Label>
-                                        <Input
-                                            type="number"
-                                            value={item.cost_item}
-                                            onChange={(e) => updateItem(index, 'cost_item', e.target.value)}
-                                        />
-                                        {errors[`inspection_items.${index}.cost_item`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.cost_item`]}
-                                            </p>
-                                        )}
+                                    <div className="flex justify-between">
+                                        <span className="text-vw-grey">Items Subtotal</span>
+                                        <span>{formatIDR(totalCost)}</span>
                                     </div>
-                                </div>
-
-                                {/* Diskon item & labour terpisah — locked permanen di backend
-                                    begitu item di-approve customer (bagian 7B poin 4) */}
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label>Labour Discount (%)</Label>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={item.discount_labour_percent}
-                                            onChange={(e) =>
-                                                updateItem(index, 'discount_labour_percent', e.target.value)
-                                            }
-                                        />
-                                        {errors[`inspection_items.${index}.discount_labour_percent`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.discount_labour_percent`]}
-                                            </p>
-                                        )}
+                                    <div className="flex justify-between">
+                                        <span className="text-vw-grey">Inspection Fee</span>
+                                        <span>{formatIDR(feeAmount)}</span>
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <Label>Part Discount (%)</Label>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={item.discount_item_percent}
-                                            onChange={(e) =>
-                                                updateItem(index, 'discount_item_percent', e.target.value)
-                                            }
-                                        />
-                                        {errors[`inspection_items.${index}.discount_item_percent`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.discount_item_percent`]}
-                                            </p>
-                                        )}
+                                    <Separator />
+                                    <div className="flex justify-between font-semibold text-gray-900">
+                                        <span>Estimated Total</span>
+                                        <span>{formatIDR(estimatedTotal)}</span>
                                     </div>
-                                </div>
-
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="space-y-1.5">
-                                        <Label>Group</Label>
-                                        <Select
-                                            value={item.group}
-                                            onValueChange={(value) => updateItem(index, 'group', value)}
-                                        >
-                                            <SelectTrigger className="w-[180px]">
-                                                <SelectValue placeholder="Select group" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {groups.map((group) => (
-                                                    <SelectItem key={group} value={group}>
-                                                        {formatGroupLabel(group)}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        {errors[`inspection_items.${index}.group`] && (
-                                            <p className="text-sm text-urgent">
-                                                {errors[`inspection_items.${index}.group`]}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-vw-grey">
-                                        Subtotal price (before tax): {formatIDR(itemSubtotal(item))}
+                                    <p className="text-xs text-vw-grey">
+                                        Before tax. VAT and final per-item price are calculated and
+                                        locked once the customer approves each item.
                                     </p>
-                                </div>
-                            </div>
-                        ))}
-
-                        <div className="flex items-center justify-between border-t border-vw-grey/20 pt-3">
-                            <p className="font-semibold text-gray-900">Items Total Price (before tax)</p>
-                            <p className="font-semibold text-gray-900">{formatIDR(totalCost)}</p>
+                                </CardContent>
+                                <CardFooter>
+                                    <Button type="submit" disabled={processing} className="w-full">
+                                        {processing ? 'Creating...' : 'Create Service Order'}
+                                    </Button>
+                                </CardFooter>
+                            </Card>
                         </div>
-                        <p className="text-xs text-vw-grey">
-                            Final price per item (including VAT) is calculated and locked by the
-                            system only once the customer approves that item — this total is an
-                            estimate for reference while creating the order.
-                        </p>
-                    </CardContent>
-                </Card>
-
-                {/* Inspection Fee */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Inspection Fee</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label>Fee Amount (IDR)</Label>
-                            <Input
-                                type="number"
-                                value={data.inspection_fee}
-                                onChange={(e) => setData('inspection_fee', e.target.value)}
-                            />
-                            {errors.inspection_fee && (
-                                <p className="text-sm text-urgent">{errors.inspection_fee}</p>
-                            )}
-                        </div>
-                        <div className="space-y-1.5 sm:col-span-2">
-                            <Label>Fee Note (reason for this fee)</Label>
-                            <Textarea
-                                value={data.inspection_fee_note}
-                                onChange={(e) => setData('inspection_fee_note', e.target.value)}
-                                rows={2}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Sticky submit bar */}
-                <div className="fixed inset-x-0 bottom-0 border-t border-vw-grey/20 bg-white p-4 lg:pl-64">
-                    <div className="flex justify-end">
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Creating...' : 'Create Service Order'}
-                        </Button>
                     </div>
                 </div>
             </form>

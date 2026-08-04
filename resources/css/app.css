@@ -9,12 +9,22 @@
         --border: 220 13% 91%;
         --radius: 0.5rem;
 
+        /* Input border & focus ring — dipakai default Input/Select/Textarea/dll
+           kalau tidak di-override manual. Sebelumnya TIDAK ADA di file ini. */
+        --input: 220 13% 91%;
+        --ring: 233 60% 22%;
+
         --accent: 0 0% 95%;
         --accent-foreground: 222 47% 11%;
 
         /* Primary — tombol/aksi utama shadcn, dipetakan ke VW Blue (#161E59) */
         --primary: 233 60% 22%;
         --primary-foreground: 0 0% 100%;
+
+        /* Secondary — Button variant="secondary", Badge variant="secondary".
+           Sebelumnya TIDAK ADA di file ini. Dipetakan ke vw-grey-light. */
+        --secondary: 0 0% 95%;
+        --secondary-foreground: 222 47% 11%;
 
         /* Destructive — dipakai Button variant="destructive" & AlertDialog
            delete confirm. Dipetakan ke token 'urgent' (#D32F2F) yang sudah
@@ -25,6 +35,11 @@
         --card: 0 0% 100%;
         --card-foreground: 222 47% 11%;
 
+        /* Muted — TabsList container, Skeleton, Badge secondary background,
+           dll. Sebelumnya TIDAK ADA (cuma --muted-foreground yang ada) —
+           ini root cause TabsList kelihatan nyaris polos. Dipetakan ke
+           vw-grey-light (#F2F2F2). */
+        --muted: 0 0% 95%;
         --muted-foreground: 0 0% 46%;
 
         --popover: 0 0% 100%;
