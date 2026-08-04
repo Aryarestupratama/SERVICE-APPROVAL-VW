@@ -23,6 +23,7 @@ import {
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
+import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
 
 const ROLE_LABEL = {
     admin: 'Admin',
@@ -84,7 +85,6 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
             },
         };
 
-        // File upload butuh multipart — _method spoofing untuk edit (PUT), post biasa untuk tambah baru
         if (isEdit) {
             post(route('admin.users.update', user.id), options);
         } else {
@@ -240,25 +240,51 @@ function DeleteConfirmDialog({ open, onOpenChange, user }) {
     );
 }
 
-export default function Index({ users, search }) {
+// Filter panel Users — role: select dari 3 role yang ada. name/email/phone
+// sudah cukup dicover global search server-side, tidak perlu filter terpisah.
+const filterDefs = [
+    {
+        key: 'role',
+        label: 'Role',
+        type: 'select',
+        options: Object.keys(ROLE_LABEL),
+    },
+];
+
+export default function Index({ users, search, filters }) {
     const { auth } = usePage().props;
     const [searchTerm, setSearchTerm] = useState(search ?? '');
+    const [activeFilters, setActiveFilters] = useState(() => ({
+        role: filters?.role ?? '',
+    }));
     const [formOpen, setFormOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [deletingUser, setDeletingUser] = useState(null);
 
+    // Search dan filter digabung jadi satu request/debounce — sama pola
+    // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
     useEffect(() => {
         const timeout = setTimeout(() => {
-            if (searchTerm !== (search ?? '')) {
-                router.get(
-                    route('admin.users.index'),
-                    { search: searchTerm || undefined },
-                    { preserveState: true, replace: true }
-                );
-            }
+            const nextParams = {
+                search: searchTerm || undefined,
+                role: activeFilters.role || undefined,
+            };
+
+            router.get(route('admin.users.index'), nextParams, {
+                preserveState: true,
+                replace: true,
+            });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm]);
+    }, [searchTerm, activeFilters]);
+
+    const handleFilterChange = (key, value) => {
+        setActiveFilters((current) => ({ ...current, [key]: value }));
+    };
+
+    const handleFilterClear = () => {
+        setActiveFilters({ role: '' });
+    };
 
     const openAddForm = () => {
         setEditingUser(null);
@@ -270,8 +296,6 @@ export default function Index({ users, search }) {
         setFormOpen(true);
     };
 
-    // useMemo karena butuh closure ke openEditForm, setDeletingUser, dan
-    // auth.user.id (untuk cegah user hapus akunnya sendiri).
     const columns = useMemo(
         () => [
             {
@@ -297,7 +321,6 @@ export default function Index({ users, search }) {
                 accessorKey: 'role',
                 header: 'Role',
                 meta: { label: 'Role' },
-                filterFn: 'equals',
                 cell: ({ row }) => (
                     <Badge variant={ROLE_BADGE_VARIANT[row.original.role]}>
                         {ROLE_LABEL[row.original.role] ?? row.original.role}
@@ -346,7 +369,15 @@ export default function Index({ users, search }) {
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search by name or email..." // sesuaikan per halaman
+                        placeholder="Search by name or email..."
+                    />
+                }
+                filterSlot={
+                    <DataTableFilterPanel
+                        filters={filterDefs}
+                        values={activeFilters}
+                        onChange={handleFilterChange}
+                        onClear={handleFilterClear}
                     />
                 }
                 primaryAction={<Button onClick={openAddForm}>Add Staff Account</Button>}

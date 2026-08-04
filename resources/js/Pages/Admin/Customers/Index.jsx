@@ -22,6 +22,7 @@ import {
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
+import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
 
 // Terima input user dalam bentuk apapun (boleh diawali 0, 62, atau langsung tanpa awalan)
 // dan kembalikan hanya bagian digit SETELAH kode negara, tanpa leading zero.
@@ -72,7 +73,6 @@ function CustomerFormDialog({ open, onOpenChange, customer, onSuccess, titles })
         email: customer?.email ?? '',
     });
 
-    // Reset form data setiap kali dialog dibuka dengan customer berbeda (atau kosong = mode tambah)
     useEffect(() => {
         if (open) {
             clearErrors();
@@ -221,24 +221,53 @@ function DeleteConfirmDialog({ open, onOpenChange, customer }) {
     );
 }
 
-export default function Index({ customers, search, titles }) {
+// Filter panel Customers — title: select dari Customer::TITLES (Mr./Mrs./Mss.).
+// name/phone/email sudah cukup dicover global search server-side, tidak
+// perlu filter terpisah (sesuai TODO bagian 7).
+const buildFilterDefs = (titles) => [
+    {
+        key: 'title',
+        label: 'Prefix',
+        type: 'select',
+        options: titles,
+    },
+];
+
+export default function Index({ customers, search, filters, titles }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
+    const [activeFilters, setActiveFilters] = useState(() => ({
+        title: filters?.title ?? '',
+    }));
     const [formOpen, setFormOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deletingCustomer, setDeletingCustomer] = useState(null);
 
+    const filterDefs = useMemo(() => buildFilterDefs(titles), [titles]);
+
+    // Search dan filter digabung jadi satu request/debounce — sama pola
+    // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
     useEffect(() => {
         const timeout = setTimeout(() => {
-            if (searchTerm !== (search ?? '')) {
-                router.get(
-                    route('admin.customers.index'),
-                    { search: searchTerm || undefined },
-                    { preserveState: true, replace: true }
-                );
-            }
+            const nextParams = {
+                search: searchTerm || undefined,
+                title: activeFilters.title || undefined,
+            };
+
+            router.get(route('admin.customers.index'), nextParams, {
+                preserveState: true,
+                replace: true,
+            });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm]);
+    }, [searchTerm, activeFilters]);
+
+    const handleFilterChange = (key, value) => {
+        setActiveFilters((current) => ({ ...current, [key]: value }));
+    };
+
+    const handleFilterClear = () => {
+        setActiveFilters({ title: '' });
+    };
 
     const openAddForm = () => {
         setEditingCustomer(null);
@@ -250,9 +279,6 @@ export default function Index({ customers, search, titles }) {
         setFormOpen(true);
     };
 
-    // useMemo karena columns butuh closure ke openEditForm/setDeletingCustomer —
-    // dibuat di dalam komponen (beda dari Service Orders yang columns-nya
-    // di module scope, karena di sana nggak butuh closure apapun).
     const columns = useMemo(
         () => [
             {
@@ -324,7 +350,15 @@ export default function Index({ customers, search, titles }) {
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search by name or phone..." // sesuaikan per halaman
+                        placeholder="Search by name or phone..."
+                    />
+                }
+                filterSlot={
+                    <DataTableFilterPanel
+                        filters={filterDefs}
+                        values={activeFilters}
+                        onChange={handleFilterChange}
+                        onClear={handleFilterClear}
                     />
                 }
                 primaryAction={<Button onClick={openAddForm}>Add Customer</Button>}

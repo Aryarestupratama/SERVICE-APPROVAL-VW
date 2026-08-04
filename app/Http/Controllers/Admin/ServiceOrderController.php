@@ -40,15 +40,80 @@ class ServiceOrderController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+        $vatPercent = (float) \App\Models\Setting::current()->ppn_percent;
 
-        $query = ServiceOrder::with(['vehicle.customer', 'serviceAdvisor']);
+        // Subquery grand total ESTIMASI — semua item apapun statusnya,
+        // PPN rate SEKARANG. Formula identik dengan
+        // InspectionItemPricingService::breakdownByGroup() (di-sum lintas group).
+        $estimateSql = "(SELECT COALESCE(SUM(
+                (cost_item * (1 - discount_item_percent / 100))
+                + (cost_labour * (1 - discount_labour_percent / 100))
+            ), 0) * (1 + ? / 100)
+            FROM inspection_items
+            WHERE inspection_items.service_order_id = service_orders.id
+        )";
+
+        // Subquery grand total APPROVED — SUM final_price_snapshot, item approved saja.
+        // Formula identik dengan InspectionItemPricingService::grandTotalForOrder().
+        $approvedSql = "(SELECT COALESCE(SUM(final_price_snapshot), 0)
+            FROM inspection_items
+            WHERE inspection_items.service_order_id = service_orders.id
+            AND status = 'approved'
+        )";
+
+        $query = ServiceOrder::with(['vehicle.customer', 'serviceAdvisor'])
+            ->select('service_orders.*')
+            ->selectRaw("{$estimateSql} as grand_total_estimate", [$vatPercent])
+            ->selectRaw("{$approvedSql} as grand_total_approved");
 
         if ($user->role === 'service_advisor') {
-            $query->where('service_advisor_id', $user->id);
+            $query->where('service_orders.service_advisor_id', $user->id);
         }
 
+        $query
+            ->when($request->search, fn ($q, $search) =>
+                $q->where(function ($q2) use ($search) {
+                    $q2->where('work_order_number', 'like', "%{$search}%")
+                        ->orWhereHas('vehicle.customer', fn ($q3) =>
+                            $q3->where('name', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('vehicle', fn ($q3) =>
+                            $q3->where('plate_number', 'like', "%{$search}%")
+                        );
+                })
+            )
+            ->when($request->status, fn ($q, $status) =>
+                $q->where('status', $status)
+            )
+            ->when($request->items_approval_status, fn ($q, $status) =>
+                $q->where('items_approval_status', $status)
+            );
+
+        // Filter Grand Total — target field dipilih via grand_total_field
+        // ('estimate' default, atau 'approved'). Pakai whereRaw dengan subquery
+        // yang sama persis (bukan having+alias) supaya paginate()->total() tetap
+        // akurat.
+        $targetSql = $request->grand_total_field === 'approved' ? $approvedSql : $estimateSql;
+        $targetBindings = $request->grand_total_field === 'approved' ? [] : [$vatPercent];
+
+        $query
+            ->when($request->grand_total_value, fn ($q, $value) =>
+                $q->whereRaw("{$targetSql} = ?", [...$targetBindings, $value])
+            )
+            ->when($request->grand_total_from, fn ($q, $from) =>
+                $q->whereRaw("{$targetSql} >= ?", [...$targetBindings, $from])
+            )
+            ->when($request->grand_total_to, fn ($q, $to) =>
+                $q->whereRaw("{$targetSql} <= ?", [...$targetBindings, $to])
+            );
+
         return Inertia::render('Admin/ServiceOrders/Index', [
-            'orders' => $query->latest()->paginate(20),
+            'orders' => $query->latest('service_orders.created_at')->paginate(20)->withQueryString(),
+            'search' => $request->search,
+            'filters' => $request->only([
+                'status', 'items_approval_status',
+                'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
+            ]),
         ]);
     }
 

@@ -24,6 +24,9 @@ class UserController extends Controller
                         ->orWhere('email', 'like', "%{$search}%");
                 });
             })
+            ->when($request->role, fn ($q, $role) =>
+                $q->where('role', $role)
+            )
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
@@ -31,6 +34,7 @@ class UserController extends Controller
         return Inertia::render('Admin/Users/Index', [
             'users' => $users,
             'search' => $search,
+            'filters' => $request->only(['role']),
         ]);
     }
 

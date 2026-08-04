@@ -16,15 +16,20 @@ class CustomerController extends Controller
         $customers = Customer::query()
             ->when($request->search, fn ($q, $search) =>
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
+                ->orWhere('phone', 'like', "%{$search}%")
+            )
+            ->when($request->title, fn ($q, $title) =>
+                $q->where('title', $title)
             )
             ->with('vehicles')
             ->latest()
-            ->paginate(20);
+            ->paginate(20)
+            ->withQueryString();
 
         return Inertia::render('Admin/Customers/Index', [
             'customers' => $customers,
             'search' => $request->search,
+            'filters' => $request->only(['title']),
             'titles' => Customer::TITLES,
         ]);
     }
