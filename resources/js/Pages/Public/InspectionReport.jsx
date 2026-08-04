@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles, MapPin, Globe } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
+import { Progress } from '@/Components/ui/progress';
 
 function StatusStamp({ status }) {
     if (status === 'pending') {
@@ -35,6 +36,14 @@ const GROUP_LABEL = {
 // Urutan tampil grouping — kriteria #8: grouping berurutan dari Related
 // paling atas sampai Appearance paling bawah, BUKAN badge per item lagi.
 const GROUP_ORDER = ['related', 'safety', 'durability', 'experience', 'appearance'];
+
+const STATUS_STEPS = [
+    { key: 'appointment', label: 'Appointment' },
+    { key: 'work_in_progress', label: 'In Progress' },
+    { key: 'quality_control', label: 'Quality Control' },
+    { key: 'invoice_preparation', label: 'Invoice' },
+    { key: 'completed', label: 'Completed' },
+];
 
 function groupItems(items) {
     const buckets = {};
@@ -188,6 +197,10 @@ export default function InspectionReport({
     const groupedItems = groupItems(items);
     const workshopName = settings.workshop_name ?? 'Volkswagen PIK';
 
+    const currentStepIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
+    const isCancelled = order.status === 'all_rejected_cancelled';
+    const progressValue = currentStepIndex >= 0 ? ((currentStepIndex + 1) / STATUS_STEPS.length) * 100 : 0;
+
     return (
         <PublicLayout>
             <Head title="Inspection Report" />
@@ -232,6 +245,30 @@ export default function InspectionReport({
                             </p>
                         </div>
                     </div>
+                </section>
+
+                {/* Status progress — kriteria opsional: step indicator 5 tahap. */}
+                <section className="mt-6">
+                    {isCancelled ? (
+                        <div className="flex items-center gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-vw-grey">
+                            This order has been cancelled.
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex items-center justify-between">
+                                {STATUS_STEPS.map((step, idx) => (
+                                    <span
+                                        key={step.key}
+                                        className={`text-[10px] font-bold uppercase tracking-wider
+                                            ${idx <= currentStepIndex ? 'text-vw-blue' : 'text-vw-grey/50'}`}
+                                    >
+                                        {step.label}
+                                    </span>
+                                ))}
+                            </div>
+                            <Progress value={progressValue} className="mt-2 h-1.5" />
+                        </>
+                    )}
                 </section>
 
                 <div className="mx-auto max-w-3xl px-6 sm:px-10 xl:max-w-4xl xl:px-24">
