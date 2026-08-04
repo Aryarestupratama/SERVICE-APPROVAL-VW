@@ -30,18 +30,15 @@
         --popover: 0 0% 100%;
         --popover-foreground: 222 47% 11%;
 
-        /* Sidebar — dipetakan ke VW Blue (#161E59 ≈ hsl(233, 60%, 22%)),
-           disample dari logo resmi VW (navy-on-white / white-on-navy).
-           Sebelumnya hsl(213, 100%, 16%) dari #001E50 — lihat
-           PROJECT-RULES.md bagian 11.2 untuk update status verifikasi. */
-        --sidebar-background: 0 0% 98%;
-        --sidebar-foreground: 240 5.3% 26.1%;
-        --sidebar-border: 220 13% 91%;
-        --sidebar-accent: 240 4.8% 95.9%;
-        --sidebar-accent-foreground: 240 5.9% 10%;
-        --sidebar-primary: 199 100% 47%; /* vw-light-blue */
+        /* Sidebar — VW Blue (#161E59 / hsl(233, 60%, 22%)), match --primary */
+        --sidebar-background: 233 60% 22%;
+        --sidebar-foreground: 0 0% 100%;
+        --sidebar-border: 233 45% 30%;           /* sedikit lebih terang dari bg, kasih separasi halus */
+        --sidebar-accent: 233 45% 30%;           /* hover & active state item menu */
+        --sidebar-accent-foreground: 0 0% 100%;
+        --sidebar-primary: 199 100% 47%;         /* vw-light-blue — dipakai buat aksen/indicator, bukan bg utama */
         --sidebar-primary-foreground: 0 0% 100%;
-        --sidebar-ring: 199 100% 47%; /* dipakai fokus ring keyboard nav, samakan vw-light-blue */
+        --sidebar-ring: 199 100% 47%;            /* fokus ring keyboard nav tetap vw-light-blue, kontras bagus di atas navy */
     }
   .dark {
         --sidebar-background: 240 5.9% 10%;

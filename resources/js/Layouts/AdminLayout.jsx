@@ -14,7 +14,9 @@ import {
     SidebarHeader,
     SidebarContent,
     SidebarGroup,
+    SidebarGroupLabel,
     SidebarFooter,
+    SidebarSeparator,
     SidebarMenu,
     SidebarMenuItem,
     SidebarMenuButton,
@@ -22,15 +24,21 @@ import {
     SidebarInset,
 } from '@/Components/ui/sidebar';
 
-const BASE_NAV_ITEMS = [
+const MAIN_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard', icon: LayoutDashboard },
     { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*', icon: ClipboardList },
+];
+
+const MASTER_DATA_ITEMS = [
     { label: 'Customers', href: route('admin.customers.index'), routeName: 'admin.customers.*', icon: Users },
     { label: 'Vehicles', href: route('admin.vehicles.index'), routeName: 'admin.vehicles.*', icon: Car },
 ];
 
-const ADMIN_ONLY_NAV_ITEMS = [
+const MASTER_DATA_ADMIN_ONLY_ITEMS = [
     { label: 'Staff', href: route('admin.users.index'), routeName: 'admin.users.*', icon: UserCog },
+];
+
+const SETTINGS_ADMIN_ONLY_ITEMS = [
     { label: 'Settings', href: route('admin.settings.edit'), routeName: 'admin.settings.*', icon: Settings },
 ];
 
@@ -49,60 +57,88 @@ function initials(name) {
         .toUpperCase();
 }
 
+function NavGroup({ items }) {
+    return (
+        <SidebarMenu>
+            {items.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                        asChild
+                        isActive={route().current(item.routeName)}
+                        tooltip={item.label}
+                        className="relative data-[active=true]:before:absolute data-[active=true]:before:left-0 data-[active=true]:before:top-1 data-[active=true]:before:bottom-1 data-[active=true]:before:w-[3px] data-[active=true]:before:rounded-r-full data-[active=true]:before:bg-vw-light-blue data-[active=true]:before:content-['']"
+                    >
+                        <Link href={item.href}>
+                            <item.icon />
+                            <span>{item.label}</span>
+                        </Link>
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+            ))}
+        </SidebarMenu>
+    );
+}
+
 export default function AdminLayout({ children, title }) {
     const { auth, flash } = usePage().props;
+    const isAdmin = auth.user.role === 'admin';
 
-    const navItems = auth.user.role === 'admin'
-        ? [...BASE_NAV_ITEMS, ...ADMIN_ONLY_NAV_ITEMS]
-        : BASE_NAV_ITEMS;
+    const masterDataItems = isAdmin
+        ? [...MASTER_DATA_ITEMS, ...MASTER_DATA_ADMIN_ONLY_ITEMS]
+        : MASTER_DATA_ITEMS;
 
     return (
         <SidebarProvider>
             <Sidebar collapsible="icon">
                 <SidebarHeader>
-                    <Link href={route('admin.dashboard')} className="flex items-center gap-2.5 px-2 py-1.5">
+                    <Link
+                        href={route('admin.dashboard')}
+                        className="flex flex-col items-center gap-2 px-2 py-4 group-data-[collapsible=icon]:py-2"
+                    >
                         <img
                             src="/images/vw-logo-white.jpeg"
                             alt="Volkswagen"
-                            className="h-5 w-auto flex-shrink-0"
+                            className="h-14 w-auto group-data-[collapsible=icon]:h-7"
                         />
-                        <span className="truncate text-[13px] font-semibold tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-                            SERVICE INSPECTION
+                        <span className="text-center text-[12px] font-semibold leading-tight tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+                            SERVICE
+                            <br />
+                            INSPECTION
                         </span>
                     </Link>
                 </SidebarHeader>
 
+                <SidebarSeparator />
+
                 <SidebarContent>
                     <SidebarGroup>
-                        <SidebarMenu>
-                            {navItems.map((item) => (
-                                <SidebarMenuItem key={item.href}>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={route().current(item.routeName)}
-                                        tooltip={item.label}
-                                    >
-                                        <Link href={item.href}>
-                                            <item.icon />
-                                            <span>{item.label}</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                            ))}
-                        </SidebarMenu>
+                        <NavGroup items={MAIN_NAV_ITEMS} />
                     </SidebarGroup>
+
+                    <SidebarGroup>
+                        <SidebarGroupLabel>Master Data</SidebarGroupLabel>
+                        <NavGroup items={masterDataItems} />
+                    </SidebarGroup>
+
+                    {isAdmin && (
+                        <SidebarGroup>
+                            <NavGroup items={SETTINGS_ADMIN_ONLY_ITEMS} />
+                        </SidebarGroup>
+                    )}
                 </SidebarContent>
+
+                <SidebarSeparator />
 
                 <SidebarFooter>
                     <div className="flex items-center gap-2.5 px-1 py-1">
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-sidebar-foreground">
+                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-sidebar-foreground ring-1 ring-white/10">
                             {initials(auth.user.name)}
                         </div>
                         <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
                             <p className="truncate text-[13px] font-medium leading-tight text-sidebar-foreground">
                                 {auth.user.name}
                             </p>
-                            <p className="truncate text-[11px] leading-tight text-sidebar-foreground/50">
+                            <p className="truncate text-[11px] leading-tight text-sidebar-foreground/60">
                                 {ROLE_LABEL[auth.user.role] ?? auth.user.role}
                             </p>
                         </div>
@@ -112,7 +148,7 @@ export default function AdminLayout({ children, title }) {
                             as="button"
                             type="button"
                             title="Log out"
-                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
                         >
                             <LogOut className="h-4 w-4" />
                         </Link>

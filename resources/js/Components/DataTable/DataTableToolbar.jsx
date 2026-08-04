@@ -49,7 +49,7 @@ export function DataTableToolbar({
                                 Columns
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
                             {table
                                 .getAllColumns()
                                 .filter((column) => column.getCanHide())

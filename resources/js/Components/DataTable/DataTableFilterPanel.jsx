@@ -15,6 +15,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/Components/ui/popover';
+import { ToggleGroup, ToggleGroupItem } from '@/Components/ui/toggle-group';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -29,7 +30,7 @@ import { cn } from '@/lib/utils';
  *   perlu filter terpisah dari global search).
  * - 'number': numerik, dengan TOGGLE mode di UI antara "Exact" (1 nilai persis)
  *   dan "Range" (dari–sampai) — untuk kolom seperti year yang user kadang cari
- *   1 nilai persis, kadang rentang.
+ *   1 nilai persis, kadang rentang. Toggle mode pakai shadcn ToggleGroup.
  *
  * Shape value per tipe:
  * - select: string
@@ -98,7 +99,7 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
 
     const setNumberMode = (filter, mode) => {
         const current = values[filter.key] ?? {};
-        onChange(filter.key, { mode, value: '', from: '', to: '' , ...pickModeFields(current, mode)});
+        onChange(filter.key, { mode, value: '', from: '', to: '', ...pickModeFields(current, mode) });
     };
 
     // Saat pindah mode, buang nilai dari mode sebelumnya biar tidak nyangkut
@@ -143,23 +144,26 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
                                     <Label>{filter.label}</Label>
 
                                     {filter.type === 'number' && (
-                                        <div className="flex overflow-hidden rounded-md border text-xs">
-                                            {['exact', 'range'].map((mode) => (
-                                                <button
-                                                    key={mode}
-                                                    type="button"
-                                                    onClick={() => setNumberMode(filter, mode)}
-                                                    className={cn(
-                                                        'px-2 py-0.5 capitalize',
-                                                        (values[filter.key]?.mode ?? 'exact') === mode
-                                                            ? 'bg-vw-blue text-white'
-                                                            : 'bg-transparent text-muted-foreground hover:bg-muted'
-                                                    )}
-                                                >
-                                                    {mode}
-                                                </button>
-                                            ))}
-                                        </div>
+                                        <ToggleGroup
+                                            type="single"
+                                            size="sm"
+                                            value={values[filter.key]?.mode ?? 'exact'}
+                                            onValueChange={(mode) => mode && setNumberMode(filter, mode)}
+                                            className="h-7 gap-0 overflow-hidden rounded-md border"
+                                        >
+                                            <ToggleGroupItem
+                                                value="exact"
+                                                className="h-7 rounded-none px-2 text-xs capitalize data-[state=on]:bg-vw-blue data-[state=on]:text-white"
+                                            >
+                                                Exact
+                                            </ToggleGroupItem>
+                                            <ToggleGroupItem
+                                                value="range"
+                                                className="h-7 rounded-none px-2 text-xs capitalize data-[state=on]:bg-vw-blue data-[state=on]:text-white"
+                                            >
+                                                Range
+                                            </ToggleGroupItem>
+                                        </ToggleGroup>
                                     )}
                                 </div>
 
@@ -174,7 +178,7 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
                                             />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {filter.options.map((option) => (
+                                            {(filter.options ?? []).map((option) => (
                                                 <SelectItem key={option} value={option}>
                                                     {option}
                                                 </SelectItem>

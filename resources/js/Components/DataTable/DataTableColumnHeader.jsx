@@ -20,7 +20,7 @@ export function DataTableColumnHeader({ header }) {
 
     return (
         <TableHead
-            className="cursor-pointer select-none"
+            className="cursor-pointer select-none transition-colors hover:bg-vw-grey-light/60"
             onClick={header.column.getToggleSortingHandler()}
         >
             <div className="flex items-center gap-1">
