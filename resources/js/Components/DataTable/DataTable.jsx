@@ -26,7 +26,6 @@ export function DataTable({
     filterSlot,
     showToolbar = true,
     showColumnsToggle = true,
-    primaryAction,
     isLoading = false,
 }) {
     const columnCount = table.getAllColumns().length;
@@ -40,7 +39,6 @@ export function DataTable({
                     searchSlot={searchSlot}
                     filterSlot={filterSlot}
                     showColumnsToggle={showColumnsToggle}
-                    primaryAction={primaryAction}
                 />
             )}
             <div className="rounded-lg border border-vw-grey/20 bg-white">

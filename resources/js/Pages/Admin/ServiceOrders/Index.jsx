@@ -224,7 +224,14 @@ export default function Index({ orders, search, filters }) {
     };
 
     return (
-        <AdminLayout title="Service Orders">
+        <AdminLayout
+            title="Service Orders"
+            headerActions={
+                <Button asChild>
+                    <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
+                </Button>
+            }
+        >
             <DataTable
                 table={table}
                 links={orders.links}
@@ -243,11 +250,6 @@ export default function Index({ orders, search, filters }) {
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
                     />
-                }
-                primaryAction={
-                    <Button asChild>
-                        <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
-                    </Button>
                 }
             />
         </AdminLayout>

@@ -20,6 +20,18 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+
+import { toast } from 'sonner';
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogCancel,
+    AlertDialogAction,
+} from '@/Components/ui/alert-dialog';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
@@ -82,6 +94,19 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
                 reset();
                 onOpenChange(false);
                 onSuccess?.();
+                toast.success(
+                    isEdit ? 'Staff account updated' : 'Staff account created',
+                    {
+                        description: isEdit
+                            ? `${data.name} has been updated.`
+                            : `${data.name} has been added as ${data.role.replace('_', ' ')}.`,
+                    }
+                );
+            },
+            onError: () => {
+                toast.error('Failed to save staff account', {
+                    description: 'Please check the form for errors and try again.',
+                });
             },
         };
 
@@ -213,30 +238,45 @@ function DeleteConfirmDialog({ open, onOpenChange, user }) {
     const handleDelete = () => {
         destroy(route('admin.users.destroy', user.id), {
             preserveScroll: true,
-            onSuccess: () => onOpenChange(false),
+            onSuccess: () => {
+                onOpenChange(false);
+                toast.success('Staff account deleted', {
+                    description: `${user?.name} has been removed.`,
+                });
+            },
+            onError: () => {
+                toast.error('Failed to delete staff account', {
+                    description: 'This account may still be linked to active service orders.',
+                });
+            },
         });
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Delete Staff Account</DialogTitle>
-                    <DialogDescription>
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Staff Account</AlertDialogTitle>
+                    <AlertDialogDescription>
                         Are you sure you want to delete <strong>{user?.name}</strong>? This action
                         cannot be undone.
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={processing}>
-                        Cancel
-                    </Button>
-                    <Button variant="destructive" onClick={handleDelete} disabled={processing}>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handleDelete();
+                        }}
+                        disabled={processing}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                         {processing ? 'Deleting...' : 'Delete'}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -360,7 +400,10 @@ export default function Index({ users, search, filters }) {
     const table = useDataTable({ data: users.data, columns });
 
     return (
-        <AdminLayout title="Staff Accounts">
+        <AdminLayout
+            title="Staff Accounts"
+            headerActions={<Button onClick={openAddForm}>Add Staff Account</Button>}
+        >
             <DataTable
                 table={table}
                 links={users.links}
@@ -380,7 +423,6 @@ export default function Index({ users, search, filters }) {
                         onClear={handleFilterClear}
                     />
                 }
-                primaryAction={<Button onClick={openAddForm}>Add Staff Account</Button>}
             />
 
             <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />

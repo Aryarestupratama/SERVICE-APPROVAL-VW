@@ -26,22 +26,23 @@ export function DataTableToolbar({
     searchSlot,
     filterSlot,
     showColumnsToggle = true,
-    primaryAction,
 }) {
     return (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-            {searchSlot ?? (
-                <DataTableSearchInput
-                    value={table.getState().globalFilter ?? ''}
-                    onChange={(e) => table.setGlobalFilter(e.target.value)}
-                    placeholder={searchPlaceholder}
-                />
-            )}
+            <div className="w-full sm:w-72">
+                {searchSlot ?? (
+                    <DataTableSearchInput
+                        value={table.getState().globalFilter ?? ''}
+                        onChange={(e) => table.setGlobalFilter(e.target.value)}
+                        placeholder={searchPlaceholder}
+                    />
+                )}
+            </div>
 
             {filterSlot}
 
-            <div className="ml-auto flex items-center gap-2">
-                {showColumnsToggle && (
+            {showColumnsToggle && (
+                <div className="ml-auto">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm">
@@ -65,10 +66,8 @@ export function DataTableToolbar({
                                 ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                )}
-
-                {primaryAction}
-            </div>
+                </div>
+            )}
         </div>
     );
 }

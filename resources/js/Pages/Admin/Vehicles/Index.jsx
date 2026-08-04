@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { router, useForm } from '@inertiajs/react';
+import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -34,6 +35,16 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogCancel,
+    AlertDialogAction,
+} from '@/Components/ui/alert-dialog';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
@@ -216,6 +227,19 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                 reset();
                 onOpenChange(false);
                 onSuccess?.();
+                toast.success(
+                    isEdit ? 'Vehicle updated' : 'Vehicle added',
+                    {
+                        description: isEdit
+                            ? `${data.plate_number} has been updated.`
+                            : `${data.plate_number} has been added to the fleet.`,
+                    }
+                );
+            },
+            onError: () => {
+                toast.error('Failed to save vehicle', {
+                    description: 'Please check the form for errors and try again.',
+                });
             },
         };
 
@@ -338,37 +362,59 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
     );
 }
 
+/**
+ * Delete confirmation — MIGRASI dari Dialog generic ke AlertDialog resmi shadcn
+ * (lihat PROJECT-RULES.md bagian 7, TODO "DeleteConfirmDialog migrasi ke AlertDialog").
+ * AlertDialogAction otomatis styling `buttonVariants()` default (bukan destructive)
+ * -- kita override manual jadi className destructive di bawah supaya konsisten
+ * dengan tombol Delete lama (variant="destructive").
+ */
 function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
     const { delete: destroy, processing } = useForm({});
 
     const handleDelete = () => {
         destroy(route('admin.vehicles.destroy', vehicle.id), {
             preserveScroll: true,
-            onSuccess: () => onOpenChange(false),
+            onSuccess: () => {
+                onOpenChange(false);
+                toast.success('Vehicle deleted', {
+                    description: `${vehicle?.plate_number} has been removed.`,
+                });
+            },
+            onError: () => {
+                toast.error('Failed to delete vehicle', {
+                    description: 'This vehicle may still be linked to active service orders.',
+                });
+            },
         });
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Delete Vehicle</DialogTitle>
-                    <DialogDescription>
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Vehicle</AlertDialogTitle>
+                    <AlertDialogDescription>
                         Are you sure you want to delete{' '}
                         <strong>{vehicle?.plate_number}</strong>? This will also affect related
                         service orders. This action cannot be undone.
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={processing}>
-                        Cancel
-                    </Button>
-                    <Button variant="destructive" onClick={handleDelete} disabled={processing}>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handleDelete();
+                        }}
+                        disabled={processing}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                         {processing ? 'Deleting...' : 'Delete'}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -538,7 +584,10 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     const table = useDataTable({ data: vehicles.data, columns });
 
     return (
-        <AdminLayout title="Vehicles">
+        <AdminLayout
+            title="Vehicles"
+            headerActions={<Button onClick={openAddForm}>Add Vehicle</Button>}
+        >
             <DataTable
                 table={table}
                 links={vehicles.links}

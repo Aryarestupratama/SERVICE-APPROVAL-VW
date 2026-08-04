@@ -4,6 +4,7 @@ import './bootstrap';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
+import { Toaster } from '@/Components/ui/sonner';
 
 import '@fontsource/poppins/400.css';
 import '@fontsource/poppins/500.css';
@@ -22,9 +23,14 @@ createInertiaApp({
     setup({ el, App, props }) {
         const root = createRoot(el);
 
-        root.render(<App {...props} />);
+        root.render(
+            <>
+                <App {...props} />
+                <Toaster position="top-right" richColors closeButton />
+            </>
+        );
     },
     progress: {
-        color: '#001E50',
+        color: '#161E59',
     },
 });

@@ -19,6 +19,17 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/Components/ui/dialog';
+import { toast } from 'sonner';
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogCancel,
+    AlertDialogAction,
+} from '@/Components/ui/alert-dialog';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
@@ -93,6 +104,19 @@ function CustomerFormDialog({ open, onOpenChange, customer, onSuccess, titles })
                 reset();
                 onOpenChange(false);
                 onSuccess?.();
+                toast.success(
+                    isEdit ? 'Customer updated' : 'Customer added',
+                    {
+                        description: isEdit
+                            ? `${data.name} has been updated.`
+                            : `${data.name} has been added.`,
+                    }
+                );
+            },
+            onError: () => {
+                toast.error('Failed to save customer', {
+                    description: 'Please check the form for errors and try again.',
+                });
             },
         };
 
@@ -193,31 +217,46 @@ function DeleteConfirmDialog({ open, onOpenChange, customer }) {
     const handleDelete = () => {
         destroy(route('admin.customers.destroy', customer.id), {
             preserveScroll: true,
-            onSuccess: () => onOpenChange(false),
+            onSuccess: () => {
+                onOpenChange(false);
+                toast.success('Customer deleted', {
+                    description: `${customer?.name} has been removed.`,
+                });
+            },
+            onError: () => {
+                toast.error('Failed to delete customer', {
+                    description: 'This customer may still be linked to active vehicles or service orders.',
+                });
+            },
         });
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Delete Customer</DialogTitle>
-                    <DialogDescription>
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+                    <AlertDialogDescription>
                         Are you sure you want to delete <strong>{customer?.name}</strong>? This
                         will also affect related vehicles and service orders. This action cannot
                         be undone.
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={processing}>
-                        Cancel
-                    </Button>
-                    <Button variant="destructive" onClick={handleDelete} disabled={processing}>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handleDelete();
+                        }}
+                        disabled={processing}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                         {processing ? 'Deleting...' : 'Delete'}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -341,7 +380,10 @@ export default function Index({ customers, search, filters, titles }) {
     const table = useDataTable({ data: customers.data, columns });
 
     return (
-        <AdminLayout title="Customers">
+        <AdminLayout
+            title="Customers"
+            headerActions={<Button onClick={openAddForm}>Add Customer</Button>}
+        >
             <DataTable
                 table={table}
                 links={customers.links}
@@ -361,7 +403,6 @@ export default function Index({ customers, search, filters, titles }) {
                         onClear={handleFilterClear}
                     />
                 }
-                primaryAction={<Button onClick={openAddForm}>Add Customer</Button>}
             />
 
             <CustomerFormDialog

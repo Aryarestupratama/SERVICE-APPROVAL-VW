@@ -79,8 +79,8 @@ function NavGroup({ items }) {
     );
 }
 
-export default function AdminLayout({ children, title }) {
-    const { auth, flash } = usePage().props;
+export default function AdminLayout({ children, title, headerActions }) {
+    const { auth } = usePage().props;
     const isAdmin = auth.user.role === 'admin';
 
     const masterDataItems = isAdmin
@@ -164,18 +164,12 @@ export default function AdminLayout({ children, title }) {
                             {title}
                         </h1>
                     )}
+                    {headerActions && (
+                        <div className="ml-auto flex items-center gap-2">
+                            {headerActions}
+                        </div>
+                    )}
                 </header>
-
-                {flash?.success && (
-                    <div className="mx-4 mt-4 rounded-md border-l-4 border-approved bg-approved/5 px-4 py-3 text-sm text-approved sm:mx-6">
-                        {flash.success}
-                    </div>
-                )}
-                {flash?.error && (
-                    <div className="mx-4 mt-4 rounded-md border-l-4 border-urgent bg-urgent/5 px-4 py-3 text-sm text-urgent sm:mx-6">
-                        {flash.error}
-                    </div>
-                )}
 
                 <div className="p-4 sm:p-6">{children}</div>
             </SidebarInset>
