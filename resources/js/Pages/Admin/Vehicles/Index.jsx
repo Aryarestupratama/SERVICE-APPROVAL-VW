@@ -37,6 +37,7 @@ import {
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
+import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
 
 /**
  * Multi-select customer + penanda primary.
@@ -58,15 +59,11 @@ function CustomerMultiSelect({ customers, customerIds, primaryCustomerId, onChan
 
         if (customerIds.includes(customerId)) {
             nextIds = customerIds.filter((id) => id !== customerId);
-            // Kalau yang di-uncheck adalah primary saat ini, primary jadi kosong —
-            // user wajib pilih ulang primary dari sisa customer yang ada.
             if (primaryCustomerId === customerId) {
                 nextPrimary = nextIds[0] ?? '';
             }
         } else {
             nextIds = [...customerIds, customerId];
-            // Customer pertama yang dipilih otomatis jadi primary default,
-            // supaya user tidak wajib buka dropdown primary kalau cuma 1 PIC.
             if (!primaryCustomerId) {
                 nextPrimary = customerId;
             }
@@ -170,9 +167,6 @@ function CustomerMultiSelect({ customers, customerIds, primaryCustomerId, onChan
 function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
 
-    // vehicle.customers = daftar PIC lengkap (dari relasi belongsToMany, prop dikirim
-    // controller index() lewat with(['customer', 'customers'])). Kalau prop ini belum
-    // di-eager-load di baris tertentu (seharusnya selalu ada), fallback ke customer primary saja.
     const initialCustomerIds = () =>
         (vehicle?.customers ?? (vehicle?.customer ? [vehicle.customer] : [])).map((c) => c.id);
 
@@ -268,7 +262,6 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             )}
                         </div>
 
-                        {/* Brand enum terbatas (Audi, VW) — sesuai PROJECT-RULES.md bagian 2 */}
                         <div className="space-y-1.5">
                             <Label htmlFor="brand">Brand</Label>
                             <Select
@@ -289,7 +282,6 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
                         </div>
 
-                        {/* VIN/Chasis Number (nama kolom DB tetap: vin) wajib unique, CHAR(17) */}
                         <div className="space-y-1.5">
                             <Label htmlFor="vin">VIN/Chasis Number</Label>
                             <Input
@@ -380,24 +372,73 @@ function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
     );
 }
 
-export default function Index({ vehicles, search, customers, brands }) {
+// Definisi filter panel Vehicles — brand: select dari enum Vehicle::BRANDS,
+// year: number (exact atau range, dipilih user lewat toggle di panel).
+const buildFilterDefs = (brands) => [
+    {
+        key: 'brand',
+        label: 'Brand',
+        type: 'select',
+        options: brands,
+    },
+    {
+        key: 'year',
+        label: 'Year',
+        type: 'number',
+        placeholder: 'e.g. 2023',
+    },
+];
+
+const emptyYearFilter = { mode: 'exact', value: '', from: '', to: '' };
+
+export default function Index({ vehicles, search, filters, customers, brands }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
+    // Filter aktif — diinisialisasi dari prop 'filters' (query params yang sudah
+    // dibaca controller), supaya refresh/share link tetap mempertahankan filter.
+    // year mode ditentukan dari query param mana yang terisi: kalau year_from/
+    // year_to ada, mode 'range'; kalau year_value ada (atau tidak ada sama
+    // sekali), default 'exact'.
+    const [activeFilters, setActiveFilters] = useState(() => ({
+        brand: filters?.brand ?? '',
+        year: filters?.year_from || filters?.year_to
+            ? { mode: 'range', value: '', from: filters?.year_from ?? '', to: filters?.year_to ?? '' }
+            : { mode: 'exact', value: filters?.year_value ?? '', from: '', to: '' },
+    }));
     const [formOpen, setFormOpen] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState(null);
     const [deletingVehicle, setDeletingVehicle] = useState(null);
 
+    const filterDefs = useMemo(() => buildFilterDefs(brands), [brands]);
+
+    // Search DAN filter digabung jadi satu request, di-debounce bareng — supaya
+    // tidak ada 2 request debounce terpisah yang saling override.
     useEffect(() => {
         const timeout = setTimeout(() => {
-            if (searchTerm !== (search ?? '')) {
-                router.get(
-                    route('admin.vehicles.index'),
-                    { search: searchTerm || undefined },
-                    { preserveState: true, replace: true }
-                );
-            }
+            const year = activeFilters.year ?? emptyYearFilter;
+
+            const nextParams = {
+                search: searchTerm || undefined,
+                brand: activeFilters.brand || undefined,
+                year_value: year.mode === 'exact' ? (year.value || undefined) : undefined,
+                year_from: year.mode === 'range' ? (year.from || undefined) : undefined,
+                year_to: year.mode === 'range' ? (year.to || undefined) : undefined,
+            };
+
+            router.get(route('admin.vehicles.index'), nextParams, {
+                preserveState: true,
+                replace: true,
+            });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm]);
+    }, [searchTerm, activeFilters]);
+
+    const handleFilterChange = (key, value) => {
+        setActiveFilters((current) => ({ ...current, [key]: value }));
+    };
+
+    const handleFilterClear = () => {
+        setActiveFilters({ brand: '', year: emptyYearFilter });
+    };
 
     const openAddForm = () => {
         setEditingVehicle(null);
@@ -440,8 +481,6 @@ export default function Index({ vehicles, search, customers, brands }) {
                 cell: ({ row }) => row.original.year ?? '—',
             },
             {
-                // Ganti dari kolom 'customer' tunggal ke daftar semua PIC (relasi customers()),
-                // supaya list vehicle langsung menunjukkan siapa saja PIC-nya, bukan cuma primary.
                 id: 'customers',
                 header: 'Customers (PIC)',
                 meta: { label: 'Customers (PIC)' },
@@ -509,6 +548,14 @@ export default function Index({ vehicles, search, customers, brands }) {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by plate, VIN/chasis number, model, or customer..."
+                    />
+                }
+                filterSlot={
+                    <DataTableFilterPanel
+                        filters={filterDefs}
+                        values={activeFilters}
+                        onChange={handleFilterChange}
+                        onClear={handleFilterClear}
                     />
                 }
                 primaryAction={<Button onClick={openAddForm}>Add Vehicle</Button>}

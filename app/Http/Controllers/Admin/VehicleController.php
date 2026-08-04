@@ -17,8 +17,6 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $vehicles = Vehicle::query()
-            // 'customer' = shortcut primary (dipertahankan untuk kompatibilitas tampilan lama)
-            // 'customers' = daftar lengkap PIC (untuk kebutuhan tampilan multi-customer nanti)
             ->with(['customer', 'customers'])
             ->when($request->search, fn ($q, $search) =>
                 $q->where('plate_number', 'like', "%{$search}%")
@@ -28,12 +26,30 @@ class VehicleController extends Controller
                         $q2->where('name', 'like', "%{$search}%")
                     )
             )
+            ->when($request->brand, fn ($q, $brand) =>
+                $q->where('brand', $brand)
+            )
+            // Filter year — DUA mode dari DataTableFilterPanel (tipe 'number'):
+            // 'exact' → year_value (satu nilai persis), 'range' → year_from/year_to.
+            // Keduanya independen secara query param, jadi backend cukup ->when()
+            // masing-masing tanpa perlu tahu 'mode' apa yang dipilih di frontend.
+            ->when($request->year_value, fn ($q, $year) =>
+                $q->where('year', $year)
+            )
+            ->when($request->year_from, fn ($q, $yearFrom) =>
+                $q->where('year', '>=', $yearFrom)
+            )
+            ->when($request->year_to, fn ($q, $yearTo) =>
+                $q->where('year', '<=', $yearTo)
+            )
             ->latest()
-            ->paginate(20);
+            ->paginate(20)
+            ->withQueryString();
 
         return Inertia::render('Admin/Vehicles/Index', [
             'vehicles' => $vehicles,
             'search' => $request->search,
+            'filters' => $request->only(['brand', 'year_value', 'year_from', 'year_to']),
             'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
             'brands' => Vehicle::BRANDS,
         ]);
@@ -120,7 +136,14 @@ class VehicleController extends Controller
             ],
             'model' => ['required', 'string', 'max:100'],
             'year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
-            'customer_ids' => ['required', 'array', 'min:1'],
+            'customer_ids' => [
+                'required', 'array', 'min:1',
+                function ($attribute, $value, $fail) {
+                    if (count($value) !== count(array_unique($value))) {
+                        $fail('Terdapat customer yang dipilih lebih dari sekali.');
+                    }
+                },
+            ],
             'customer_ids.*' => ['integer', 'exists:customers,id'],
             'primary_customer_id' => [
                 'required', 'integer', 'exists:customers,id',
