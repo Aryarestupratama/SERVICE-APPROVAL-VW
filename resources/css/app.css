@@ -9,32 +9,48 @@
         --border: 220 13% 91%;
         --radius: 0.5rem;
 
-        /* Accent — dipetakan ke VW Grey Light (#F2F2F2), dipakai untuk hover state
-           komponen interaktif shadcn (select, command, dialog close button, dll) */
         --accent: 0 0% 95%;
         --accent-foreground: 222 47% 11%;
 
-        /* Card — sama dengan background/foreground, karena UI ini flat (bukan
-           dark mode / elevated surface berbeda), tapi didefinisikan terpisah
-           supaya komponen shadcn tetap portable kalau nanti butuh beda */
+        /* Primary — tombol/aksi utama shadcn, dipetakan ke VW Blue (#161E59) */
+        --primary: 233 60% 22%;
+        --primary-foreground: 0 0% 100%;
+
+        /* Destructive — dipakai Button variant="destructive" & AlertDialog
+           delete confirm. Dipetakan ke token 'urgent' (#D32F2F) yang sudah
+           ada, supaya konsisten satu bahasa warna untuk aksi berbahaya. */
+        --destructive: 0 65% 51%;
+        --destructive-foreground: 0 0% 100%;
+
         --card: 0 0% 100%;
         --card-foreground: 222 47% 11%;
 
-        /* Muted foreground — dipetakan ke VW Grey (#767676 ≈ hsl(0, 0%, 46%)) */
         --muted-foreground: 0 0% 46%;
 
-        /* Popover — surface dropdown/combobox, sama dengan background/foreground
-           karena UI ini flat, tidak ada elevated dark surface */
         --popover: 0 0% 100%;
         --popover-foreground: 222 47% 11%;
 
-        /* Sidebar — dipetakan ke VW Blue (#001E50 ≈ hsl(213, 100%, 16%)) */
-        --sidebar-background: 213 100% 16%;
-        --sidebar-foreground: 0 0% 100%;
-        --sidebar-border: 213 60% 25%;
-        --sidebar-accent: 213 60% 22%;
-        --sidebar-accent-foreground: 0 0% 100%;
+        /* Sidebar — dipetakan ke VW Blue (#161E59 ≈ hsl(233, 60%, 22%)),
+           disample dari logo resmi VW (navy-on-white / white-on-navy).
+           Sebelumnya hsl(213, 100%, 16%) dari #001E50 — lihat
+           PROJECT-RULES.md bagian 11.2 untuk update status verifikasi. */
+        --sidebar-background: 0 0% 98%;
+        --sidebar-foreground: 240 5.3% 26.1%;
+        --sidebar-border: 220 13% 91%;
+        --sidebar-accent: 240 4.8% 95.9%;
+        --sidebar-accent-foreground: 240 5.9% 10%;
         --sidebar-primary: 199 100% 47%; /* vw-light-blue */
         --sidebar-primary-foreground: 0 0% 100%;
+        --sidebar-ring: 199 100% 47%; /* dipakai fokus ring keyboard nav, samakan vw-light-blue */
+    }
+  .dark {
+        --sidebar-background: 240 5.9% 10%;
+        --sidebar-foreground: 240 4.8% 95.9%;
+        --sidebar-primary: 224.3 76.3% 48%;
+        --sidebar-primary-foreground: 0 0% 100%;
+        --sidebar-accent: 240 3.7% 15.9%;
+        --sidebar-accent-foreground: 240 4.8% 95.9%;
+        --sidebar-border: 240 3.7% 15.9%;
+        --sidebar-ring: 217.2 91.2% 59.8%;
     }
 }

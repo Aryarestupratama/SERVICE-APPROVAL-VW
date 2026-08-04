@@ -1,19 +1,34 @@
-import { Link } from '@inertiajs/react';
-
 export default function GuestLayout({ children }) {
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-vw-grey-light px-4">
-            <div className="mb-8 flex flex-col items-center">
-                <Link href="/" className="flex h-14 w-14 items-center justify-center rounded-full bg-vw-blue text-lg font-bold text-white">
-                    VW
-                </Link>
-                <p className="mt-3 text-sm font-medium text-vw-grey">
-                    Service Inspection Report
-                </p>
+        <div className="flex min-h-screen">
+            <div className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-1/2 lg:px-20">
+                <div className="mx-auto w-full max-w-sm">
+                    <img
+                        src="/images/vw-logo-navy.jpeg"
+                        alt="Volkswagen"
+                        className="mb-12 h-16 w-auto"
+                    />
+
+                    {children}
+                </div>
             </div>
 
-            <div className="w-full overflow-hidden rounded-lg border border-vw-grey/20 bg-white px-6 py-8 shadow-sm sm:max-w-md sm:px-8">
-                {children}
+            <div className="relative hidden w-1/2 bg-vw-blue lg:block">
+                <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{ backgroundImage: "url('/images/login-hero.jpg')" }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-vw-blue via-vw-blue/60 to-vw-blue/20" />
+
+                <div className="absolute inset-x-0 bottom-0 p-12">
+                    <p className="text-2xl font-semibold text-white">
+                        Service Inspection Report
+                    </p>
+                    <p className="mt-2 max-w-sm text-sm text-white/80">
+                        Internal system for tracking vehicle inspections,
+                        approvals, and customer communication — VW PIK.
+                    </p>
+                </div>
             </div>
         </div>
     );
