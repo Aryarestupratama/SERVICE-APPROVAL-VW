@@ -15,8 +15,9 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/Components/ui/popover';
+import { Calendar } from '@/Components/ui/calendar';
 import { ToggleGroup, ToggleGroupItem } from '@/Components/ui/toggle-group';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal, X, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -31,11 +32,16 @@ import { cn } from '@/lib/utils';
  * - 'number': numerik, dengan TOGGLE mode di UI antara "Exact" (1 nilai persis)
  *   dan "Range" (dari–sampai) — untuk kolom seperti year yang user kadang cari
  *   1 nilai persis, kadang rentang. Toggle mode pakai shadcn ToggleGroup.
+ * - 'date': tanggal, dengan TOGGLE mode di UI antara "Preset" (7 hari/30 hari/
+ *   1 tahun/all time, daftar dari `presetOptions`) dan "Custom" (dari–sampai,
+ *   pakai shadcn Calendar). Ditambahkan untuk Dashboard SA/Part.
  *
  * Shape value per tipe:
  * - select: string
  * - text: string
  * - number: { mode: 'exact' | 'range', value: string, from: string, to: string }
+ * - date: { mode: 'preset' | 'range', preset: string, from: string, to: string }
+ *   (from/to format 'YYYY-MM-DD')
  *
  * State filter aktif (`values`) & fetch ke backend WAJIB dikelola di level
  * halaman, sama seperti pola `searchTerm` — supaya bisa digabung jadi satu
@@ -44,8 +50,9 @@ import { cn } from '@/lib/utils';
  * @param {Array<{
  *   key: string,
  *   label: string,
- *   type: 'select' | 'text' | 'number',
- *   options?: string[],       // wajib untuk type: 'select'
+ *   type: 'select' | 'text' | 'number' | 'date',
+ *   options?: string[],                              // wajib untuk type: 'select'
+ *   presetOptions?: { key: string, label: string }[], // wajib untuk type: 'date'
  *   placeholder?: string,
  * }>} filters
  * @param {Object} values
@@ -59,6 +66,11 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
             return value?.mode === 'range'
                 ? Boolean(value?.from || value?.to)
                 : Boolean(value?.value);
+        }
+        if (filter.type === 'date') {
+            return value?.mode === 'range'
+                ? Boolean(value?.from || value?.to)
+                : Boolean(value?.preset && value.preset !== 'all');
         }
         return Boolean(value);
     };
@@ -82,6 +94,14 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
                     return { key: filter.key, label: `${filter.label}: ${text}` };
                 }
 
+                if (filter.type === 'date') {
+                    const text =
+                        value.mode === 'range'
+                            ? [value.from, value.to].filter(Boolean).join(' – ')
+                            : (filter.presetOptions ?? []).find((p) => p.key === value.preset)?.label ?? value.preset;
+                    return { key: filter.key, label: `${filter.label}: ${text}` };
+                }
+
                 return { key: filter.key, label: `${filter.label}: ${value}` };
             })
             .filter(Boolean);
@@ -90,6 +110,8 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
     const clearOne = (filter) => {
         if (filter.type === 'number') {
             onChange(filter.key, { mode: 'exact', value: '', from: '', to: '' });
+        } else if (filter.type === 'date') {
+            onChange(filter.key, { mode: 'preset', preset: 'all', from: '', to: '' });
         } else {
             onChange(filter.key, '');
         }
@@ -108,6 +130,16 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
         mode === 'range'
             ? { from: current.from ?? '', to: current.to ?? '' }
             : { value: current.value ?? '' };
+
+    const setDateMode = (filter, mode) => {
+        const current = values[filter.key] ?? {};
+        onChange(filter.key, {
+            mode,
+            preset: mode === 'preset' ? (current.preset || 'all') : 'all',
+            from: mode === 'range' ? (current.from ?? '') : '',
+            to: mode === 'range' ? (current.to ?? '') : '',
+        });
+    };
 
     return (
         <div className="flex flex-wrap items-center gap-2">
@@ -162,6 +194,29 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
                                                 className="h-7 rounded-none px-2 text-xs capitalize data-[state=on]:bg-vw-blue data-[state=on]:text-white"
                                             >
                                                 Range
+                                            </ToggleGroupItem>
+                                        </ToggleGroup>
+                                    )}
+
+                                    {filter.type === 'date' && (
+                                        <ToggleGroup
+                                            type="single"
+                                            size="sm"
+                                            value={values[filter.key]?.mode ?? 'preset'}
+                                            onValueChange={(mode) => mode && setDateMode(filter, mode)}
+                                            className="h-7 gap-0 overflow-hidden rounded-md border"
+                                        >
+                                            <ToggleGroupItem
+                                                value="preset"
+                                                className="h-7 rounded-none px-2 text-xs capitalize data-[state=on]:bg-vw-blue data-[state=on]:text-white"
+                                            >
+                                                Preset
+                                            </ToggleGroupItem>
+                                            <ToggleGroupItem
+                                                value="range"
+                                                className="h-7 rounded-none px-2 text-xs capitalize data-[state=on]:bg-vw-blue data-[state=on]:text-white"
+                                            >
+                                                Custom
                                             </ToggleGroupItem>
                                         </ToggleGroup>
                                     )}
@@ -241,6 +296,95 @@ export function DataTableFilterPanel({ filters, values, onChange, onClear }) {
                                             />
                                         </div>
                                     )}
+
+                                {filter.type === 'date' &&
+                                    (values[filter.key]?.mode ?? 'preset') === 'preset' && (
+                                        <Select
+                                            value={values[filter.key]?.preset ?? 'all'}
+                                            onValueChange={(preset) =>
+                                                onChange(filter.key, {
+                                                    ...values[filter.key],
+                                                    mode: 'preset',
+                                                    preset,
+                                                })
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select period" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {(filter.presetOptions ?? []).map((option) => (
+                                                    <SelectItem key={option.key} value={option.key}>
+                                                        {option.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+
+                                {filter.type === 'date' && values[filter.key]?.mode === 'range' && (
+                                    <div className="flex items-center gap-2">
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="w-full justify-start gap-2 font-normal"
+                                                >
+                                                    <CalendarIcon className="h-3.5 w-3.5" />
+                                                    {values[filter.key]?.from || 'From'}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={
+                                                        values[filter.key]?.from
+                                                            ? new Date(values[filter.key].from)
+                                                            : undefined
+                                                    }
+                                                    onSelect={(date) =>
+                                                        onChange(filter.key, {
+                                                            ...values[filter.key],
+                                                            mode: 'range',
+                                                            from: date ? date.toISOString().slice(0, 10) : '',
+                                                        })
+                                                    }
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                        <span className="text-sm text-muted-foreground">–</span>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="w-full justify-start gap-2 font-normal"
+                                                >
+                                                    <CalendarIcon className="h-3.5 w-3.5" />
+                                                    {values[filter.key]?.to || 'To'}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={
+                                                        values[filter.key]?.to
+                                                            ? new Date(values[filter.key].to)
+                                                            : undefined
+                                                    }
+                                                    onSelect={(date) =>
+                                                        onChange(filter.key, {
+                                                            ...values[filter.key],
+                                                            mode: 'range',
+                                                            to: date ? date.toISOString().slice(0, 10) : '',
+                                                        })
+                                                    }
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

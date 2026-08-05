@@ -2,13 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\DashboardSaController;
+use App\Http\Controllers\Admin\DashboardPartController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SettingController;
-use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\ServiceOrderController;
-use App\Http\Controllers\Admin\NotificationController;
 
 use App\Http\Controllers\Public\InspectionReportController;
 
@@ -35,12 +36,13 @@ Route::middleware(['auth', 'verified'])
 
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
-        Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead'])
-            ->name('notifications.read');
-        Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead'])
-            ->name('notifications.read-all');
-
         Route::middleware('role:admin,service_advisor')->group(function () {
+            Route::get('dashboards/sa-performance', [DashboardSaController::class, 'index'])
+                ->name('dashboards.sa-performance');
+
+            Route::get('dashboards/part-performance', [DashboardPartController::class, 'index'])
+                ->name('dashboards.part-performance');
+
             Route::resource('customers', CustomerController::class);
             Route::resource('vehicles', VehicleController::class);
             Route::resource('service-orders', ServiceOrderController::class);

@@ -7,6 +7,8 @@ import {
     UserCog,
     Settings,
     LogOut,
+    TrendingUp,
+    Wrench,
 } from 'lucide-react';
 import {
     SidebarProvider,
@@ -26,6 +28,8 @@ import {
 
 const MAIN_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard', icon: LayoutDashboard },
+    { label: 'SA Performance', href: route('admin.dashboards.sa-performance'), routeName: 'admin.dashboards.sa-performance', icon: TrendingUp },
+    { label: 'Part Performance', href: route('admin.dashboards.part-performance'), routeName: 'admin.dashboards.part-performance', icon: Wrench },
     { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*', icon: ClipboardList },
 ];
 
