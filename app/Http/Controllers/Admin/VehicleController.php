@@ -29,19 +29,6 @@ class VehicleController extends Controller
             ->when($request->brand, fn ($q, $brand) =>
                 $q->where('brand', $brand)
             )
-            // Filter year — DUA mode dari DataTableFilterPanel (tipe 'number'):
-            // 'exact' → year_value (satu nilai persis), 'range' → year_from/year_to.
-            // Keduanya independen secara query param, jadi backend cukup ->when()
-            // masing-masing tanpa perlu tahu 'mode' apa yang dipilih di frontend.
-            ->when($request->year_value, fn ($q, $year) =>
-                $q->where('year', $year)
-            )
-            ->when($request->year_from, fn ($q, $yearFrom) =>
-                $q->where('year', '>=', $yearFrom)
-            )
-            ->when($request->year_to, fn ($q, $yearTo) =>
-                $q->where('year', '<=', $yearTo)
-            )
             ->latest()
             ->paginate(20)
             ->withQueryString();
@@ -49,7 +36,7 @@ class VehicleController extends Controller
         return Inertia::render('Admin/Vehicles/Index', [
             'vehicles' => $vehicles,
             'search' => $request->search,
-            'filters' => $request->only(['brand', 'year_value', 'year_from', 'year_to']),
+            'filters' => $request->only(['brand']),
             'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
             'brands' => Vehicle::BRANDS,
         ]);
@@ -67,7 +54,6 @@ class VehicleController extends Controller
                 'brand' => $validated['brand'],
                 'vin' => $validated['vin'],
                 'model' => $validated['model'],
-                'year' => $validated['year'] ?? null,
             ]);
 
             $this->syncVehicleCustomers(
@@ -92,7 +78,6 @@ class VehicleController extends Controller
                 'brand' => $validated['brand'],
                 'vin' => $validated['vin'],
                 'model' => $validated['model'],
-                'year' => $validated['year'] ?? null,
             ]);
 
             $this->syncVehicleCustomers(
@@ -129,15 +114,18 @@ class VehicleController extends Controller
             'plate_number' => ['required', 'string', 'max:20'],
             'brand' => ['required', Rule::in(Vehicle::BRANDS)],
             'vin' => [
-                'required', 'string', 'size:17',
+                'required',
+                'string',
+                'size:17',
                 $vehicle
                     ? Rule::unique('vehicles', 'vin')->ignore($vehicle->id)
                     : 'unique:vehicles,vin',
             ],
             'model' => ['required', 'string', 'max:100'],
-            'year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
             'customer_ids' => [
-                'required', 'array', 'min:1',
+                'required',
+                'array',
+                'min:1',
                 function ($attribute, $value, $fail) {
                     if (count($value) !== count(array_unique($value))) {
                         $fail('Terdapat customer yang dipilih lebih dari sekali.');
@@ -146,7 +134,9 @@ class VehicleController extends Controller
             ],
             'customer_ids.*' => ['integer', 'exists:customers,id'],
             'primary_customer_id' => [
-                'required', 'integer', 'exists:customers,id',
+                'required',
+                'integer',
+                'exists:customers,id',
                 function ($attribute, $value, $fail) use ($request) {
                     if (! in_array($value, $request->input('customer_ids', []))) {
                         $fail('Primary customer harus salah satu dari customer yang dipilih.');

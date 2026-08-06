@@ -98,6 +98,20 @@ const GROUP_LABEL = {
     appearance: 'Appearance',
 };
 
+// Inertia menganggap back()->with('error', ...) sebagai response SUKSES
+// (302 redirect biasa, bukan 422 validation error) — jadi onSuccess HARUS
+// cek flash.error dulu sebelum nampilin toast sukses. onError cuma
+// ke-trigger untuk ValidationException (422).
+function flashToast(page, successMessage) {
+    const flash = page.props.flash;
+    if (flash?.error) {
+        toast.error(flash.error);
+        return false;
+    }
+    toast.success(successMessage);
+    return true;
+}
+
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
@@ -237,7 +251,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             onConfirm: () => {
                 patch(route('admin.service-orders.update-status', order.id), {
                     preserveScroll: true,
-                    onSuccess: () => toast.success(`Status updated to ${STATUS_LABEL[value]}`),
+                    onSuccess: (page) => flashToast(page, `Status updated to ${STATUS_LABEL[value]}`),
                     onError: () => toast.error('Failed to update status'),
                     onFinish: closeConfirmDialog,
                 });
@@ -263,8 +277,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                     {},
                     {
                         preserveScroll: true,
-                        onSuccess: () =>
-                            toast.success(`Status reverted to ${STATUS_LABEL[revertTarget]}`),
+                        onSuccess: (page) => flashToast(page, `Status reverted to ${STATUS_LABEL[revertTarget]}`),
                         onError: () => toast.error('Failed to revert status'),
                         onFinish: closeConfirmDialog,
                     }
@@ -284,9 +297,9 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         invoiceForm.post(route('admin.service-orders.upload-invoice', order.id), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => {
-                invoiceForm.reset();
-                toast.success('Invoice uploaded');
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Invoice uploaded');
+                if (ok) invoiceForm.reset();
             },
             onError: () => toast.error('Failed to upload invoice'),
         });
@@ -301,7 +314,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             onConfirm: () => {
                 router.delete(route('admin.service-orders.delete-invoice', order.id), {
                     preserveScroll: true,
-                    onSuccess: () => toast.success('Invoice deleted'),
+                    onSuccess: (page) => flashToast(page, 'Invoice deleted'),
                     onError: () => toast.error('Failed to delete invoice'),
                     onFinish: closeConfirmDialog,
                 });
@@ -321,10 +334,12 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         estimationForm.post(route('admin.service-orders.upload-estimation-document', order.id), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => {
-                estimationForm.reset();
-                setSelectedGroup(null);
-                toast.success('Estimation form uploaded');
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Estimation form uploaded');
+                if (ok) {
+                    estimationForm.reset();
+                    setSelectedGroup(null);
+                }
             },
             onError: () => toast.error('Failed to upload estimation form'),
         });
@@ -341,7 +356,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                     route('admin.service-orders.delete-estimation-document', [order.id, doc.id]),
                     {
                         preserveScroll: true,
-                        onSuccess: () => toast.success('Estimation form deleted'),
+                        onSuccess: (page) => flashToast(page, 'Estimation form deleted'),
                         onError: () => toast.error('Failed to delete estimation form'),
                         onFinish: closeConfirmDialog,
                     }
@@ -368,9 +383,9 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         e.preventDefault();
         addItemForm.post(route('admin.service-orders.inspection-items.store', order.id), {
             preserveScroll: true,
-            onSuccess: () => {
-                closeAddItemForm();
-                toast.success('Item added');
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Item added');
+                if (ok) closeAddItemForm();
             },
             onError: () => toast.error('Failed to add item — check the form for errors'),
         });
@@ -402,9 +417,9 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             route('admin.service-orders.inspection-items.update', [order.id, itemId]),
             {
                 preserveScroll: true,
-                onSuccess: () => {
-                    closeEditItemForm();
-                    toast.success('Item updated');
+                onSuccess: (page) => {
+                    const ok = flashToast(page, 'Item updated');
+                    if (ok) closeEditItemForm();
                 },
                 onError: () => toast.error('Failed to update item — check the form for errors'),
             }
@@ -422,7 +437,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                     route('admin.service-orders.inspection-items.destroy', [order.id, item.id]),
                     {
                         preserveScroll: true,
-                        onSuccess: () => toast.success('Item deleted'),
+                        onSuccess: (page) => flashToast(page, 'Item deleted'),
                         onError: () => toast.error('Failed to delete item'),
                         onFinish: closeConfirmDialog,
                     }
@@ -443,7 +458,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                     {},
                     {
                         preserveScroll: true,
-                        onSuccess: () => toast.success('Item reopened'),
+                        onSuccess: (page) => flashToast(page, 'Item reopened'),
                         onError: () => toast.error('Failed to reopen item'),
                         onFinish: closeConfirmDialog,
                     }
@@ -484,7 +499,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         e.preventDefault();
         paymentDetailsForm.patch(route('admin.service-orders.update-payment-details', order.id), {
             preserveScroll: true,
-            onSuccess: () => toast.success('Payment details saved'),
+            onSuccess: (page) => flashToast(page, 'Payment details saved'),
             onError: () => toast.error('Failed to save payment details'),
         });
     };
@@ -498,9 +513,9 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         staffReceiptForm.post(route('admin.service-orders.upload-staff-payment-receipt', order.id), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => {
-                staffReceiptForm.reset();
-                toast.success('Receipt uploaded');
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Receipt uploaded');
+                if (ok) staffReceiptForm.reset();
             },
             onError: () => toast.error('Failed to upload receipt'),
         });
@@ -515,7 +530,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             onConfirm: () => {
                 router.delete(route('admin.service-orders.delete-staff-payment-receipt', order.id), {
                     preserveScroll: true,
-                    onSuccess: () => toast.success('Receipt deleted'),
+                    onSuccess: (page) => flashToast(page, 'Receipt deleted'),
                     onError: () => toast.error('Failed to delete receipt'),
                     onFinish: closeConfirmDialog,
                 });

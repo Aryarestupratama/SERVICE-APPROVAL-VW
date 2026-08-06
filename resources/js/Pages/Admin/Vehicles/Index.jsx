@@ -193,7 +193,6 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
         brand: vehicle?.brand ?? '',
         vin: vehicle?.vin ?? '',
         model: vehicle?.model ?? '',
-        year: vehicle?.year ?? '',
     });
 
     useEffect(() => {
@@ -206,7 +205,6 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                 brand: vehicle?.brand ?? '',
                 vin: vehicle?.vin ?? '',
                 model: vehicle?.model ?? '',
-                year: vehicle?.year ?? '',
             });
         }
     }, [open, vehicle]);
@@ -329,18 +327,6 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                             />
                             {errors.model && <p className="text-sm text-urgent">{errors.model}</p>}
                         </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="year">Year (optional)</Label>
-                            <Input
-                                id="year"
-                                type="number"
-                                value={data.year}
-                                onChange={(e) => setData('year', e.target.value)}
-                                placeholder="2023"
-                            />
-                            {errors.year && <p className="text-sm text-urgent">{errors.year}</p>}
-                        </div>
                     </div>
 
                     <DialogFooter>
@@ -427,15 +413,7 @@ const buildFilterDefs = (brands) => [
         type: 'select',
         options: brands,
     },
-    {
-        key: 'year',
-        label: 'Year',
-        type: 'number',
-        placeholder: 'e.g. 2023',
-    },
 ];
-
-const emptyYearFilter = { mode: 'exact', value: '', from: '', to: '' };
 
 export default function Index({ vehicles, search, filters, customers, brands }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
@@ -446,9 +424,6 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     // sekali), default 'exact'.
     const [activeFilters, setActiveFilters] = useState(() => ({
         brand: filters?.brand ?? '',
-        year: filters?.year_from || filters?.year_to
-            ? { mode: 'range', value: '', from: filters?.year_from ?? '', to: filters?.year_to ?? '' }
-            : { mode: 'exact', value: filters?.year_value ?? '', from: '', to: '' },
     }));
     const [formOpen, setFormOpen] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState(null);
@@ -460,21 +435,19 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     // tidak ada 2 request debounce terpisah yang saling override.
     useEffect(() => {
         const timeout = setTimeout(() => {
-            const year = activeFilters.year ?? emptyYearFilter;
-
-            const nextParams = {
-                search: searchTerm || undefined,
-                brand: activeFilters.brand || undefined,
-                year_value: year.mode === 'exact' ? (year.value || undefined) : undefined,
-                year_from: year.mode === 'range' ? (year.from || undefined) : undefined,
-                year_to: year.mode === 'range' ? (year.to || undefined) : undefined,
-            };
-
-            router.get(route('admin.vehicles.index'), nextParams, {
-                preserveState: true,
-                replace: true,
-            });
+            router.get(
+                route('admin.vehicles.index'),
+                {
+                    search: searchTerm || undefined,
+                    brand: activeFilters.brand || undefined,
+                },
+                {
+                    preserveState: true,
+                    replace: true,
+                }
+            );
         }, 400);
+
         return () => clearTimeout(timeout);
     }, [searchTerm, activeFilters]);
 
@@ -483,7 +456,7 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     };
 
     const handleFilterClear = () => {
-        setActiveFilters({ brand: '', year: emptyYearFilter });
+        setActiveFilters({ brand: '' });
     };
 
     const openAddForm = () => {
@@ -519,12 +492,6 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
                 cell: ({ row }) => (
                     <span className="font-mono text-xs">{row.original.vin ?? '—'}</span>
                 ),
-            },
-            {
-                accessorKey: 'year',
-                header: 'Year',
-                meta: { label: 'Year' },
-                cell: ({ row }) => row.original.year ?? '—',
             },
             {
                 id: 'customers',

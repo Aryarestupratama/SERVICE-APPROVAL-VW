@@ -15,7 +15,6 @@ return new class extends Migration
             $table->enum('brand', ['Audi', 'VW'])->default('VW');
             $table->char('vin', 17)->unique();
             $table->string('model');
-            $table->integer('year')->nullable();
             $table->timestamps();
         });
     }

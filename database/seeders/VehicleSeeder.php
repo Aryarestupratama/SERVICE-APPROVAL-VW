@@ -16,7 +16,6 @@ class VehicleSeeder extends Seeder
                 'brand' => 'VW',
                 'vin' => 'WVWZZZ1KZAM123456',
                 'model' => 'Tiguan',
-                'year' => 2021,
             ],
             [
                 'customer_id' => 2, // Rina Kusuma
@@ -24,7 +23,6 @@ class VehicleSeeder extends Seeder
                 'brand' => 'VW',
                 'vin' => 'WVWZZZ6RZKY654321',
                 'model' => 'Polo',
-                'year' => 2019,
             ],
             [
                 'customer_id' => 3, // Hendra Gunawan
@@ -32,7 +30,6 @@ class VehicleSeeder extends Seeder
                 'brand' => 'VW',
                 'vin' => 'WVWZZZAUZNP789012',
                 'model' => 'Golf',
-                'year' => 2022,
             ],
         ];
 

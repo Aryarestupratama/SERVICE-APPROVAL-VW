@@ -16,7 +16,6 @@ class Vehicle extends Model
         'brand',
         'vin',
         'model',
-        'year',
     ];
 
     public function customer()
