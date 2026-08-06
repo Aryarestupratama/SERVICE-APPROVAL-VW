@@ -89,7 +89,7 @@ class ServiceOrderController extends Controller
                 $q->where('items_approval_status', $status)
             );
 
-        // Filter Grand Total — target field dipilih via grand_total_field
+       // Filter Grand Total — target field dipilih via grand_total_field
         // ('estimate' default, atau 'approved'). Pakai whereRaw dengan subquery
         // yang sama persis (bukan having+alias) supaya paginate()->total() tetap
         // akurat.
@@ -107,12 +107,34 @@ class ServiceOrderController extends Controller
                 $q->whereRaw("{$targetSql} <= ?", [...$targetBindings, $to])
             );
 
+        // Server-side sorting — WAJIB, bukan sort di 20 baris hasil paginate.
+        // Whitelist kolom yang di-support: work_order_number & status (kolom
+        // langsung), grand_total_estimate & grand_total_approved (subquery
+        // sama dengan yang dipakai select/filter di atas). Kolom relasi
+        // (customer, service_advisor) BELUM di-support — enableSorting:false
+        // di frontend, jadi sort_by untuk field itu seharusnya tidak pernah
+        // terkirim; kalau toh terkirim (mis. request manual), fallback ke
+        // default latest() di bawah, bukan error.
+        $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
+        $directSortColumns = ['work_order_number', 'status'];
+
+        if ($request->sort_by === 'grand_total_estimate') {
+            $query->orderByRaw("{$estimateSql} {$sortDir}", [$vatPercent]);
+        } elseif ($request->sort_by === 'grand_total_approved') {
+            $query->orderByRaw("{$approvedSql} {$sortDir}");
+        } elseif (in_array($request->sort_by, $directSortColumns, true)) {
+            $query->orderBy($request->sort_by, $sortDir);
+        } else {
+            $query->latest('service_orders.created_at');
+        }
+
         return Inertia::render('Admin/ServiceOrders/Index', [
-            'orders' => $query->latest('service_orders.created_at')->paginate(20)->withQueryString(),
+            'orders' => $query->paginate(20)->withQueryString(),
             'search' => $request->search,
             'filters' => $request->only([
                 'status', 'items_approval_status',
                 'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
+                'sort_by', 'sort_dir',
             ]),
         ]);
     }

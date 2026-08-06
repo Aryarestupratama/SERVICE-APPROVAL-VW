@@ -54,6 +54,11 @@ const columns = [
         id: 'customer',
         header: 'Customer',
         meta: { label: 'Customer' },
+        // Sorting server-side belum di-support untuk kolom relasi ini (butuh
+        // join ke customers/users, di luar scope TODO "sorting Grand Total").
+        // Kalau dibiarkan sortable, klik header jadi silently no-op karena
+        // manualSorting: true dan backend tidak kenal field 'customer'.
+        enableSorting: false,
         accessorFn: (row) => row.vehicle?.customer?.name ?? '',
         cell: ({ row }) => (
             <span className="font-medium">{row.original.vehicle?.customer?.name ?? '—'}</span>
@@ -75,6 +80,8 @@ const columns = [
         id: 'service_advisor',
         header: 'Service Advisor',
         meta: { label: 'Service Advisor' },
+        // Sama alasan dengan kolom 'customer' di atas.
+        enableSorting: false,
         accessorFn: (row) => row.service_advisor?.name ?? '',
         cell: ({ row }) => row.original.service_advisor?.name ?? '—',
     },
@@ -173,17 +180,32 @@ export default function Index({ orders, search, filters }) {
         grand_total:
             filters?.grand_total_from || filters?.grand_total_to
                 ? {
-                      mode: 'range',
-                      value: '',
-                      from: filters?.grand_total_from ?? '',
-                      to: filters?.grand_total_to ?? '',
-                  }
+                    mode: 'range',
+                    value: '',
+                    from: filters?.grand_total_from ?? '',
+                    to: filters?.grand_total_to ?? '',
+                }
                 : { mode: 'exact', value: filters?.grand_total_value ?? '', from: '', to: '' },
     }));
 
+    // Sorting server-side — sinkron ke query params URL, sama pola dengan
+    // searchTerm/activeFilters. Kolom yang di-support backend saat ini:
+    // work_order_number, status, grand_total_estimate, grand_total_approved.
+    const [sorting, setSorting] = useState(() =>
+        filters?.sort_by
+            ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }]
+            : []
+    );
+
     const [isLoading, setIsLoading] = useState(false);
 
-    const table = useDataTable({ data: orders.data, columns });
+    const table = useDataTable({
+        data: orders.data,
+        columns,
+        manualSorting: true,
+        sorting,
+        onSortingChange: setSorting,
+    });
 
     // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
     // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
@@ -202,6 +224,7 @@ export default function Index({ orders, search, filters }) {
     useEffect(() => {
         const timeout = setTimeout(() => {
             const gt = activeFilters.grand_total ?? emptyGrandTotalFilter;
+            const activeSort = sorting[0];
 
             const nextParams = {
                 search: searchTerm || undefined,
@@ -214,6 +237,8 @@ export default function Index({ orders, search, filters }) {
                 grand_total_value: gt.mode === 'exact' ? (gt.value || undefined) : undefined,
                 grand_total_from: gt.mode === 'range' ? (gt.from || undefined) : undefined,
                 grand_total_to: gt.mode === 'range' ? (gt.to || undefined) : undefined,
+                sort_by: activeSort?.id || undefined,
+                sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
             };
 
             router.get(route('admin.service-orders.index'), nextParams, {
@@ -222,7 +247,7 @@ export default function Index({ orders, search, filters }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters]);
+    }, [searchTerm, activeFilters, sorting]);
 
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
