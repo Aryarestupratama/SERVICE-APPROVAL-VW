@@ -9,6 +9,8 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\VehicleController;
+use App\Http\Controllers\Admin\CustomerVehicleImportController;
+use App\Http\Controllers\Admin\VehicleCustomerController; 
 use App\Http\Controllers\Admin\ServiceOrderController;
 
 use App\Http\Controllers\Public\InspectionReportController;
@@ -45,6 +47,20 @@ Route::middleware(['auth', 'verified'])
 
             Route::resource('customers', CustomerController::class);
             Route::resource('vehicles', VehicleController::class);
+            Route::prefix('vehicle-customer-import')->name('vehicle-customer-import.')->group(function () {
+                Route::get('/', [CustomerVehicleImportController::class, 'create'])->name('create');
+                Route::post('preview', [CustomerVehicleImportController::class, 'preview'])->name('preview');
+                Route::post('commit', [CustomerVehicleImportController::class, 'commit'])->name('commit');
+                Route::delete('cancel', [CustomerVehicleImportController::class, 'cancel'])->name('cancel');
+            });
+
+            Route::prefix('vehicle-customers')->name('vehicle-customers.')->group(function () {
+                Route::get('/', [VehicleCustomerController::class, 'index'])->name('index');
+                Route::post('/', [VehicleCustomerController::class, 'store'])->name('store');
+                Route::patch('{customerVehicle}/set-primary', [VehicleCustomerController::class, 'setPrimary'])->name('set-primary');
+                Route::delete('{customerVehicle}', [VehicleCustomerController::class, 'destroy'])->name('destroy');
+            });
+
             Route::resource('service-orders', ServiceOrderController::class);
 
             Route::post('service-orders/{serviceOrder}/inspection-items',

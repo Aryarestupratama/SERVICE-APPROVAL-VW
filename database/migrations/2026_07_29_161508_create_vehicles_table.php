@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete();
             $table->string('plate_number')->index();
             $table->enum('brand', ['Audi', 'VW'])->default('VW');
-            $table->char('vin', 17)->unique();
+            $table->string('vin', 32)->unique();
             $table->string('model');
             $table->timestamps();
         });

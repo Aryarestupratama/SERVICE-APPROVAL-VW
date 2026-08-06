@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm } from '@inertiajs/react';
+import { router, useForm, Link } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -506,15 +506,20 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
                     return (
                         <div className="flex flex-wrap gap-1">
                             {customerList.map((customer) => (
-                                <Badge
+                                <Link
                                     key={customer.id}
-                                    variant={customer.pivot?.is_primary ? 'default' : 'secondary'}
+                                    href={route('admin.vehicle-customers.index', {
+                                        search: row.original.plate_number,
+                                    })}
+                                    className="transition-opacity hover:opacity-80"
                                 >
-                                    {customer.name}
-                                    {customer.pivot?.is_primary && (
-                                        <span className="ml-1 text-[10px] opacity-80">Primary</span>
-                                    )}
-                                </Badge>
+                                    <Badge variant={customer.pivot?.is_primary ? 'default' : 'secondary'}>
+                                        {customer.name}
+                                        {customer.pivot?.is_primary && (
+                                            <span className="ml-1 text-[10px] opacity-80">Primary</span>
+                                        )}
+                                    </Badge>
+                                </Link>
                             ))}
                         </div>
                     );

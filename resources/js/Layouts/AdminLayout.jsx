@@ -9,6 +9,8 @@ import {
     LogOut,
     TrendingUp,
     Wrench,
+    Upload, 
+    Link2,
 } from 'lucide-react';
 import {
     SidebarProvider,
@@ -36,6 +38,8 @@ const MAIN_NAV_ITEMS = [
 const MASTER_DATA_ITEMS = [
     { label: 'Customers', href: route('admin.customers.index'), routeName: 'admin.customers.*', icon: Users },
     { label: 'Vehicles', href: route('admin.vehicles.index'), routeName: 'admin.vehicles.*', icon: Car },
+    { label: 'Vehicle Customer', href: route('admin.vehicle-customers.index'), routeName: 'admin.vehicle-customers.*', icon: Link2 },
+    { label: 'Import Data', href: route('admin.vehicle-customer-import.create'), routeName: 'admin.vehicle-customer-import.*', icon: Upload },
 ];
 
 const MASTER_DATA_ADMIN_ONLY_ITEMS = [
