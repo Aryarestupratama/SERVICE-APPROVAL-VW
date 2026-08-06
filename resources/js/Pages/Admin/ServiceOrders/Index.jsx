@@ -181,7 +181,21 @@ export default function Index({ orders, search, filters }) {
                 : { mode: 'exact', value: filters?.grand_total_value ?? '', from: '', to: '' },
     }));
 
+    const [isLoading, setIsLoading] = useState(false);
+
     const table = useDataTable({ data: orders.data, columns });
+
+    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
+    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
 
     // Search dan filter digabung jadi satu request/debounce — sama pola
     // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
@@ -236,11 +250,13 @@ export default function Index({ orders, search, filters }) {
                 table={table}
                 links={orders.links}
                 emptyMessage="No service orders yet."
+                isLoading={isLoading}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search customer, WO number, plate number..."
+                        isLoading={isLoading}
                     />
                 }
                 filterSlot={

@@ -281,6 +281,20 @@ export default function Index({ customers, search, filters, titles }) {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deletingCustomer, setDeletingCustomer] = useState(null);
 
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
+    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
+
     const filterDefs = useMemo(() => buildFilterDefs(titles), [titles]);
 
     // Search dan filter digabung jadi satu request/debounce — sama pola
@@ -388,11 +402,13 @@ export default function Index({ customers, search, filters, titles }) {
                 table={table}
                 links={customers.links}
                 emptyMessage="No customers found."
+                isLoading={isLoading}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by name or phone..."
+                        isLoading={isLoading}
                     />
                 }
                 filterSlot={

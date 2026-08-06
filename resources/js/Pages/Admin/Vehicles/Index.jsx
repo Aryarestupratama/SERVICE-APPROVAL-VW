@@ -429,6 +429,21 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     const [editingVehicle, setEditingVehicle] = useState(null);
     const [deletingVehicle, setDeletingVehicle] = useState(null);
 
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Wiring isLoading ke DataTable — dengar event global Inertia router,
+    // bukan cuma di dalam useEffect search/filter, supaya semua jenis
+    // navigasi (search, filter, pagination, sort) ikut nge-trigger skeleton.
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
+
     const filterDefs = useMemo(() => buildFilterDefs(brands), [brands]);
 
     // Search DAN filter digabung jadi satu request, di-debounce bareng — supaya
@@ -564,11 +579,13 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
                 table={table}
                 links={vehicles.links}
                 emptyMessage="No vehicles found."
+                isLoading={isLoading}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by plate, VIN/chasis number, model, or customer..."
+                        isLoading={isLoading}
                     />
                 }
                 filterSlot={

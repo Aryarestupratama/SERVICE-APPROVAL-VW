@@ -300,6 +300,19 @@ export default function Index({ users, search, filters }) {
     const [formOpen, setFormOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [deletingUser, setDeletingUser] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
+    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
 
     // Search dan filter digabung jadi satu request/debounce — sama pola
     // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
@@ -408,11 +421,13 @@ export default function Index({ users, search, filters }) {
                 table={table}
                 links={users.links}
                 emptyMessage="No staff accounts found."
+                isLoading={isLoading}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by name or email..."
+                        isLoading={isLoading}
                     />
                 }
                 filterSlot={

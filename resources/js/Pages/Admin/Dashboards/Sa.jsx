@@ -41,6 +41,20 @@ export default function Sa({ saStats, summary, filters }) {
             : { mode: 'preset', preset: filters?.period_preset ?? 'all', from: '', to: '' },
     }));
 
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
+    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
+
     useEffect(() => {
         const timeout = setTimeout(() => {
             const period = activeFilters.period ?? emptyPeriodFilter;
@@ -129,6 +143,7 @@ export default function Sa({ saStats, summary, filters }) {
                 table={table}
                 links={[]}
                 emptyMessage="No service advisor data yet."
+                isLoading={isLoading}
                 filterSlot={
                     <DataTableFilterPanel
                         filters={filterDefs}

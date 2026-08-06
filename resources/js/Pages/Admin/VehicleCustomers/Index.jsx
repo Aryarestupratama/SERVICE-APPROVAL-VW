@@ -213,6 +213,21 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
     const [activeFilters, setActiveFilters] = useState(() => ({ role: filters?.role ?? '' }));
     const [assignOpen, setAssignOpen] = useState(false);
     const [unassigning, setUnassigning] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
+    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading"). Halaman ini di luar
+    // scope TODO asli (cuma sebut Vehicles/Customers/Users/ServiceOrders), tapi
+    // disamakan untuk konsistensi karena pakai DataTable yang sama.
+    useEffect(() => {
+        const removeStart = router.on('start', () => setIsLoading(true));
+        const removeFinish = router.on('finish', () => setIsLoading(false));
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -310,11 +325,13 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
                 table={table}
                 links={pivots.links}
                 emptyMessage="No customer-vehicle links found."
+                isLoading={isLoading}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by customer name, plate, or VIN..."
+                        isLoading={isLoading}
                     />
                 }
                 filterSlot={

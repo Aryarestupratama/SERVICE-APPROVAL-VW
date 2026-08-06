@@ -52,15 +52,21 @@ class Customer extends Model
         return $this->hasMany(Vehicle::class); // via vehicles.customer_id, shortcut
     }
 
+    /**
+     * SEMUA service order dari kendaraan yang terhubung ke customer ini —
+     * baik sebagai Primary maupun PIC (lewat pivot customer_vehicle),
+     * BUKAN cuma vehicle yang customer_id shortcut-nya menunjuk ke customer ini.
+     *
+     * Kenapa tidak pakai hasManyThrough seperti sebelumnya: hasManyThrough
+     * butuh FK langsung (vehicles.customer_id), yang cuma diisi untuk
+     * primary customer oleh CustomerVehicleObserver — customer yang cuma
+     * jadi PIC (is_primary = false) di suatu vehicle tidak akan ke-capture.
+     * (PROJECT-RULES.md bagian 7 TODO "Revisit Customer::serviceOrders()".)
+     */
     public function serviceOrders()
     {
-        return $this->hasManyThrough(
-            ServiceOrder::class,
-            Vehicle::class,
-            'customer_id',  // FK di tabel Vehicle yang mengarah ke Customer
-            'vehicle_id',   // FK di tabel ServiceOrder yang mengarah ke Vehicle
-            'id',           // local key di Customer
-            'id'            // local key di Vehicle
-        );
+        return ServiceOrder::whereHas('vehicle.customers', function ($query) {
+            $query->where('customers.id', $this->id);
+        });
     }
 }
