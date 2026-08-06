@@ -11,7 +11,7 @@ use Inertia\Inertia;
 class DashboardController extends Controller
 {
     // Ambang waktu (hari) sebelum order dianggap "stuck" di status yang sama.
-    // TODO owner: sesuaikan nanti kalau perlu beda-beda per status.
+    // FINAL 3 hari, dikonfirmasi owner (PROJECT-RULES bagian 7).
     private const STUCK_THRESHOLD_DAYS = 3;
 
     // Ambang waktu (hari) sebelum item pending dianggap "customer belum respon lama".
@@ -43,8 +43,6 @@ class DashboardController extends Controller
             ])
             ->where('updated_at', '<', $stuckThreshold)
             ->with(['vehicle', 'serviceAdvisor'])
-            ->orderBy('updated_at')
-            ->limit(10)
             ->get()
             ->map(fn ($order) => $this->toActionItem($order, 'stuck_status'));
 
@@ -53,8 +51,6 @@ class DashboardController extends Controller
             ->where('items_approval_status', ServiceOrder::ITEMS_APPROVAL_PENDING)
             ->where('updated_at', '<', $pendingThreshold)
             ->with(['vehicle', 'serviceAdvisor'])
-            ->orderBy('updated_at')
-            ->limit(10)
             ->get()
             ->map(fn ($order) => $this->toActionItem($order, 'pending_approval'));
 
@@ -63,16 +59,26 @@ class DashboardController extends Controller
             ->where('status', ServiceOrder::STATUS_INVOICE_PREPARATION)
             ->whereDoesntHave('invoice')
             ->with(['vehicle', 'serviceAdvisor'])
-            ->orderBy('updated_at')
-            ->limit(10)
             ->get()
             ->map(fn ($order) => $this->toActionItem($order, 'missing_invoice'));
 
+        // Gabungkan per order id — 1 order bisa kena lebih dari 1 kondisi sekaligus,
+        // jadi ditampilkan sebagai 1 baris multi-badge, bukan baris duplikat
+        // (PROJECT-RULES bagian 7). Sorting & limit dilakukan SETELAH gabung supaya
+        // order yang muncul di >1 kategori tidak "kepotong" duluan.
         $actionItems = $stuckOrders
             ->concat($pendingApprovalOrders)
             ->concat($missingInvoiceOrders)
+            ->groupBy('id')
+            ->map(function ($items) {
+                $first = $items->first();
+                $first['reasons'] = $items->pluck('reason')->unique()->values()->all();
+                unset($first['reason']);
+                return $first;
+            })
             ->sortBy('updated_at')
-            ->values();
+            ->values()
+            ->take(10);
 
         return Inertia::render('Admin/Dashboard', [
             'statusCounts' => [

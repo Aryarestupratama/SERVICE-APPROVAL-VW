@@ -64,7 +64,7 @@ export default function Dashboard({ statusCounts, actionItems, stuckThresholdDay
                         <div className="divide-y">
                             {actionItems.map((item) => (
                                 <Link
-                                    key={`${item.id}-${item.reason}`}
+                                    key={item.id}
                                     href={route('admin.service-orders.show', item.id)}
                                     className="flex items-center justify-between gap-4 py-3 hover:bg-muted/40"
                                 >
@@ -76,9 +76,13 @@ export default function Dashboard({ statusCounts, actionItems, stuckThresholdDay
                                             {item.service_advisor_name ?? 'Unassigned'} · {STATUS_LABELS[item.status] ?? item.status} · {item.days_ago}d ago
                                         </p>
                                     </div>
-                                    <Badge variant={REASON_VARIANT[item.reason] ?? 'secondary'} className="flex-shrink-0">
-                                        {REASON_LABELS[item.reason] ?? item.reason}
-                                    </Badge>
+                                    <div className="flex flex-shrink-0 flex-wrap justify-end gap-1">
+                                        {item.reasons.map((reason) => (
+                                            <Badge key={reason} variant={REASON_VARIANT[reason] ?? 'secondary'}>
+                                                {REASON_LABELS[reason] ?? reason}
+                                            </Badge>
+                                        ))}
+                                    </div>
                                 </Link>
                             ))}
                         </div>
