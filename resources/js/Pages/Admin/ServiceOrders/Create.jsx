@@ -345,12 +345,17 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const [vehicleMode, setVehicleMode] = useState('existing');
     const [draft, setDraft] = useState(emptyItemDraft(groups?.[0]));
 
+    // FIX (audit kolom `year`): key 'year' DIHAPUS dari new_vehicle. Kolom
+    // `year` sudah di-drop dari tabel vehicles — field ini sebelumnya
+    // dikirim ke backend tapi diam-diam dibuang (backend tidak lagi punya
+    // validation rule untuknya), jadi user mengisi field yang tidak
+    // berpengaruh sama sekali. Dihapus total supaya tidak menyesatkan.
     const { data, setData, post, processing, errors, transform } = useForm({
         work_order_number: '',
         customer_id: '',
         new_customer: { name: '', phone: '', email: '' },
         vehicle_id: '',
-        new_vehicle: { plate_number: '', brand: '', vin: '', model: '', year: '' },
+        new_vehicle: { plate_number: '', brand: '', vin: '', model: '' },
         technician_id: '',
         personal_message: '',
         inspection_fee: '',
@@ -628,48 +633,37 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                     </p>
                                                 )}
                                             </div>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="space-y-1.5">
-                                                    <Label>Brand</Label>
-                                                    <Select
-                                                        value={data.new_vehicle.brand}
-                                                        onValueChange={(value) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                brand: value,
-                                                            })
-                                                        }
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Brand" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {brands.map((brand) => (
-                                                                <SelectItem key={brand} value={brand}>
-                                                                    {brand}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    {errors['new_vehicle.brand'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_vehicle.brand']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>Year (optional)</Label>
-                                                    <Input
-                                                        type="number"
-                                                        value={data.new_vehicle.year ?? ''}
-                                                        onChange={(e) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                year: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                </div>
+                                            {/* FIX (audit kolom `year`): grid 2 kolom Brand+Year
+                                                disederhanakan jadi 1 kolom penuh untuk Brand saja
+                                                — input "Year (optional)" DIHAPUS total (kolom
+                                                sudah di-drop dari tabel vehicles). */}
+                                            <div className="space-y-1.5">
+                                                <Label>Brand</Label>
+                                                <Select
+                                                    value={data.new_vehicle.brand}
+                                                    onValueChange={(value) =>
+                                                        setData('new_vehicle', {
+                                                            ...data.new_vehicle,
+                                                            brand: value,
+                                                        })
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Brand" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {brands.map((brand) => (
+                                                            <SelectItem key={brand} value={brand}>
+                                                                {brand}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                {errors['new_vehicle.brand'] && (
+                                                    <p className="text-sm text-urgent">
+                                                        {errors['new_vehicle.brand']}
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label>VIN/Chasis Number</Label>

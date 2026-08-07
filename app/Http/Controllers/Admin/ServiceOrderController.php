@@ -143,8 +143,13 @@ class ServiceOrderController extends Controller
     {
         return Inertia::render('Admin/ServiceOrders/Create', [
             'customers' => Customer::select('id', 'name', 'phone')->orderBy('name')->get(),
+            // FIX (audit kolom `year`): kolom `year` sudah di-drop dari tabel
+            // vehicles — dihapus dari select eksplisit di bawah. Sebelumnya
+            // select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
+            // menyebabkan error SQL "Unknown column 'year'" setiap kali halaman
+            // Create dibuka.
             'vehicles' => Vehicle::with('customers:id')
-                ->select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
+                ->select('id', 'customer_id', 'plate_number', 'brand', 'model')
                 ->orderBy('plate_number')
                 ->get(),
             'technicians' => User::where('role', 'chief_technician')
@@ -176,7 +181,10 @@ class ServiceOrderController extends Controller
             'new_vehicle.brand' => ['required_with:new_vehicle', Rule::in(Vehicle::BRANDS)],
             'new_vehicle.vin' => ['required_with:new_vehicle', 'string', 'size:17', 'unique:vehicles,vin'],
             'new_vehicle.model' => ['required_with:new_vehicle', 'string', 'max:100'],
-            'new_vehicle.year' => ['nullable', 'integer', 'min:1980', 'max:' . (date('Y') + 1)],
+            // FIX (audit kolom `year`): validasi 'new_vehicle.year' DIHAPUS.
+            // Kolom `year` sudah di-drop dari tabel vehicles — kalau field ini
+            // masih lolos ke Vehicle::create($validated['new_vehicle']) di bawah,
+            // insert akan error "Unknown column 'year'".
 
             'technician_id' => ['nullable', 'exists:users,id'],
             'personal_message' => ['nullable', 'string'],

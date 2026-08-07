@@ -622,7 +622,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                                 <p className="text-vw-grey">Vehicle</p>
                                 <p className="font-medium text-gray-900">
                                     {order.vehicle
-                                        ? `${order.vehicle.brand} ${order.vehicle.model} (${order.vehicle.year ?? '-'})`
+                                        ? `${order.vehicle.brand} ${order.vehicle.model}`
                                         : '—'}
                                 </p>
                             </div>
