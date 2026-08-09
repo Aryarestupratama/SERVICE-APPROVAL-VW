@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm, usePage, router } from '@inertiajs/react';
+import { useForm, usePage, router, Head } from '@inertiajs/react';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
 import { Button } from '@/Components/ui/button';
@@ -482,6 +482,7 @@ export default function Index({ users, search, filters }) {
             title="Staff Accounts"
             headerActions={<Button onClick={openAddForm}>Add Staff Account</Button>}
         >
+            <Head title="Staff Accounts" />
             <DataTable
                 table={table}
                 links={users.links}

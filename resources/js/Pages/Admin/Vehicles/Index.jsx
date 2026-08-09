@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm, Link } from '@inertiajs/react';
+import { router, useForm, Link, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
@@ -666,6 +666,7 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
             title="Vehicles"
             headerActions={<Button onClick={openAddForm}>Add Vehicle</Button>}
         >
+            <Head title="Vehicles" />
             <DataTable
                 table={table}
                 links={vehicles.links}

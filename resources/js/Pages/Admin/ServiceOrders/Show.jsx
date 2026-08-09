@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm, router, usePage, Link } from '@inertiajs/react';
+import { useForm, router, usePage, Link, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Badge } from '@/Components/ui/badge';
 import { Button } from '@/Components/ui/button';
@@ -561,6 +561,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
 
     return (
         <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
+            <Head title={`Service Order #${order.work_order_number ?? order.id}`} />
             {/* Header — back link + judul + status, dipisah dari Card supaya
                 konsisten dengan pola headerActions AdminLayout di halaman lain */}
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm } from '@inertiajs/react';
+import { useForm, Head } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -443,6 +443,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
     return (
         <AdminLayout title="New Service Order">
+            <Head title="New Service Order" />
             <form onSubmit={handleSubmit}>
                 <div className="grid gap-6 lg:grid-cols-3">
                     {/* Kolom kiri — input utama */}

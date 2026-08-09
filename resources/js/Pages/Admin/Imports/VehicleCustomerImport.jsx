@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm } from '@inertiajs/react';
+import { router, useForm, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
@@ -206,6 +206,7 @@ export default function VehicleCustomerImport({ rows }) {
 
     return (
         <AdminLayout title="Import Customer & Vehicle">
+            <Head title="Import Customer & Vehicle" />
             <div className="space-y-6">
                 <UploadForm hasRows={hasRows} />
 

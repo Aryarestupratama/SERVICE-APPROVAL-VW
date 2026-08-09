@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm } from '@inertiajs/react';
+import { router, useForm, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
@@ -335,6 +335,7 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
             title="Vehicle Customer"
             headerActions={<Button onClick={() => setAssignOpen(true)}>Link Customer</Button>}
         >
+            <Head title="Vehicle Customer" />
             <DataTable
                 table={table}
                 links={pivots.links}

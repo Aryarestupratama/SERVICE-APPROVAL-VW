@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm } from '@inertiajs/react';
+import { useForm, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -75,6 +75,7 @@ export default function Edit({ settings }) {
                 </Button>
             }
         >
+            <Head title="Workshop Settings" />
             <form id="settings-form" onSubmit={handleSubmit} className="max-w-3xl">
                 <Tabs defaultValue="general" className="space-y-6">
                     <TabsList>

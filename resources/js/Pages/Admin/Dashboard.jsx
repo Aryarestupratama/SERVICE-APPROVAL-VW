@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
@@ -28,6 +28,8 @@ const REASON_VARIANT = {
 export default function Dashboard({ statusCounts, actionItems, stuckThresholdDays }) {
     return (
         <AdminLayout title="Dashboard">
+            <Head title="Dashboard" />
+            
             <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
                 {Object.entries(STATUS_LABELS).map(([key, label]) => (
                     <Card key={key}>

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Head } from '@inertiajs/react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
 import { DataTable } from '@/Components/DataTable/DataTable';
@@ -59,7 +60,9 @@ export default function Part({ partStats, summary }) {
     const table = useDataTable({ data: partStats, columns });
 
     return (
-        <AdminLayout title="Dashboard — Part">
+        <AdminLayout title="Dashboard - Part">
+            <Head title="Dashboard Part" />
+
             <div className="mb-6 grid gap-4 sm:grid-cols-3">
                 <Card>
                     <CardHeader className="pb-2">

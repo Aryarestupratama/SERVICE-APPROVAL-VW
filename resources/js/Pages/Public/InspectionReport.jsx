@@ -225,7 +225,7 @@ export default function InspectionReport({
 
                 {/* Hero image — kriteria #2 & #3: gambar dari upload Settings, ganti-ganti tanpa sentuh kode.
                     Kriteria #13: tidak ada lagi "Report No." di sini. */}
-                <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden sm:rounded-lg xl:max-w-4xl xl:mx-auto xl:px-24">
+                <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden px-6 sm:rounded-lg sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
                     <div className="relative aspect-[16/7] w-full overflow-hidden sm:rounded-lg">
                         {settings.hero_image_path ? (
                             <img
@@ -272,7 +272,7 @@ export default function InspectionReport({
                     )}
                 </section>
 
-                <div className="mx-auto max-w-3xl px-6 sm:px-10 xl:max-w-4xl xl:px-24">
+                <div className="mx-auto max-w-3xl px-6 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
                     {/* Vehicle & customer strip — kriteria #4: License Number, bukan Plate Number. */}
                     <div className="-mt-4 grid grid-cols-2 gap-3 sm:mt-6">
                         <div className="rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">

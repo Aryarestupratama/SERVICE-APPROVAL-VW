@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Link, router } from '@inertiajs/react';
+import { Link, router, Head } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
 import { DataTable } from '@/Components/DataTable/DataTable';
@@ -285,6 +285,7 @@ export default function Index({ orders, search, filters }) {
                 </Button>
             }
         >
+            <Head title="Service Orders" />
             <DataTable
                 table={table}
                 links={orders.links}

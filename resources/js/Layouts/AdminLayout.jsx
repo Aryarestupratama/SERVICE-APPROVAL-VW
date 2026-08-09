@@ -109,9 +109,9 @@ export default function AdminLayout({ children, title, headerActions }) {
                             className="h-14 w-auto group-data-[collapsible=icon]:h-7"
                         />
                         <span className="text-center text-[12px] font-semibold leading-tight tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-                            SERVICE
+                            VW PIK
                             <br />
-                            INSPECTION
+                            SERVICE
                         </span>
                     </Link>
                 </SidebarHeader>

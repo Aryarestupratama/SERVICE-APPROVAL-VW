@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router } from '@inertiajs/react';
+import { router, Head } from '@inertiajs/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
@@ -131,7 +131,9 @@ export default function Sa({ saStats, summary, filters }) {
     const table = useDataTable({ data: saStats, columns });
 
     return (
-        <AdminLayout title="Dashboard — Service Advisor">
+        <AdminLayout title="Dashboard - Service Advisor">
+
+            <Head title="Dashboard SA" />
             <div className="mb-6 grid gap-4 sm:grid-cols-3">
                 <Card>
                     <CardHeader className="pb-2">
