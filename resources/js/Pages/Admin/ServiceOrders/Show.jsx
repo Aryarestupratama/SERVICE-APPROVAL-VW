@@ -623,10 +623,35 @@ export default function Show({
         ? route('public.inspection-report', order.inspection_token)
         : null;
 
+    // Sapaan Pagi/Siang/Sore diambil dari rentang jam WIB (Asia/Jakarta)
+    // saat tombol copy diklik — bukan dari jam server, supaya benar walau
+    // server pakai timezone lain.
+    function getGreeting() {
+        const hour = Number(
+            new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Asia/Jakarta',
+                hour: 'numeric',
+                hour12: false,
+            }).format(new Date())
+        );
+
+        if (hour >= 4 && hour < 11) return 'Pagi';
+        if (hour >= 11 && hour < 15) return 'Siang';
+        return 'Sore';
+    }
+
+    // "Kendaraan customer" diambil dari service order yang terdaftar
+    // (brand + model + plate number kendaraan di order ini).
+    const vehicleLabel = order.vehicle
+        ? [order.vehicle.brand, order.vehicle.model, order.vehicle.plate_number]
+              .filter(Boolean)
+              .join(' ')
+        : '-';
+
     const reportMessageText =
-        `Halo, berikut link laporan hasil inspeksi kendaraan Anda (WO: ${order.work_order_number ?? '-'}):\n` +
-        `${reportUrl ?? '-'}\n\n` +
-        `Di dalamnya ada video penjelasan dari teknisi kami, rincian biaya perbaikan, dan Anda bisa approve/reject per item langsung dari link tersebut. Terima kasih.`;
+        `Selamat ${getGreeting()} Bapak/Ibu Pelanggan VW PIK, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda (${vehicleLabel}):\n` +
+        `${reportUrl ?? '-'}\n` +
+        `Di dalamnya ada video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat di cek dan saya tunggu persetujuan dari bapak/ibu selanjutnya. Terima kasih.`;
 
     const handleCopyReportLink = async () => {
         try {

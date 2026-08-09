@@ -184,7 +184,21 @@ function CustomerMultiSelect({ customers, customerIds, primaryCustomerId, onChan
  */
 function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
-    const isDesktop = useMediaQuery('(min-width: 640px)');
+
+    // isDesktopLive ikut berubah kapan saja layar di-resize (DevTools
+    // dibuka/tutup, zoom, dsb). Kalau dipakai langsung, dialog yang lagi
+    // kebuka bisa tiba-tiba "loncat" dari Dialog ke Sheet atau sebaliknya
+    // di tengah interaksi user — karena root Radix-nya beda total begitu
+    // render cabang if/else berubah. Fix: snapshot nilainya HANYA saat
+    // dialog baru dibuka (open: false -> true), lalu kunci selama dialog
+    // masih terbuka.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
 
     const initialCustomerIds = () =>
         (vehicle?.customers ?? (vehicle?.customer ? [vehicle.customer] : [])).map((c) => c.id);
@@ -393,7 +407,17 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
  * Customers & Users.
  */
 function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
-    const isDesktop = useMediaQuery('(min-width: 640px)');
+    // Sama seperti VehicleFormDialog — kunci isDesktop saat dialog dibuka
+    // supaya tidak loncat komponen (AlertDialog <-> Sheet) di tengah jalan
+    // kalau layar di-resize selagi dialog kebuka.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
+
     const { delete: destroy, processing } = useForm({});
 
     const handleDelete = () => {
@@ -495,11 +519,6 @@ const buildFilterDefs = (brands) => [
 
 export default function Index({ vehicles, search, filters, customers, brands }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
-    // Filter aktif — diinisialisasi dari prop 'filters' (query params yang sudah
-    // dibaca controller), supaya refresh/share link tetap mempertahankan filter.
-    // year mode ditentukan dari query param mana yang terisi: kalau year_from/
-    // year_to ada, mode 'range'; kalau year_value ada (atau tidak ada sama
-    // sekali), default 'exact'.
     const [activeFilters, setActiveFilters] = useState(() => ({
         brand: filters?.brand ?? '',
     }));
@@ -509,9 +528,6 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
 
     const [isLoading, setIsLoading] = useState(false);
 
-    // Wiring isLoading ke DataTable — dengar event global Inertia router,
-    // bukan cuma di dalam useEffect search/filter, supaya semua jenis
-    // navigasi (search, filter, pagination, sort) ikut nge-trigger skeleton.
     useEffect(() => {
         const removeStart = router.on('start', () => setIsLoading(true));
         const removeFinish = router.on('finish', () => setIsLoading(false));
@@ -524,16 +540,8 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
 
     const filterDefs = useMemo(() => buildFilterDefs(brands), [brands]);
 
-    // Flag "sudah pernah mount belum" — useEffect di bawah selalu jalan sekali
-    // saat render pertama juga (bukan cuma saat searchTerm/activeFilters
-    // berubah dari interaksi user). Tanpa guard ini, tiap kali halaman dibuka
-    // dari sidebar terjadi 2 request: (1) load awal dari Inertia visit, lalu
-    // (2) request redundan dari effect ini 400ms kemudian dengan search/filter
-    // yang isinya sama persis — terlihat seperti halaman "reload 2x".
     const isFirstRender = useRef(true);
 
-    // Search DAN filter digabung jadi satu request, di-debounce bareng — supaya
-    // tidak ada 2 request debounce terpisah yang saling override.
     useEffect(() => {
         if (isFirstRender.current) {
             isFirstRender.current = false;

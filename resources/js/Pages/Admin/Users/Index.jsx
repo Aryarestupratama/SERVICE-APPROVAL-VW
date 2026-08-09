@@ -53,7 +53,21 @@ const ROLE_BADGE_VARIANT = {
 
 function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
     const isEdit = Boolean(user);
-    const isDesktop = useMediaQuery('(min-width: 640px)');
+
+    // isDesktopLive ikut berubah kapan saja layar di-resize (DevTools
+    // dibuka/tutup, zoom, dsb). Kalau dipakai langsung, dialog yang lagi
+    // kebuka bisa loncat dari Dialog ke Sheet (atau sebaliknya) di tengah
+    // interaksi user, karena root Radix-nya beda total begitu cabang
+    // if/else render berubah. Fix: snapshot nilainya HANYA saat dialog baru
+    // dibuka (open: false -> true), lalu kunci selama dialog masih terbuka.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
+
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         name: user?.name ?? '',
         email: user?.email ?? '',
@@ -244,7 +258,17 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
 }
 
 function DeleteConfirmDialog({ open, onOpenChange, user }) {
-    const isDesktop = useMediaQuery('(min-width: 640px)');
+    // Sama seperti UserFormDialog — kunci isDesktop saat dialog dibuka
+    // supaya tidak loncat komponen (AlertDialog <-> Sheet) di tengah jalan
+    // kalau layar di-resize selagi dialog kebuka.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
+
     const { delete: destroy, processing } = useForm({});
 
     const handleDelete = () => {

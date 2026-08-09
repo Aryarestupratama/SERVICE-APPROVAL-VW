@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { router, useForm, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
+import { useMediaQuery } from '@/hooks/use-media-query';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
 import { Label } from '@/Components/ui/label';
@@ -80,6 +82,21 @@ function SingleSelectCombobox({ items, value, onChange, placeholder, getLabel })
 }
 
 function AssignDialog({ open, onOpenChange, vehicles, customers }) {
+    // isDesktopLive ikut berubah kapan saja layar di-resize (DevTools
+    // dibuka/tutup, zoom, dsb). Kalau dipakai langsung, dialog yang lagi
+    // kebuka bisa loncat dari Dialog ke Sheet (atau sebaliknya) di tengah
+    // interaksi user, karena root Radix-nya beda total begitu cabang
+    // if/else render berubah. Fix: snapshot nilainya HANYA saat dialog baru
+    // dibuka (open: false -> true), lalu kunci selama dialog masih terbuka.
+    // Sama pola dengan Customers/Vehicles/Users Index.jsx.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
+
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         vehicle_id: '',
         customer_id: '',
@@ -111,58 +128,99 @@ function AssignDialog({ open, onOpenChange, vehicles, customers }) {
         });
     };
 
+    const formFields = (
+        <div className="space-y-4 py-4">
+            <div className="space-y-1.5">
+                <Label>Vehicle</Label>
+                <SingleSelectCombobox
+                    items={vehicles}
+                    value={data.vehicle_id}
+                    onChange={(id) => setData('vehicle_id', id)}
+                    placeholder="Select vehicle"
+                    getLabel={(v) => `${v.plate_number} — ${v.brand} ${v.model}`}
+                />
+                {errors.vehicle_id && <p className="text-sm text-urgent">{errors.vehicle_id}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label>Customer</Label>
+                <SingleSelectCombobox
+                    items={customers}
+                    value={data.customer_id}
+                    onChange={(id) => setData('customer_id', id)}
+                    placeholder="Select customer"
+                    getLabel={(c) => c.name}
+                />
+                {errors.customer_id && <p className="text-sm text-urgent">{errors.customer_id}</p>}
+            </div>
+        </div>
+    );
+
+    const formActions = (
+        <>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={processing} className="flex-1 sm:flex-none">
+                Cancel
+            </Button>
+            <Button type="submit" disabled={processing} className="flex-1 sm:flex-none">
+                {processing ? 'Linking...' : 'Link Customer'}
+            </Button>
+        </>
+    );
+
+    const title = 'Link Customer to Vehicle';
+    const description = 'Assigns a customer to a vehicle as PIC. Use "Set as Primary" afterwards if needed.';
+
+    if (isDesktop) {
+        return (
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent>
+                    <form onSubmit={handleSubmit}>
+                        <DialogHeader>
+                            <DialogTitle>{title}</DialogTitle>
+                            <DialogDescription>{description}</DialogDescription>
+                        </DialogHeader>
+                        {formFields}
+                        <DialogFooter>{formActions}</DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+        );
+    }
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <form onSubmit={handleSubmit}>
-                    <DialogHeader>
-                        <DialogTitle>Link Customer to Vehicle</DialogTitle>
-                        <DialogDescription>
-                            Assigns a customer to a vehicle as PIC. Use "Set as Primary" afterwards if needed.
-                        </DialogDescription>
-                    </DialogHeader>
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="bottom" className="flex max-h-[90vh] flex-col rounded-t-lg p-0">
+                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                    <SheetHeader className="shrink-0 border-b border-vw-grey/15 px-6 py-4 text-left">
+                        <SheetTitle>{title}</SheetTitle>
+                        <SheetDescription>{description}</SheetDescription>
+                    </SheetHeader>
 
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-1.5">
-                            <Label>Vehicle</Label>
-                            <SingleSelectCombobox
-                                items={vehicles}
-                                value={data.vehicle_id}
-                                onChange={(id) => setData('vehicle_id', id)}
-                                placeholder="Select vehicle"
-                                getLabel={(v) => `${v.plate_number} — ${v.brand} ${v.model}`}
-                            />
-                            {errors.vehicle_id && <p className="text-sm text-urgent">{errors.vehicle_id}</p>}
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label>Customer</Label>
-                            <SingleSelectCombobox
-                                items={customers}
-                                value={data.customer_id}
-                                onChange={(id) => setData('customer_id', id)}
-                                placeholder="Select customer"
-                                getLabel={(c) => c.name}
-                            />
-                            {errors.customer_id && <p className="text-sm text-urgent">{errors.customer_id}</p>}
-                        </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-6">
+                        {formFields}
                     </div>
 
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={processing}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Linking...' : 'Link Customer'}
-                        </Button>
-                    </DialogFooter>
+                    <SheetFooter className="shrink-0 flex-row gap-3 border-t border-vw-grey/15 px-6 py-4">
+                        {formActions}
+                    </SheetFooter>
                 </form>
-            </DialogContent>
-        </Dialog>
+            </SheetContent>
+        </Sheet>
     );
 }
 
 function UnassignConfirmDialog({ open, onOpenChange, pivot }) {
+    // Sama seperti AssignDialog — kunci isDesktop saat dialog dibuka supaya
+    // tidak loncat komponen (AlertDialog <-> Sheet) di tengah jalan kalau
+    // layar di-resize selagi dialog kebuka.
+    const isDesktopLive = useMediaQuery('(min-width: 640px)');
+    const [isDesktop, setIsDesktop] = useState(isDesktopLive);
+    useEffect(() => {
+        if (open) {
+            setIsDesktop(isDesktopLive);
+        }
+    }, [open]);
+
     const { delete: destroy, processing } = useForm({});
 
     const handleUnassign = () => {
@@ -180,29 +238,70 @@ function UnassignConfirmDialog({ open, onOpenChange, pivot }) {
         });
     };
 
+    const title = 'Unassign Customer';
+    const description = (
+        <>
+            Remove <strong>{pivot?.customer?.name}</strong> from{' '}
+            <strong>{pivot?.vehicle?.plate_number}</strong>? This does not delete the
+            customer or vehicle record.
+        </>
+    );
+
+    const actions = (
+        <>
+            <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={processing}
+                className="flex-1 sm:flex-none"
+            >
+                Cancel
+            </Button>
+            <Button
+                type="button"
+                onClick={handleUnassign}
+                disabled={processing}
+                className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:flex-none"
+            >
+                {processing ? 'Removing...' : 'Unassign'}
+            </Button>
+        </>
+    );
+
+    if (isDesktop) {
+        return (
+            <AlertDialog open={open} onOpenChange={onOpenChange}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{title}</AlertDialogTitle>
+                        <AlertDialogDescription>{description}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => { e.preventDefault(); handleUnassign(); }}
+                            disabled={processing}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {processing ? 'Removing...' : 'Unassign'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        );
+    }
+
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Unassign Customer</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Remove <strong>{pivot?.customer?.name}</strong> from{' '}
-                        <strong>{pivot?.vehicle?.plate_number}</strong>? This does not delete the
-                        customer or vehicle record.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                        onClick={(e) => { e.preventDefault(); handleUnassign(); }}
-                        disabled={processing}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                        {processing ? 'Removing...' : 'Unassign'}
-                    </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="bottom" className="rounded-t-lg">
+                <SheetHeader className="text-left">
+                    <SheetTitle>{title}</SheetTitle>
+                    <SheetDescription>{description}</SheetDescription>
+                </SheetHeader>
+                <SheetFooter className="mt-5 flex-row gap-3">{actions}</SheetFooter>
+            </SheetContent>
+        </Sheet>
     );
 }
 

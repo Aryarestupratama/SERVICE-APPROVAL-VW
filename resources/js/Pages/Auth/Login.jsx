@@ -1,16 +1,14 @@
 import InputError from '@/Components/InputError';
 import { Button } from '@/Components/ui/button';
-import { Checkbox } from '@/Components/ui/checkbox';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import GuestLayout from '@/Layouts/GuestLayout';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 
-export default function Login({ status, canResetPassword }) {
+export default function Login({ status }) {
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
         password: '',
-        remember: false,
     });
 
     const submit = (e) => {
@@ -64,29 +62,6 @@ export default function Login({ status, canResetPassword }) {
                         onChange={(e) => setData('password', e.target.value)}
                     />
                     <InputError message={errors.password} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2">
-                        <Checkbox
-                            checked={data.remember}
-                            onCheckedChange={(checked) =>
-                                setData('remember', checked === true)
-                            }
-                        />
-                        <span className="text-sm text-muted-foreground">
-                            Remember me
-                        </span>
-                    </label>
-
-                    {canResetPassword && (
-                        <Link
-                            href={route('password.request')}
-                            className="text-sm text-vw-blue underline-offset-4 hover:underline"
-                        >
-                            Forgot password?
-                        </Link>
-                    )}
                 </div>
 
                 <Button type="submit" className="w-full" disabled={processing}>
