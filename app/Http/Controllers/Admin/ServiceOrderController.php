@@ -15,6 +15,7 @@ use App\Models\Vehicle;
 use App\Models\CustomerVehicle;
 use App\Models\Setting;
 use App\Services\InspectionItemPricingService;
+use App\Rules\MaxVideoDuration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -200,10 +201,19 @@ class ServiceOrderController extends Controller
             'inspection_items.*.discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'inspection_items.*.group' => ['required', Rule::in(InspectionItem::GROUPS)],
 
-            'videos' => ['nullable', 'array'],
+            // Limit 1 video per Service Order — keputusan final PROJECT-RULES.md
+            // bagian 9.4 (arsitektur videos[0] single slot, carousel dibatalkan).
+            'videos' => ['nullable', 'array', 'max:1'],
             'videos.*.video_source' => ['required_with:videos', Rule::in(['upload', 'external_link'])],
             'videos.*.video_url' => ['required_if:videos.*.video_source,external_link', 'nullable', 'url'],
-            'videos.*.file' => ['required_if:videos.*.video_source,upload', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
+            'videos.*.file' => [
+                'required_if:videos.*.video_source,upload',
+                'nullable',
+                'file',
+                'mimes:mp4,mov,webm',
+                'max:102400', // batas UKURAN file (100MB) — beda dari batas DURASI di bawah
+                new MaxVideoDuration(120), // batas DURASI 2 menit, baca metadata via getID3 (bukan FFmpeg)
+            ],
         ]);
 
         if (!$validated['customer_id'] && empty($validated['new_customer'])) {
@@ -274,13 +284,29 @@ class ServiceOrderController extends Controller
                         'video_url' => $video['video_url'],
                         'video_source' => 'external_link',
                         'sort_order' => $index,
+                        // Durasi tidak diketahui untuk link eksternal (mis. YouTube) —
+                        // rule MaxVideoDuration hanya berlaku untuk file upload langsung.
+                        'duration_seconds' => null,
                     ]);
                 } elseif ($video['video_source'] === 'upload' && $request->hasFile("videos.{$index}.file")) {
-                    $path = $request->file("videos.{$index}.file")->store('service-order-videos', 'public');
+                    $file = $request->file("videos.{$index}.file");
+
+                    // Durasi sudah divalidasi lolos ≤120 detik lewat rule MaxVideoDuration
+                    // di atas — baca ulang di sini cuma untuk DISIMPAN ke kolom
+                    // duration_seconds (kolom sudah ada dari migration awal, sebelumnya
+                    // tidak pernah diisi).
+                    $getID3 = new \getID3();
+                    $info = $getID3->analyze($file->getRealPath());
+                    $durationSeconds = isset($info['playtime_seconds'])
+                        ? (int) round($info['playtime_seconds'])
+                        : null;
+
+                    $path = $file->store('service-order-videos', 'public');
                     $order->videos()->create([
                         'video_url' => Storage::disk('public')->url($path),
                         'video_source' => 'upload',
                         'sort_order' => $index,
+                        'duration_seconds' => $durationSeconds,
                     ]);
                 }
             }

@@ -170,6 +170,33 @@ function itemSubtotal(item) {
     return netItem + netLabour;
 }
 
+// Batas durasi video — konsisten dengan backend App\Rules\MaxVideoDuration
+// (PROJECT-RULES.md bagian 9.4). Ini validasi UX (cepat, di sisi client) —
+// backend tetap jadi sumber kebenaran validasi sebenarnya lewat getID3.
+const MAX_VIDEO_DURATION_SECONDS = 120;
+
+// Baca durasi video (detik) dari sebuah File lewat elemen <video> sementara.
+// Return Promise<number> — reject kalau metadata tidak bisa dibaca (file
+// corrupt/bukan video valid).
+function readVideoDurationSeconds(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const videoEl = document.createElement('video');
+        videoEl.preload = 'metadata';
+
+        videoEl.onloadedmetadata = () => {
+            URL.revokeObjectURL(url);
+            resolve(videoEl.duration);
+        };
+        videoEl.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Could not read video metadata.'));
+        };
+
+        videoEl.src = url;
+    });
+}
+
 const emptyItemDraft = (defaultGroup) => ({
     name: '',
     description: '',
@@ -345,6 +372,12 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const [vehicleMode, setVehicleMode] = useState('existing');
     const [draft, setDraft] = useState(emptyItemDraft(groups?.[0]));
 
+    // Error durasi video (frontend-only, terpisah dari `errors` Inertia yang
+    // datang dari backend) + status lagi ngecek durasi (disable submit sebentar
+    // supaya tidak submit sebelum hasil cek durasi selesai dibaca).
+    const [videoDurationError, setVideoDurationError] = useState(null);
+    const [checkingVideoDuration, setCheckingVideoDuration] = useState(false);
+
     // FIX (audit kolom `year`): key 'year' DIHAPUS dari new_vehicle. Kolom
     // `year` sudah di-drop dari tabel vehicles — field ini sebelumnya
     // dikirim ke backend tapi diam-diam dibuang (backend tidak lagi punya
@@ -361,9 +394,10 @@ export default function Create({ customers, vehicles, technicians, brands, group
         inspection_fee: '',
         inspection_fee_note: '',
         inspection_items: [],
-        // Skema baru: 1 video utama saja (link ATAU upload). Video lain (jika
-        // ada) dikirim manual ke WhatsApp customer — lihat note di Card Video.
-        video: { video_source: 'external_link', video_url: '', file: null },
+       // Skema baru: 1 video utama saja, upload file langsung (opsi Link
+        // dihapus — keputusan owner 2026-08-09). Video lain (jika ada)
+        // dikirim manual ke WhatsApp customer — lihat note di Card Video.
+        video: { video_source: 'upload', video_url: '', file: null },
     });
 
     // Reset pilihan vehicle setiap kali customer/mode berubah,
@@ -387,9 +421,10 @@ export default function Create({ customers, vehicles, technicians, brands, group
         vehicle_id: vehicleMode === 'existing' ? data.vehicle_id : '',
         new_vehicle: vehicleMode === 'new' ? data.new_vehicle : null,
         inspection_items: data.inspection_items,
-        // Hanya kirim video kalau benar-benar diisi (url atau file) — video
+        // Hanya kirim video kalau benar-benar diisi (upload file) — video
         // tetap opsional, slot kosong tidak perlu memicu validasi backend.
-        videos: data.video.video_url || data.video.file ? [data.video] : [],
+        // Opsi 'external_link' dihapus, jadi cukup cek `file`.
+        videos: data.video.file ? [data.video] : [],
     }));
 
     const updateDraft = (field, value) => setDraft((d) => ({ ...d, [field]: value }));
@@ -750,52 +785,53 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     <CardTitle>Video</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                    <div className="flex gap-2">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant={data.video.video_source === 'external_link' ? 'default' : 'outline'}
-                                            onClick={() => updateVideo('video_source', 'external_link')}
-                                        >
-                                            Link
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant={data.video.video_source === 'upload' ? 'default' : 'outline'}
-                                            onClick={() => updateVideo('video_source', 'upload')}
-                                        >
-                                            Upload
-                                        </Button>
-                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Video File (optional, max 2 minutes)</Label>
+                                        <Input
+                                            type="file"
+                                            accept="video/mp4,video/quicktime,video/webm"
+                                            onChange={async (e) => {
+                                                const file = e.target.files[0];
+                                                setVideoDurationError(null);
 
-                                    {data.video.video_source === 'external_link' ? (
-                                        <div className="space-y-1.5">
-                                            <Label>Video URL (optional)</Label>
-                                            <Input
-                                                value={data.video.video_url}
-                                                onChange={(e) => updateVideo('video_url', e.target.value)}
-                                                placeholder="https://..."
-                                            />
-                                            {errors['videos.0.video_url'] && (
-                                                <p className="text-sm text-urgent">
-                                                    {errors['videos.0.video_url']}
-                                                </p>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1.5">
-                                            <Label>Video File (optional)</Label>
-                                            <Input
-                                                type="file"
-                                                accept="video/mp4,video/quicktime,video/webm"
-                                                onChange={(e) => updateVideo('file', e.target.files[0])}
-                                            />
-                                            {errors['videos.0.file'] && (
-                                                <p className="text-sm text-urgent">{errors['videos.0.file']}</p>
-                                            )}
-                                        </div>
-                                    )}
+                                                if (!file) {
+                                                    updateVideo('file', null);
+                                                    return;
+                                                }
+
+                                                setCheckingVideoDuration(true);
+                                                try {
+                                                    const duration = await readVideoDurationSeconds(file);
+                                                    if (duration > MAX_VIDEO_DURATION_SECONDS) {
+                                                        setVideoDurationError(
+                                                            `Video is ${Math.round(duration)}s long — maximum allowed is ${MAX_VIDEO_DURATION_SECONDS}s (2 minutes).`
+                                                        );
+                                                        updateVideo('file', null);
+                                                        e.target.value = ''; // reset input supaya file tidak nyangkut
+                                                    } else {
+                                                        updateVideo('file', file);
+                                                    }
+                                                } catch {
+                                                    setVideoDurationError(
+                                                        'Could not read this video file. Please try a different file.'
+                                                    );
+                                                    updateVideo('file', null);
+                                                    e.target.value = '';
+                                                } finally {
+                                                    setCheckingVideoDuration(false);
+                                                }
+                                            }}
+                                        />
+                                        {checkingVideoDuration && (
+                                            <p className="text-xs text-vw-grey">Checking video duration...</p>
+                                        )}
+                                        {videoDurationError && (
+                                            <p className="text-sm text-urgent">{videoDurationError}</p>
+                                        )}
+                                        {errors['videos.0.file'] && (
+                                            <p className="text-sm text-urgent">{errors['videos.0.file']}</p>
+                                        )}
+                                    </div>
 
                                     <Alert>
                                         <Info className="h-4 w-4" />
@@ -952,7 +988,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     </p>
                                 </CardContent>
                                 <CardFooter>
-                                    <Button type="submit" disabled={processing} className="w-full">
+                                    <Button
+                                        type="submit"
+                                        disabled={processing || checkingVideoDuration || !!videoDurationError}
+                                        className="w-full"
+                                    >
                                         {processing ? 'Creating...' : 'Create Service Order'}
                                     </Button>
                                 </CardFooter>
