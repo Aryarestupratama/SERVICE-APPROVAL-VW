@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Link, router } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
@@ -219,9 +219,23 @@ export default function Index({ orders, search, filters }) {
         };
     }, []);
 
+    // Flag "sudah pernah mount belum" — useEffect di bawah selalu jalan sekali
+    // saat render pertama juga (bukan cuma saat searchTerm/activeFilters/sorting
+    // berubah dari interaksi user). Tanpa guard ini, tiap kali halaman dibuka
+    // dari sidebar terjadi 2 request: (1) load awal dari Inertia visit, lalu
+    // (2) request redundan dari effect ini 400ms kemudian dengan search/filter/
+    // sort yang isinya sama persis — terlihat seperti halaman "reload 2x".
+    // Sama fix-nya dengan Vehicles/Customers/Users/Vehicle Customer Index.jsx.
+    const isFirstRender = useRef(true);
+
     // Search dan filter digabung jadi satu request/debounce — sama pola
     // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
     useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
         const timeout = setTimeout(() => {
             const gt = activeFilters.grand_total ?? emptyGrandTotalFilter;
             const activeSort = sorting[0];

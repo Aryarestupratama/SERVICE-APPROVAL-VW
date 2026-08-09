@@ -28,7 +28,7 @@ const REASON_VARIANT = {
 export default function Dashboard({ statusCounts, actionItems, stuckThresholdDays }) {
     return (
         <AdminLayout title="Dashboard">
-            <div className="mb-6 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
                 {Object.entries(STATUS_LABELS).map(([key, label]) => (
                     <Card key={key}>
                         <CardHeader className="pb-2">
@@ -66,7 +66,7 @@ export default function Dashboard({ statusCounts, actionItems, stuckThresholdDay
                                 <Link
                                     key={item.id}
                                     href={route('admin.service-orders.show', item.id)}
-                                    className="flex items-center justify-between gap-4 py-3 hover:bg-muted/40"
+                                    className="flex flex-col gap-2 py-3 hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                                 >
                                     <div className="min-w-0">
                                         <p className="truncate text-sm font-medium">
@@ -76,7 +76,7 @@ export default function Dashboard({ statusCounts, actionItems, stuckThresholdDay
                                             {item.service_advisor_name ?? 'Unassigned'} · {STATUS_LABELS[item.status] ?? item.status} · {item.days_ago}d ago
                                         </p>
                                     </div>
-                                    <div className="flex flex-shrink-0 flex-wrap justify-end gap-1">
+                                    <div className="flex flex-shrink-0 flex-wrap gap-1 sm:justify-end">
                                         {item.reasons.map((reason) => (
                                             <Badge key={reason} variant={REASON_VARIANT[reason] ?? 'secondary'}>
                                                 {REASON_LABELS[reason] ?? reason}

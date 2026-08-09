@@ -165,15 +165,15 @@ export default function AdminLayout({ children, title, headerActions }) {
             </Sidebar>
 
             <SidebarInset>
-                <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-vw-grey/15 bg-white px-4 sm:px-6">
-                    <SidebarTrigger />
+                <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-vw-grey/15 bg-white px-3 sm:h-14 sm:gap-3 sm:px-6">
+                    <SidebarTrigger className="shrink-0" />
                     {title && (
-                        <h1 className="text-[15px] font-semibold tracking-tight text-foreground">
+                        <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-foreground sm:flex-initial">
                             {title}
                         </h1>
                     )}
                     {headerActions && (
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex shrink-0 items-center gap-2">
                             {headerActions}
                         </div>
                     )}

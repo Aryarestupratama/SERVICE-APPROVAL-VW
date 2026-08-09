@@ -5,6 +5,7 @@ import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Spark
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
 import { Progress } from '@/Components/ui/progress';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/Components/ui/sheet';
 
 function StatusStamp({ status }) {
     if (status === 'pending') {
@@ -248,18 +249,18 @@ export default function InspectionReport({
                 </section>
 
                 {/* Status progress — kriteria opsional: step indicator 5 tahap. */}
-                <section className="mt-6">
+                <section className="mt-6 px-6 sm:px-10 xl:mx-auto xl:max-w-4xl xl:px-24">
                     {isCancelled ? (
                         <div className="flex items-center gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-vw-grey">
                             This order has been cancelled.
                         </div>
                     ) : (
                         <>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-1">
                                 {STATUS_STEPS.map((step, idx) => (
                                     <span
                                         key={step.key}
-                                        className={`text-[10px] font-bold uppercase tracking-wider
+                                        className={`text-center text-[9px] font-bold uppercase leading-tight tracking-wider sm:text-[10px] sm:tracking-wider
                                             ${idx <= currentStepIndex ? 'text-vw-blue' : 'text-vw-grey/50'}`}
                                     >
                                         {step.label}
@@ -350,7 +351,7 @@ export default function InspectionReport({
                     {/* Inspection Items — kriteria #7 & #8: grouping beneran (bukan badge),
                         urut Related → Safety → Durability → Experience → Appearance. */}
                     <section>
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Inspection Items</h2>
                             <span
                                 className={`rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide
@@ -379,7 +380,10 @@ export default function InspectionReport({
                                     </h3>
                                     <div className="mt-2 divide-y divide-vw-grey-light border-y border-vw-grey-light">
                                         {groupItemsList.map((item) => (
-                                            <div key={item.id} className="flex items-center justify-between gap-4 py-3">
+                                            <div
+                                                key={item.id}
+                                                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                                            >
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <span className="font-medium text-gray-900">{item.name}</span>
@@ -389,23 +393,23 @@ export default function InspectionReport({
                                                         <p className="mt-0.5 text-sm text-vw-grey">{item.description}</p>
                                                     )}
                                                 </div>
-                                                <div className="shrink-0 text-right">
+                                                <div className="flex items-center justify-between gap-3 sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
                                                     <p className="font-mono text-sm font-semibold text-gray-900">
                                                         Rp {itemDisplayPrice(item).toLocaleString('id-ID')}
                                                     </p>
                                                     {canDecide && item.status === 'pending' && (
-                                                        <div className="mt-1 flex gap-2">
+                                                        <div className="flex gap-2 sm:mt-1">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDecision(item.id, 'approved')}
-                                                                className="rounded-sm border border-approved px-2.5 py-1 text-xs font-semibold text-approved hover:bg-approved hover:text-white"
+                                                                className="min-h-[44px] flex-1 rounded-sm border border-approved px-3 text-xs font-semibold text-approved hover:bg-approved hover:text-white sm:min-h-0 sm:flex-none sm:py-1"
                                                             >
                                                                 Approve
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDecision(item.id, 'rejected')}
-                                                                className="rounded-sm border border-vw-grey px-2.5 py-1 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                                                className="min-h-[44px] flex-1 rounded-sm border border-vw-grey px-3 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white sm:min-h-0 sm:flex-none sm:py-1"
                                                             >
                                                                 Reject
                                                             </button>
@@ -556,17 +560,20 @@ export default function InspectionReport({
                                     ) : (
                                         <p className="mt-1 text-sm text-vw-grey">No receipt uploaded yet.</p>
                                     )}
-                                    <form onSubmit={handleReceiptUpload} className="mt-2 flex items-center gap-2">
+                                    <form
+                                        onSubmit={handleReceiptUpload}
+                                        className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center"
+                                    >
                                         <input
                                             type="file"
                                             accept=".pdf,.jpg,.jpeg,.png"
-                                            className="text-xs"
+                                            className="w-full text-xs sm:w-auto"
                                             onChange={(e) => setReceiptFile(e.target.files[0])}
                                         />
                                         <button
                                             type="submit"
                                             disabled={uploadingReceipt || !receiptFile}
-                                            className="rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50"
+                                            className="w-full shrink-0 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto"
                                         >
                                             {uploadingReceipt ? 'Uploading...' : 'Upload'}
                                         </button>
@@ -637,7 +644,7 @@ export default function InspectionReport({
 
                     {order.status === 'invoice_preparation' && waHref && (
                         <section>
-                            <div className="flex items-center justify-between gap-4 rounded-md border border-vw-blue/20 bg-vw-blue/5 px-5 py-4">
+                            <div className="flex flex-col items-start justify-between gap-3 rounded-md border border-vw-blue/20 bg-vw-blue/5 px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
                                 <div>
                                     <span className="inline-block rounded-sm bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
                                         Ready for Pickup
@@ -649,7 +656,7 @@ export default function InspectionReport({
                                     href={waHref}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90"
+                                    className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 sm:w-auto"
                                 >
                                     <MessageCircle className="h-3.5 w-3.5" />
                                     Contact SA
@@ -771,63 +778,64 @@ export default function InspectionReport({
             </div>
 
             {/* Modal konfirmasi final — tidak berubah dari sebelumnya. */}
-            {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-vw-blue/40 px-4 backdrop-blur-sm">
-                    <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-xl">
-                        <h3 className="text-base font-bold text-gray-900">Confirm your decision</h3>
-                        <p className="mt-1 text-sm text-vw-grey">
+            <Sheet open={showModal} onOpenChange={setShowModal}>
+                <SheetContent side="bottom" className="rounded-t-lg sm:mx-auto sm:max-w-sm">
+                    <SheetHeader className="text-left">
+                        <SheetTitle>Confirm your decision</SheetTitle>
+                        <SheetDescription>
                             This action is final and cannot be changed afterwards for the items below.
-                        </p>
+                        </SheetDescription>
+                    </SheetHeader>
 
-                        <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto">
-                            {decidedThisRound.map((item) => (
-                                <li key={item.id} className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-700">{item.name}</span>
-                                    <StatusStamp status={item.status} />
-                                </li>
-                            ))}
-                        </ul>
+                    <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto">
+                        {decidedThisRound.map((item) => (
+                            <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="min-w-0 truncate text-gray-700">{item.name}</span>
+                                <StatusStamp status={item.status} />
+                            </li>
+                        ))}
+                    </ul>
 
-                        <div className="mt-4 space-y-1 border-t border-vw-grey-light pt-3">
-                            <div className="flex items-center justify-between text-xs text-vw-grey">
-                                <span>Subtotal</span>
-                                <span className="font-mono">Rp {decidedApprovedSubtotal.toLocaleString('id-ID')}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-vw-grey">
-                                <span>VAT ({vatPercent}%)</span>
-                                <span className="font-mono">
-                                    Rp {(decidedApprovedTotal - decidedApprovedSubtotal).toLocaleString('id-ID')}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-semibold text-vw-grey">Total</span>
-                                <span className="font-mono text-base font-bold text-vw-blue">
-                                    Rp {decidedApprovedTotal.toLocaleString('id-ID')}
-                                </span>
-                            </div>
+                    <div className="mt-4 space-y-1 border-t border-vw-grey-light pt-3">
+                        <div className="flex items-center justify-between text-xs text-vw-grey">
+                            <span>Subtotal</span>
+                            <span className="font-mono">Rp {decidedApprovedSubtotal.toLocaleString('id-ID')}</span>
                         </div>
+                        <div className="flex items-center justify-between text-xs text-vw-grey">
+                            <span>VAT ({vatPercent}%)</span>
+                            <span className="font-mono">
+                                Rp {(decidedApprovedTotal - decidedApprovedSubtotal).toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-vw-grey">Total</span>
+                            <span className="font-mono text-base font-bold text-vw-blue">
+                                Rp {decidedApprovedTotal.toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                    </div>
 
-                        <div className="mt-5 flex gap-3">
+                    <SheetFooter className="mt-5 flex-row gap-3 sm:flex-row">
+                        <SheetClose asChild>
                             <button
                                 type="button"
-                                onClick={() => setShowModal(false)}
                                 disabled={submitting}
-                                className="flex-1 rounded-md border border-vw-grey py-2 text-sm font-semibold text-vw-grey"
+                                className="min-h-[44px] flex-1 rounded-md border border-vw-grey text-sm font-semibold text-vw-grey"
                             >
                                 Cancel
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleConfirmSubmit}
-                                disabled={submitting}
-                                className="flex-1 rounded-md bg-vw-blue py-2 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50"
-                            >
-                                {submitting ? 'Submitting...' : 'Confirm & Submit'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        </SheetClose>
+                        <button
+                            type="button"
+                            onClick={handleConfirmSubmit}
+                            disabled={submitting}
+                            className="min-h-[44px] flex-1 rounded-md bg-vw-blue text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50"
+                        >
+                            {submitting ? 'Submitting...' : 'Confirm & Submit'}
+                        </button>
+                    </SheetFooter>
+                </SheetContent>
+            </Sheet>
         </PublicLayout>
     );
 }

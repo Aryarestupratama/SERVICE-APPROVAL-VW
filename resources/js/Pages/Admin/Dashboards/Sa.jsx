@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { router } from '@inertiajs/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
@@ -55,7 +55,21 @@ export default function Sa({ saStats, summary, filters }) {
         };
     }, []);
 
+    // Flag "sudah pernah mount belum" — useEffect di bawah selalu jalan sekali
+    // saat render pertama juga (bukan cuma saat activeFilters berubah dari
+    // interaksi user). Tanpa guard ini, tiap kali halaman dibuka dari sidebar
+    // terjadi 2 request: (1) load awal dari Inertia visit, lalu (2) request
+    // redundan dari effect ini 400ms kemudian dengan filter period yang
+    // isinya sama persis — terlihat seperti halaman "reload 2x". Sama fix-nya
+    // dengan Vehicles/Customers/Users/Vehicle Customer/Service Orders Index.jsx.
+    const isFirstRender = useRef(true);
+
     useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
         const timeout = setTimeout(() => {
             const period = activeFilters.period ?? emptyPeriodFilter;
 

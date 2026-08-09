@@ -605,7 +605,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                         <CardHeader>
                             <CardTitle>Order Overview</CardTitle>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-4 text-sm">
+                        <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                             <div>
                                 <p className="text-vw-grey">Customer</p>
                                 <p className="font-medium text-gray-900">
@@ -996,8 +996,8 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                                                             </form>
                                                         ) : (
                                                             <>
-                                                                <div className="flex items-center justify-between">
-                                                                    <div>
+                                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                                    <div className="min-w-0">
                                                                         <div className="font-medium text-gray-900">
                                                                             {item.name}
                                                                         </div>
@@ -1007,7 +1007,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                                                                             </p>
                                                                         )}
                                                                     </div>
-                                                                    <div className="text-right">
+                                                                    <div className="flex items-center justify-between gap-3 sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
                                                                         <p className="font-medium text-gray-900">
                                                                             {formatCurrency(itemDisplayTotal(item))}
                                                                         </p>
@@ -1278,7 +1278,7 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                 {/* Kolom kanan: status control + invoice — sticky supaya tetap
                     terlihat selagi scroll daftar group item di kiri yang panjang */}
                 <div className="lg:col-span-1">
-                    <div className="sticky top-6 space-y-6">
+                    <div className="lg:sticky lg:top-6 space-y-6">
                         <Card>
                             <CardHeader>
                                 <CardTitle>Update Status</CardTitle>

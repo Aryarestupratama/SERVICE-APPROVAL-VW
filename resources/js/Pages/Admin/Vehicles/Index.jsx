@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { router, useForm, Link } from '@inertiajs/react';
 import { toast } from 'sonner';
+import { useMediaQuery } from '@/hooks/use-media-query';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -175,8 +177,14 @@ function CustomerMultiSelect({ customers, customerIds, primaryCustomerId, onChan
     );
 }
 
+/**
+ * Form Add/Edit Vehicle — MIGRASI ke pola Dialog (desktop) / Sheet bottom
+ * (mobile), sama seperti CustomerFormDialog & UserFormDialog. Breakpoint
+ * pakai useMediaQuery('(min-width: 640px)') konsisten dengan 2 halaman lain.
+ */
 function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onSuccess }) {
     const isEdit = Boolean(vehicle);
+    const isDesktop = useMediaQuery('(min-width: 640px)');
 
     const initialCustomerIds = () =>
         (vehicle?.customers ?? (vehicle?.customer ? [vehicle.customer] : [])).map((c) => c.id);
@@ -248,114 +256,144 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
         }
     };
 
+    const formFields = (
+        <div className="space-y-4 py-4">
+            <CustomerMultiSelect
+                customers={customers}
+                customerIds={data.customer_ids}
+                primaryCustomerId={data.primary_customer_id}
+                onChange={handleCustomerChange}
+                error={errors.customer_ids}
+                primaryError={errors.primary_customer_id}
+            />
+
+            <div className="space-y-1.5">
+                <Label htmlFor="plate_number">Plate Number</Label>
+                <Input
+                    id="plate_number"
+                    value={data.plate_number}
+                    onChange={(e) => setData('plate_number', e.target.value)}
+                    placeholder="B1234XYZ"
+                />
+                {errors.plate_number && (
+                    <p className="text-sm text-urgent">{errors.plate_number}</p>
+                )}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label htmlFor="brand">Brand</Label>
+                <Select
+                    value={data.brand || ''}
+                    onValueChange={(value) => setData('brand', value)}
+                >
+                    <SelectTrigger id="brand">
+                        <SelectValue placeholder="Select brand" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {brands.map((brand) => (
+                            <SelectItem key={brand} value={brand}>
+                                {brand}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label htmlFor="vin">VIN/Chasis Number</Label>
+                <Input
+                    id="vin"
+                    value={data.vin}
+                    onChange={(e) => setData('vin', e.target.value.toUpperCase())}
+                    placeholder="17-character VIN/Chasis Number"
+                    maxLength={17}
+                    className="uppercase"
+                />
+                {errors.vin && <p className="text-sm text-urgent">{errors.vin}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label htmlFor="model">Model</Label>
+                <Input
+                    id="model"
+                    value={data.model}
+                    onChange={(e) => setData('model', e.target.value)}
+                    placeholder="Tiguan"
+                />
+                {errors.model && <p className="text-sm text-urgent">{errors.model}</p>}
+            </div>
+        </div>
+    );
+
+    const formActions = (
+        <>
+            <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={processing}
+                className="flex-1 sm:flex-none"
+            >
+                Cancel
+            </Button>
+            <Button type="submit" disabled={processing} className="flex-1 sm:flex-none">
+                {processing ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Vehicle'}
+            </Button>
+        </>
+    );
+
+    const title = isEdit ? 'Edit Vehicle' : 'Add Vehicle';
+    const description = isEdit
+        ? 'Update vehicle details below.'
+        : 'Fill in the details for the new vehicle.';
+
+    if (isDesktop) {
+        return (
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent>
+                    <form onSubmit={handleSubmit}>
+                        <DialogHeader>
+                            <DialogTitle>{title}</DialogTitle>
+                            <DialogDescription>{description}</DialogDescription>
+                        </DialogHeader>
+                        {formFields}
+                        <DialogFooter>{formActions}</DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+        );
+    }
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <form onSubmit={handleSubmit}>
-                    <DialogHeader>
-                        <DialogTitle>{isEdit ? 'Edit Vehicle' : 'Add Vehicle'}</DialogTitle>
-                        <DialogDescription>
-                            {isEdit
-                                ? 'Update vehicle details below.'
-                                : 'Fill in the details for the new vehicle.'}
-                        </DialogDescription>
-                    </DialogHeader>
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="bottom" className="flex max-h-[90vh] flex-col rounded-t-lg p-0">
+                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                    <SheetHeader className="shrink-0 border-b border-vw-grey/15 px-6 py-4 text-left">
+                        <SheetTitle>{title}</SheetTitle>
+                        <SheetDescription>{description}</SheetDescription>
+                    </SheetHeader>
 
-                    <div className="space-y-4 py-4">
-                        <CustomerMultiSelect
-                            customers={customers}
-                            customerIds={data.customer_ids}
-                            primaryCustomerId={data.primary_customer_id}
-                            onChange={handleCustomerChange}
-                            error={errors.customer_ids}
-                            primaryError={errors.primary_customer_id}
-                        />
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="plate_number">Plate Number</Label>
-                            <Input
-                                id="plate_number"
-                                value={data.plate_number}
-                                onChange={(e) => setData('plate_number', e.target.value)}
-                                placeholder="B 1234 XYZ"
-                            />
-                            {errors.plate_number && (
-                                <p className="text-sm text-urgent">{errors.plate_number}</p>
-                            )}
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="brand">Brand</Label>
-                            <Select
-                                value={data.brand || ''}
-                                onValueChange={(value) => setData('brand', value)}
-                            >
-                                <SelectTrigger id="brand">
-                                    <SelectValue placeholder="Select brand" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {brands.map((brand) => (
-                                        <SelectItem key={brand} value={brand}>
-                                            {brand}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {errors.brand && <p className="text-sm text-urgent">{errors.brand}</p>}
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="vin">VIN/Chasis Number</Label>
-                            <Input
-                                id="vin"
-                                value={data.vin}
-                                onChange={(e) => setData('vin', e.target.value.toUpperCase())}
-                                placeholder="17-character VIN/Chasis Number"
-                                maxLength={17}
-                                className="uppercase"
-                            />
-                            {errors.vin && <p className="text-sm text-urgent">{errors.vin}</p>}
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="model">Model</Label>
-                            <Input
-                                id="model"
-                                value={data.model}
-                                onChange={(e) => setData('model', e.target.value)}
-                                placeholder="Tiguan"
-                            />
-                            {errors.model && <p className="text-sm text-urgent">{errors.model}</p>}
-                        </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-6">
+                        {formFields}
                     </div>
 
-                    <DialogFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => onOpenChange(false)}
-                            disabled={processing}
-                        >
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Vehicle'}
-                        </Button>
-                    </DialogFooter>
+                    <SheetFooter className="shrink-0 flex-row gap-3 border-t border-vw-grey/15 px-6 py-4">
+                        {formActions}
+                    </SheetFooter>
                 </form>
-            </DialogContent>
-        </Dialog>
+            </SheetContent>
+        </Sheet>
     );
 }
 
 /**
- * Delete confirmation — MIGRASI dari Dialog generic ke AlertDialog resmi shadcn
- * (lihat PROJECT-RULES.md bagian 7, TODO "DeleteConfirmDialog migrasi ke AlertDialog").
- * AlertDialogAction otomatis styling `buttonVariants()` default (bukan destructive)
- * -- kita override manual jadi className destructive di bawah supaya konsisten
- * dengan tombol Delete lama (variant="destructive").
+ * Delete confirmation — MIGRASI dari AlertDialog-only ke pola AlertDialog
+ * (desktop) / Sheet bottom (mobile), sama seperti DeleteConfirmDialog di
+ * Customers & Users.
  */
 function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
+    const isDesktop = useMediaQuery('(min-width: 640px)');
     const { delete: destroy, processing } = useForm({});
 
     const handleDelete = () => {
@@ -375,32 +413,72 @@ function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
         });
     };
 
+    const title = 'Delete Vehicle';
+    const description = (
+        <>
+            Are you sure you want to delete <strong>{vehicle?.plate_number}</strong>? This will
+            also affect related service orders. This action cannot be undone.
+        </>
+    );
+
+    const actions = (
+        <>
+            <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={processing}
+                className="flex-1 sm:flex-none"
+            >
+                Cancel
+            </Button>
+            <Button
+                type="button"
+                onClick={handleDelete}
+                disabled={processing}
+                className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:flex-none"
+            >
+                {processing ? 'Deleting...' : 'Delete'}
+            </Button>
+        </>
+    );
+
+    if (isDesktop) {
+        return (
+            <AlertDialog open={open} onOpenChange={onOpenChange}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{title}</AlertDialogTitle>
+                        <AlertDialogDescription>{description}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => {
+                                e.preventDefault();
+                                handleDelete();
+                            }}
+                            disabled={processing}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {processing ? 'Deleting...' : 'Delete'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        );
+    }
+
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Vehicle</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Are you sure you want to delete{' '}
-                        <strong>{vehicle?.plate_number}</strong>? This will also affect related
-                        service orders. This action cannot be undone.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                        onClick={(e) => {
-                            e.preventDefault();
-                            handleDelete();
-                        }}
-                        disabled={processing}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                        {processing ? 'Deleting...' : 'Delete'}
-                    </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="bottom" className="rounded-t-lg">
+                <SheetHeader className="text-left">
+                    <SheetTitle>{title}</SheetTitle>
+                    <SheetDescription>{description}</SheetDescription>
+                </SheetHeader>
+                <SheetFooter className="mt-5 flex-row gap-3">{actions}</SheetFooter>
+            </SheetContent>
+        </Sheet>
     );
 }
 
@@ -446,9 +524,22 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
 
     const filterDefs = useMemo(() => buildFilterDefs(brands), [brands]);
 
+    // Flag "sudah pernah mount belum" — useEffect di bawah selalu jalan sekali
+    // saat render pertama juga (bukan cuma saat searchTerm/activeFilters
+    // berubah dari interaksi user). Tanpa guard ini, tiap kali halaman dibuka
+    // dari sidebar terjadi 2 request: (1) load awal dari Inertia visit, lalu
+    // (2) request redundan dari effect ini 400ms kemudian dengan search/filter
+    // yang isinya sama persis — terlihat seperti halaman "reload 2x".
+    const isFirstRender = useRef(true);
+
     // Search DAN filter digabung jadi satu request, di-debounce bareng — supaya
     // tidak ada 2 request debounce terpisah yang saling override.
     useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
         const timeout = setTimeout(() => {
             router.get(
                 route('admin.vehicles.index'),

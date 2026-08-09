@@ -922,7 +922,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     {/* Kolom kanan — ringkasan & submit, sticky supaya tetap
                         terlihat selagi scroll form yang panjang di kiri */}
                     <div className="lg:col-span-1">
-                        <div className="sticky top-6 space-y-4">
+                        <div className="lg:sticky lg:top-6 space-y-4">
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Order Summary</CardTitle>

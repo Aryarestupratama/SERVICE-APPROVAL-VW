@@ -1,12 +1,12 @@
 export default function GuestLayout({ children }) {
     return (
-        <div className="flex min-h-screen">
-            <div className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-1/2 lg:px-20">
+        <div className="flex min-h-screen flex-col lg:flex-row">
+            <div className="flex w-full flex-col justify-center px-4 py-8 sm:px-6 sm:py-12 lg:w-1/2 lg:px-20">
                 <div className="mx-auto w-full max-w-sm">
                     <img
                         src="/images/vw-logo-navy.jpeg"
                         alt="Volkswagen"
-                        className="mb-12 h-16 w-auto"
+                        className="mb-8 h-12 w-auto sm:mb-12 sm:h-16"
                     />
 
                     {children}
