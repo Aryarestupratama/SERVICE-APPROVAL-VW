@@ -61,7 +61,11 @@ Route::middleware(['auth', 'verified'])
                 Route::delete('{customerVehicle}', [VehicleCustomerController::class, 'destroy'])->name('destroy');
             });
 
-            Route::resource('service-orders', ServiceOrderController::class);
+            // 'destroy' dikeluarkan dari resource ini — dipindah ke grup
+            // role:admin di bawah, karena hapus service order permanen
+            // sengaja dibatasi admin-only (keputusan owner), bukan SA.
+            Route::resource('service-orders', ServiceOrderController::class)
+                ->except(['destroy']);
 
             Route::post('service-orders/{serviceOrder}/inspection-items',
                 [ServiceOrderController::class, 'storeInspectionItem'])
@@ -82,6 +86,15 @@ Route::middleware(['auth', 'verified'])
             Route::patch('service-orders/{serviceOrder}/status',
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
+
+            // Update kolom customer_complaint — editable saat appointment &
+            // work_in_progress, dikunci backend (isCustomerComplaintEditable())
+            // begitu masuk quality_control dst. Ditaruh di grup admin+SA yang
+            // sama dengan update-status/payment-details, bukan admin-only,
+            // karena SA yang biasanya input & revisi keluhan customer.
+            Route::patch('service-orders/{serviceOrder}/customer-complaint',
+                [ServiceOrderController::class, 'updateCustomerComplaint'])
+                ->name('service-orders.update-customer-complaint');
 
             Route::post('service-orders/{serviceOrder}/estimation-document',
                 [ServiceOrderController::class, 'uploadEstimationDocument'])
@@ -125,6 +138,15 @@ Route::middleware(['auth', 'verified'])
             Route::patch('service-orders/{serviceOrder}/revert-status',
                 [ServiceOrderController::class, 'revertStatus'])
                 ->name('service-orders.revert-status');
+
+            // Hard delete service order — PERMANEN, admin-only (keputusan
+            // owner). Sengaja dipisah dari resource() di grup admin+SA di
+            // atas. Route ini otomatis menghasilkan nama
+            // 'admin.service-orders.destroy' sesuai konvensi resource,
+            // walau didaftarkan manual (bukan lewat Route::resource) di sini.
+            Route::delete('service-orders/{serviceOrder}',
+                [ServiceOrderController::class, 'destroy'])
+                ->name('service-orders.destroy');
         });
     });
 

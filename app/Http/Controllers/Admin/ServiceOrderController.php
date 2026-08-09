@@ -43,9 +43,6 @@ class ServiceOrderController extends Controller
         $user = $request->user();
         $vatPercent = (float) \App\Models\Setting::current()->ppn_percent;
 
-        // Subquery grand total ESTIMASI — semua item apapun statusnya,
-        // PPN rate SEKARANG. Formula identik dengan
-        // InspectionItemPricingService::breakdownByGroup() (di-sum lintas group).
         $estimateSql = "(SELECT COALESCE(SUM(
                 (cost_item * (1 - discount_item_percent / 100))
                 + (cost_labour * (1 - discount_labour_percent / 100))
@@ -54,8 +51,6 @@ class ServiceOrderController extends Controller
             WHERE inspection_items.service_order_id = service_orders.id
         )";
 
-        // Subquery grand total APPROVED — SUM final_price_snapshot, item approved saja.
-        // Formula identik dengan InspectionItemPricingService::grandTotalForOrder().
         $approvedSql = "(SELECT COALESCE(SUM(final_price_snapshot), 0)
             FROM inspection_items
             WHERE inspection_items.service_order_id = service_orders.id
@@ -90,10 +85,6 @@ class ServiceOrderController extends Controller
                 $q->where('items_approval_status', $status)
             );
 
-       // Filter Grand Total — target field dipilih via grand_total_field
-        // ('estimate' default, atau 'approved'). Pakai whereRaw dengan subquery
-        // yang sama persis (bukan having+alias) supaya paginate()->total() tetap
-        // akurat.
         $targetSql = $request->grand_total_field === 'approved' ? $approvedSql : $estimateSql;
         $targetBindings = $request->grand_total_field === 'approved' ? [] : [$vatPercent];
 
@@ -108,14 +99,6 @@ class ServiceOrderController extends Controller
                 $q->whereRaw("{$targetSql} <= ?", [...$targetBindings, $to])
             );
 
-        // Server-side sorting — WAJIB, bukan sort di 20 baris hasil paginate.
-        // Whitelist kolom yang di-support: work_order_number & status (kolom
-        // langsung), grand_total_estimate & grand_total_approved (subquery
-        // sama dengan yang dipakai select/filter di atas). Kolom relasi
-        // (customer, service_advisor) BELUM di-support — enableSorting:false
-        // di frontend, jadi sort_by untuk field itu seharusnya tidak pernah
-        // terkirim; kalau toh terkirim (mis. request manual), fallback ke
-        // default latest() di bawah, bukan error.
         $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
         $directSortColumns = ['work_order_number', 'status'];
 
@@ -144,11 +127,6 @@ class ServiceOrderController extends Controller
     {
         return Inertia::render('Admin/ServiceOrders/Create', [
             'customers' => Customer::select('id', 'name', 'phone')->orderBy('name')->get(),
-            // FIX (audit kolom `year`): kolom `year` sudah di-drop dari tabel
-            // vehicles — dihapus dari select eksplisit di bawah. Sebelumnya
-            // select('id', 'customer_id', 'plate_number', 'brand', 'model', 'year')
-            // menyebabkan error SQL "Unknown column 'year'" setiap kali halaman
-            // Create dibuka.
             'vehicles' => Vehicle::with('customers:id')
                 ->select('id', 'customer_id', 'plate_number', 'brand', 'model')
                 ->orderBy('plate_number')
@@ -165,32 +143,31 @@ class ServiceOrderController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            // Nomor WO fisik dari bengkel, diinput manual oleh SA.
             'work_order_number' => ['required', 'string', 'max:255', 'unique:service_orders,work_order_number'],
 
-            // Customer: pilih yang sudah ada, ATAU isi data baru
             'customer_id' => ['nullable', 'exists:customers,id'],
             'new_customer' => ['nullable', 'array'],
             'new_customer.name' => ['required_with:new_customer', 'string', 'max:255'],
             'new_customer.phone' => ['required_with:new_customer', 'string', 'max:20'],
             'new_customer.email' => ['nullable', 'email', 'max:255'],
 
-            // Vehicle: pilih yang sudah ada, ATAU isi data baru
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'new_vehicle' => ['nullable', 'array'],
             'new_vehicle.plate_number' => ['required_with:new_vehicle', 'string', 'max:20'],
             'new_vehicle.brand' => ['required_with:new_vehicle', Rule::in(Vehicle::BRANDS)],
             'new_vehicle.vin' => ['required_with:new_vehicle', 'string', 'size:17', 'unique:vehicles,vin'],
             'new_vehicle.model' => ['required_with:new_vehicle', 'string', 'max:100'],
-            // FIX (audit kolom `year`): validasi 'new_vehicle.year' DIHAPUS.
-            // Kolom `year` sudah di-drop dari tabel vehicles — kalau field ini
-            // masih lolos ke Vehicle::create($validated['new_vehicle']) di bawah,
-            // insert akan error "Unknown column 'year'".
 
             'technician_id' => ['nullable', 'exists:users,id'],
             'personal_message' => ['nullable', 'string'],
             'inspection_fee' => ['required', 'numeric', 'min:0'],
             'inspection_fee_note' => ['nullable', 'string'],
+
+            // Keluhan/permintaan customer, diinput SA saat create order — masih
+            // editable saat work_in_progress lewat updateCustomerComplaint(),
+            // dikunci begitu masuk quality_control (lihat
+            // ServiceOrder::CUSTOMER_COMPLAINT_EDITABLE_STATUSES).
+            'customer_complaint' => ['nullable', 'string'],
 
             'inspection_items' => ['required', 'array', 'min:1'],
             'inspection_items.*.name' => ['required', 'string', 'max:255'],
@@ -201,8 +178,6 @@ class ServiceOrderController extends Controller
             'inspection_items.*.discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'inspection_items.*.group' => ['required', Rule::in(InspectionItem::GROUPS)],
 
-            // Limit 1 video per Service Order — keputusan final PROJECT-RULES.md
-            // bagian 9.4 (arsitektur videos[0] single slot, carousel dibatalkan).
             'videos' => ['nullable', 'array', 'max:1'],
             'videos.*.video_source' => ['required_with:videos', Rule::in(['upload', 'external_link'])],
             'videos.*.video_url' => ['required_if:videos.*.video_source,external_link', 'nullable', 'url'],
@@ -211,8 +186,8 @@ class ServiceOrderController extends Controller
                 'nullable',
                 'file',
                 'mimes:mp4,mov,webm',
-                'max:102400', // batas UKURAN file (100MB) — beda dari batas DURASI di bawah
-                new MaxVideoDuration(120), // batas DURASI 2 menit, baca metadata via getID3 (bukan FFmpeg)
+                'max:102400',
+                new MaxVideoDuration(120),
             ],
         ]);
 
@@ -231,10 +206,6 @@ class ServiceOrderController extends Controller
             if ($validated['vehicle_id']) {
                 $vehicleId = $validated['vehicle_id'];
             } else {
-                // customer_id sengaja TIDAK diisi manual di sini — biarkan
-                // CustomerVehicleObserver yang mengisi vehicles.customer_id
-                // (shortcut denormalized) begitu pivot primary dibuat, supaya
-                // satu-satunya jalur penulisan customer_id tetap lewat observer.
                 $vehicle = Vehicle::create($validated['new_vehicle']);
 
                 CustomerVehicle::create([
@@ -250,15 +221,13 @@ class ServiceOrderController extends Controller
                 'vehicle_id' => $vehicleId,
                 'service_advisor_id' => $request->user()->id,
                 'technician_id' => $validated['technician_id'] ?? null,
-                // Nomor WO fisik, diinput manual oleh SA (bukan auto-generate lagi
-                // via WorkOrderNumberGenerator — TODO lama bagian 7C #3 sudah tidak
-                // relevan, keputusan owner 2026-08-0x mengubah alur ini jadi manual).
                 'work_order_number' => $validated['work_order_number'],
                 'status' => ServiceOrder::STATUS_APPOINTMENT,
                 'items_approval_status' => 'pending',
                 'inspection_fee' => $validated['inspection_fee'],
                 'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
                 'personal_message' => $validated['personal_message'] ?? null,
+                'customer_complaint' => $validated['customer_complaint'] ?? null,
             ]);
 
             foreach ($validated['inspection_items'] as $item) {
@@ -269,9 +238,6 @@ class ServiceOrderController extends Controller
                     'cost_labour' => $item['cost_labour'],
                     'discount_item_percent' => $item['discount_item_percent'] ?? 0,
                     'discount_labour_percent' => $item['discount_labour_percent'] ?? 0,
-                    // final_price_snapshot sengaja TIDAK diisi di sini — tetap null
-                    // selama status 'pending', baru dikunci oleh service pricing
-                    // (TODO bagian 7C #2) saat item di-approve customer.
                     'group' => $item['group'],
                     'status' => 'pending',
                 ]);
@@ -284,17 +250,11 @@ class ServiceOrderController extends Controller
                         'video_url' => $video['video_url'],
                         'video_source' => 'external_link',
                         'sort_order' => $index,
-                        // Durasi tidak diketahui untuk link eksternal (mis. YouTube) —
-                        // rule MaxVideoDuration hanya berlaku untuk file upload langsung.
                         'duration_seconds' => null,
                     ]);
                 } elseif ($video['video_source'] === 'upload' && $request->hasFile("videos.{$index}.file")) {
                     $file = $request->file("videos.{$index}.file");
 
-                    // Durasi sudah divalidasi lolos ≤120 detik lewat rule MaxVideoDuration
-                    // di atas — baca ulang di sini cuma untuk DISIMPAN ke kolom
-                    // duration_seconds (kolom sudah ada dari migration awal, sebelumnya
-                    // tidak pernah diisi).
                     $getID3 = new \getID3();
                     $info = $getID3->analyze($file->getRealPath());
                     $durationSeconds = isset($info['playtime_seconds'])
@@ -323,9 +283,6 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Invoice sekarang relasi hasMany (service_order_invoices), bukan kolom
-        // tunggal di service_orders — diurutkan sort_order, uploadedBy di-eager-load
-        // supaya nama SA yang upload bisa ditampilkan tanpa N+1 query tambahan.
         $serviceOrder->load([
             'vehicle.customer',
             'serviceAdvisor',
@@ -340,10 +297,6 @@ class ServiceOrderController extends Controller
 
         $settings = Setting::current();
 
-        // Breakdown estimasi (subtotal/VAT/grand total) per group — live calculation
-        // dari SEMUA item apapun statusnya, VAT rate SEKARANG (bukan snapshot).
-        // Dipindah ke backend (sebelumnya inline di Show.jsx groupBreakdown()) supaya
-        // satu sumber angka dengan InspectionItemPricingService::grandTotalForOrder().
         $breakdownByGroup = $pricingService->breakdownByGroup(
             $serviceOrder->inspectionItems,
             (float) $settings->ppn_percent
@@ -351,13 +304,40 @@ class ServiceOrderController extends Controller
 
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
-            // Dibutuhkan Show.jsx untuk breakdown PPN (Subtotal/PPN/Grand Total)
-            // di kartu Inspection Items — settings.ppn_percent sumber kebenaran
-            // tunggal, sama seperti dipakai InspectionItemPricingService di backend.
             'settings' => $settings,
             'groups' => InspectionItem::GROUPS,
             'breakdownByGroup' => $breakdownByGroup,
+            // customer_complaint sendiri ada di dalam 'order' (kolom model
+            // biasa), tapi flag editability dikirim terpisah supaya Show.jsx
+            // tidak perlu menduplikasi daftar status "editable" — satu sumber
+            // kebenaran tetap di ServiceOrder::isCustomerComplaintEditable().
+            'customerComplaintEditable' => $serviceOrder->isCustomerComplaintEditable(),
         ]);
+    }
+
+    /**
+     * Update kolom customer_complaint secara terpisah dari update lain — dipakai
+     * saat SA mengubah keluhan customer selama appointment/work_in_progress.
+     * Dikunci (ditolak backend) begitu status masuk quality_control dan
+     * seterusnya, walaupun request-nya "berhasil sampai" ke server (mis. tab
+     * lama yang belum di-refresh, atau race condition status berubah barusan) —
+     * guard ini sumber kebenaran final, bukan cuma disable tombol di frontend.
+     */
+    public function updateCustomerComplaint(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if (!$serviceOrder->isCustomerComplaintEditable()) {
+            return back()->with('error', 'Customer complaint tidak bisa diubah lagi setelah order masuk Quality Control.');
+        }
+
+        $validated = $request->validate([
+            'customer_complaint' => ['nullable', 'string'],
+        ]);
+
+        $serviceOrder->update($validated);
+
+        return back()->with('success', 'Customer complaint berhasil disimpan.');
     }
 
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)
@@ -383,16 +363,10 @@ class ServiceOrderController extends Controller
             return back()->with('error', "Tidak bisa pindah status dari '{$currentStatus}' ke '{$newStatus}'.");
         }
 
-        // Aturan wajib bagian 7 poin 3: tidak boleh masuk 'quality_control' kalau
-        // customer belum selesai memutuskan semua item (finalized_at masih kosong).
-        // Mencegah SA pindah status manual sebelum negosiasi item selesai.
         if ($newStatus === ServiceOrder::STATUS_QUALITY_CONTROL && empty($serviceOrder->finalized_at)) {
             return back()->with('error', 'Belum bisa pindah ke Quality Control — customer belum selesai memutuskan semua item inspeksi.');
         }
 
-        // Aturan wajib bagian 2: tidak boleh masuk 'completed' kalau belum ada
-        // minimal 1 baris invoice di service_order_invoices (dulu cek kolom
-        // invoice_pdf_path tunggal, sekarang cek relasi karena bisa multi-file).
         if ($newStatus === ServiceOrder::STATUS_COMPLETED && !$serviceOrder->hasInvoiceUploaded()) {
             return back()->with('error', 'Upload minimal 1 invoice PDF dulu sebelum menandai order selesai.');
         }
@@ -404,13 +378,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Status berhasil diperbarui.');
     }
 
-    /**
-     * Admin mundurkan status order kembali ke work_in_progress — dipakai saat
-     * ada miss komunikasi soal item yang perlu diubah setelah lewat negosiasi
-     * (TODO bagian 7 poin 8). Role SA TIDAK bisa memanggil ini — route ini
-     * sudah di-guard middleware role:admin, tapi kita cek ulang di sini juga
-     * untuk defense-in-depth.
-     */
     public function revertStatus(Request $request, ServiceOrder $serviceOrder)
     {
         if ($request->user()->role !== 'admin') {
@@ -424,9 +391,6 @@ class ServiceOrderController extends Controller
             return back()->with('error', "Status '{$currentStatus}' tidak bisa dimundurkan.");
         }
 
-        // finalized_at direset karena negosiasi dibuka lagi — guard di
-        // updateStatus() (naik ke quality_control) akan menolak sampai
-        // customer/SA menyelesaikan ulang semua item pending.
         $serviceOrder->update([
             'status' => $target,
             'finalized_at' => null,
@@ -435,15 +399,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', "Status dikembalikan ke {$target}.");
     }
 
-    /**
-     * Buka lagi item yang 'rejected' supaya bisa dinegosiasikan ulang oleh
-     * customer lewat link publik yang sama (TODO bagian 7 poin 8 & poin
-     * "reopen inspection item rejected"). Item 'approved' TIDAK bisa direopen
-     * di sini — itu dikunci permanen (isLocked()), sesuai keputusan owner.
-     *
-     * Hanya bisa dipanggil selama order status work_in_progress. Kalau order
-     * sudah lewat tahap itu, admin harus revertStatus() dulu.
-     */
     public function reopenInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -466,8 +421,6 @@ class ServiceOrderController extends Controller
             $inspectionItem->update([
                 'status' => 'pending',
                 'decided_at' => null,
-                // final_price_snapshot sudah pasti null untuk item rejected
-                // (tidak pernah dikunci), tidak perlu di-reset eksplisit.
             ]);
 
             $inspectionItem->logs()->create([
@@ -485,10 +438,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Item berhasil dibuka ulang, menunggu keputusan customer.');
     }
 
-    /**
-     * Tambah item inspeksi baru selama negosiasi berjalan (work_in_progress).
-     * Item baru selalu mulai dari status 'pending'.
-     */
     public function storeInspectionItem(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -519,18 +468,12 @@ class ServiceOrderController extends Controller
                 'status' => 'pending',
             ]);
 
-            // Item pending baru berarti negosiasi belum final lagi — reset
-            // supaya guard naik ke quality_control ikut kena.
             $this->recalculateApprovalStatus($serviceOrder);
         });
 
         return back()->with('success', 'Item berhasil ditambahkan.');
     }
 
-    /**
-     * Edit item yang belum dikunci (pending/rejected). Item 'approved'
-     * (isLocked() true) TIDAK BISA diedit — dikunci permanen.
-     */
     public function updateInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -570,10 +513,6 @@ class ServiceOrderController extends Controller
                 'group' => $validated['group'],
             ]);
 
-            // Edit item yang tadinya rejected TIDAK otomatis reset status jadi
-            // pending — itu tanggung jawab endpoint reopenInspectionItem() yang
-            // terpisah, supaya SA sadar betul dia sedang "membuka ulang"
-            // keputusan customer, bukan efek samping dari edit harga.
             if (!$wasRejected) {
                 $this->recalculateApprovalStatus($serviceOrder);
             }
@@ -582,10 +521,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Item berhasil diperbarui.');
     }
 
-    /**
-     * Hapus item yang belum dikunci (pending/rejected). Item 'approved'
-     * TIDAK BISA dihapus.
-     */
     public function destroyInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -602,8 +537,6 @@ class ServiceOrderController extends Controller
             return back()->with('error', 'Item yang sudah disetujui customer (approved) tidak bisa dihapus.');
         }
 
-        // Guard tambahan: minimal harus ada 1 item tersisa di order — mencegah
-        // SA menghapus semua item sampai order jadi kosong tanpa disadari.
         if ($serviceOrder->inspectionItems()->count() <= 1) {
             return back()->with('error', 'Order harus punya minimal 1 item inspeksi.');
         }
@@ -616,18 +549,10 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Item berhasil dihapus.');
     } 
 
-    /**
-     * Upload/replace 1 PDF estimation form untuk 1 kelompok tertentu.
-     * updateOrCreate berdasarkan (service_order_id, group) — sesuai constraint
-     * unique di migration, jadi upload ulang ke group yang sama otomatis
-     * REPLACE file lama (hapus file lama dari storage, ganti pdf_path baru).
-     */
     public function uploadEstimationDocument(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        // Estimation form relevan selama negosiasi berjalan — dikunci begitu
-        // order sudah lewat work_in_progress, sama pola guard dengan invoice.
         if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
             return back()->with('error', 'Estimation form hanya bisa diubah saat status Work In Progress.');
         }
@@ -642,7 +567,6 @@ class ServiceOrderController extends Controller
                 ->where('group', $validated['group'])
                 ->first();
 
-            // Hapus file lama dari storage kalau ini replace, bukan upload pertama.
             if ($existing && $existing->pdf_path) {
                 Storage::disk('public')->delete($existing->pdf_path);
             }
@@ -665,11 +589,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Estimation form berhasil diupload.');
     }
 
-    /**
-     * Hapus PDF estimation form untuk 1 kelompok tertentu — baris tetap ada
-     * (atau dihapus total, tergantung preferensi), tapi pdf_path di-null-kan
-     * supaya slot itu kembali kosong dan bisa diupload ulang.
-     */
     public function deleteEstimationDocument(Request $request, ServiceOrder $serviceOrder, ServiceOrderEstimationDocument $estimationDocument)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -691,12 +610,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Estimation form berhasil dihapus.');
     }
 
-    /**
-     * Upload/replace invoice PDF — REPLACE, bukan append (revisi balik ke
-     * 1 WO : 1 invoice, PROJECT-RULES.md bagian 2 & TODO bagian 7).
-     * updateOrCreate berdasarkan service_order_id (constraint unique),
-     * upload ulang otomatis ganti file lama.
-     */
     public function uploadInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -731,10 +644,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Invoice PDF berhasil diupload.');
     }
 
-    /**
-     * Hapus invoice milik order ini. Tidak perlu parameter invoice id lagi
-     * karena maksimal 1 baris per order.
-     */
     public function deleteInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -755,10 +664,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Invoice PDF berhasil dihapus.');
     }
 
-    /**
-     * Update invoice_number & bill_to (input manual SA) — PROJECT-RULES.md
-     * TODO bagian 7 poin 5. Hanya bisa diubah selama invoice_preparation.
-     */
     public function updatePaymentDetails(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -777,10 +682,6 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Payment details berhasil disimpan.');
     }
 
-    /**
-     * Upload/replace receipt versi SA (bukti transfer yang diterima kasir/SA,
-     * berbeda dari bukti bayar yang diupload customer sendiri).
-     */
     public function uploadStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -835,13 +736,74 @@ class ServiceOrderController extends Controller
     }
 
     /**
-     * Semua admin & SA bisa akses order apapun (bukan cuma order miliknya
-     * sendiri) — keputusan owner: skema ini sengaja dibuat supaya SA lain
-     * bisa backup/handle order kalau SA yang aslinya berhalangan. Middleware
-     * role:admin,service_advisor di routes sudah membatasi role yang boleh
-     * masuk; method ini jadi murni defense-in-depth (menolak role selain itu),
-     * bukan lagi cek kepemilikan order per-SA.
+     * Hard delete service order — HANYA admin, berlaku untuk SEMUA status
+     * termasuk 'completed' (keputusan owner, terutama untuk keperluan bersih-
+     * bersih WO dummy/testing setelah live di hosting). Row anak (inspection
+     * items, videos, estimation documents, invoice, payment receipts) ikut
+     * terhapus lewat cascadeOnDelete() di migration masing-masing — TAPI file
+     * fisik di storage TIDAK otomatis ikut kehapus oleh cascade DB, jadi wajib
+     * dibersihkan manual di sini SEBELUM $serviceOrder->delete() dipanggil.
+     *
+     * TIDAK ADA guard status di sini secara sengaja — order tetap bisa dihapus
+     * walau customer sudah approve/reject item, sudah completed, dsb. Ini
+     * DESTRUKTIF dan PERMANEN, tidak ada soft delete/recovery. Konfirmasi di
+     * frontend (AlertDialog) wajib eksplisit sebelum memanggil endpoint ini.
      */
+    public function destroy(Request $request, ServiceOrder $serviceOrder)
+    {
+        if ($request->user()->role !== 'admin') {
+            abort(403, 'Only admin can delete a service order.');
+        }
+
+        $serviceOrder->load([
+            'videos',
+            'estimationDocuments',
+            'invoice',
+            'customerPaymentReceipt',
+            'staffPaymentReceipt',
+        ]);
+
+        DB::transaction(function () use ($serviceOrder) {
+            // Video upload lokal (video_source = 'upload') punya file fisik di
+            // disk 'public'. Video 'external_link' (mis. YouTube) tidak punya
+            // file untuk dihapus — video_url-nya cuma string URL eksternal.
+            foreach ($serviceOrder->videos as $video) {
+                if ($video->video_source === 'upload' && $video->video_url) {
+                    $path = str_replace(Storage::disk('public')->url(''), '', $video->video_url);
+                    Storage::disk('public')->delete($path);
+                }
+            }
+
+            foreach ($serviceOrder->estimationDocuments as $doc) {
+                if ($doc->pdf_path) {
+                    Storage::disk('public')->delete($doc->pdf_path);
+                }
+            }
+
+            if ($serviceOrder->invoice && $serviceOrder->invoice->file_path) {
+                Storage::disk('public')->delete($serviceOrder->invoice->file_path);
+            }
+
+            if ($serviceOrder->customerPaymentReceipt && $serviceOrder->customerPaymentReceipt->file_path) {
+                Storage::disk('public')->delete($serviceOrder->customerPaymentReceipt->file_path);
+            }
+
+            if ($serviceOrder->staffPaymentReceipt && $serviceOrder->staffPaymentReceipt->file_path) {
+                Storage::disk('public')->delete($serviceOrder->staffPaymentReceipt->file_path);
+            }
+
+            // delete() ini men-trigger cascadeOnDelete() DB untuk semua relasi
+            // hasMany/hasOne di atas (inspection_items, videos,
+            // estimation_documents, invoice, payment_receipts) — row-nya ikut
+            // terhapus otomatis, file fisiknya sudah dibersihkan manual di atas.
+            $serviceOrder->delete();
+        });
+
+        return redirect()
+            ->route('admin.service-orders.index')
+            ->with('success', 'Service order berhasil dihapus permanen.');
+    }
+
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void
     {
         $user = $request->user();
@@ -853,28 +815,12 @@ class ServiceOrderController extends Controller
         abort(403, 'Anda tidak punya akses ke service order ini.');
     }
 
-    /**
-     * Transisi MUNDUR khusus admin — dipakai reopen item rejected di luar
-     * work_in_progress (TODO bagian 7 poin 8). SA tidak boleh melakukan ini,
-     * hanya admin, sesuai keputusan owner.
-     */
     private const REVERT_TRANSITIONS = [
         'quality_control' => 'work_in_progress',
         'invoice_preparation' => 'work_in_progress',
         'completed' => 'work_in_progress',
     ];
 
-    /**
-     * Hitung ulang items_approval_status & finalized_at berdasarkan kondisi
-     * item TERKINI. Dipanggil setiap kali ada perubahan item (tambah/edit/
-     * hapus/reopen) selama work_in_progress, supaya guard naik ke
-     * quality_control (butuh finalized_at terisi) selalu akurat.
-     *
-     * Logika sama persis dengan yang ada di
-     * InspectionReportController::submitDecisions() — sengaja diduplikasi
-     * di sini (bukan diekstrak ke service class) untuk task ini, refactor
-     * penyatuan logic bisa jadi TODO terpisah kalau dirasa perlu nanti.
-     */
     private function recalculateApprovalStatus(ServiceOrder $serviceOrder): void
     {
         $freshItems = $serviceOrder->inspectionItems()->get();
@@ -890,9 +836,6 @@ class ServiceOrderController extends Controller
         };
 
         $updates = ['items_approval_status' => $itemsApprovalStatus];
-
-        // Kalau masih ada item pending, negosiasi belum final —
-        // finalized_at HARUS null supaya guard naik ke quality_control nolak.
         $updates['finalized_at'] = $stillPending ? null : now();
 
         $serviceOrder->update($updates);

@@ -174,7 +174,13 @@ const BANK_ACCOUNTS = [
 const CASHIER_WA_GROUP_URL =
     'https://chat.whatsapp.com/Jqsdzukbkjk1hXMzAzXR1Q?s=sh&p=i&ilr=2&amv=2';
 
-export default function Show({ order, settings, maxInvoices, breakdownByGroup }) {
+export default function Show({
+    order,
+    settings,
+    maxInvoices,
+    breakdownByGroup,
+    customerComplaintEditable,
+}) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === 'admin';
 
@@ -215,6 +221,12 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         bill_to: order.bill_to ?? '',
     });
     const staffReceiptForm = useForm({ receipt: null });
+
+    // Form khusus customer complaint — kolom cuma editable saat
+    // appointment/work_in_progress (guard sumber kebenaran tetap di backend,
+    // lihat ServiceOrder::isCustomerComplaintEditable(), dikirim controller
+    // lewat prop `customerComplaintEditable`).
+    const complaintForm = useForm({ customer_complaint: order.customer_complaint ?? '' });
 
     const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
     const revertTarget = REVERT_TRANSITIONS[order.status] ?? null;
@@ -282,6 +294,45 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                         onFinish: closeConfirmDialog,
                     }
                 );
+            },
+        });
+    };
+
+    // --- Customer complaint ---
+
+    const handleComplaintSubmit = (e) => {
+        e.preventDefault();
+        complaintForm.patch(route('admin.service-orders.update-customer-complaint', order.id), {
+            preserveScroll: true,
+            onSuccess: (page) => flashToast(page, 'Customer complaint saved'),
+            onError: () => toast.error('Failed to save customer complaint'),
+        });
+    };
+
+    // --- Delete service order (admin only, hard delete, permanen) ---
+
+    const handleDeleteOrder = () => {
+        setConfirmDialog({
+            title: 'Delete this service order?',
+            description: (
+                <>
+                    This will permanently delete WO{' '}
+                    <strong>{order.work_order_number}</strong> and all its related data
+                    (inspection items, videos, estimation documents, invoice, payment
+                    receipts). This action cannot be undone.
+                </>
+            ),
+            confirmLabel: 'Delete Permanently',
+            destructive: true,
+            onConfirm: () => {
+                // Sengaja TANPA preserveScroll — setelah sukses, backend
+                // redirect ke admin.service-orders.index (bukan back()), jadi
+                // memang mau full navigasi keluar dari halaman ini.
+                router.delete(route('admin.service-orders.destroy', order.id), {
+                    onSuccess: (page) => flashToast(page, 'Service order permanently deleted'),
+                    onError: () => toast.error('Failed to delete service order'),
+                    onFinish: closeConfirmDialog,
+                });
             },
         });
     };
@@ -559,6 +610,35 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
         }
     };
 
+    // --- Copy report link + message untuk dikirim manual ke WA customer ---
+    // Muncul begitu order sudah lewat appointment (mulai work_in_progress) —
+    // sebelum itu belum ada apa-apa yang relevan untuk dilihat customer.
+    // Hilang kalau order sudah masuk cabang all_rejected_cancelled.
+    const [reportLinkCopied, setReportLinkCopied] = useState(false);
+
+    const canShareReportLink =
+        order.status !== 'appointment' && order.status !== 'all_rejected_cancelled';
+
+    const reportUrl = order.inspection_token
+        ? route('public.inspection-report', order.inspection_token)
+        : null;
+
+    const reportMessageText =
+        `Halo, berikut link laporan hasil inspeksi kendaraan Anda (WO: ${order.work_order_number ?? '-'}):\n` +
+        `${reportUrl ?? '-'}\n\n` +
+        `Di dalamnya ada video penjelasan dari teknisi kami, rincian biaya perbaikan, dan Anda bisa approve/reject per item langsung dari link tersebut. Terima kasih.`;
+
+    const handleCopyReportLink = async () => {
+        try {
+            await navigator.clipboard.writeText(reportMessageText);
+            setReportLinkCopied(true);
+            toast.success('Report link & message copied to clipboard');
+            setTimeout(() => setReportLinkCopied(false), 2000);
+        } catch {
+            toast.error('Failed to copy — please copy the text manually');
+        }
+    };
+
     return (
         <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
             <Head title={`Service Order #${order.work_order_number ?? order.id}`} />
@@ -595,6 +675,19 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                         <Badge variant="outline" className="border-amber-500 text-amber-600">
                             Waiting for Pickup
                         </Badge>
+                    )}
+                    {/* Delete order — admin-only, ditaruh di header supaya bisa
+                        diakses langsung dari halaman detail tanpa balik ke
+                        Index (keperluan debugging setelah live di hosting). */}
+                    {isAdmin && (
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleDeleteOrder}
+                        >
+                            <Trash2 className="mr-1 h-4 w-4" /> Delete Order
+                        </Button>
                     )}
                 </div>
             </div>
@@ -657,6 +750,58 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                                     {order.work_order_number ?? '—'}
                                 </p>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Customer Complaint — editable saat appointment & work_in_progress
+                        saja (guard sumber kebenaran di backend, lihat
+                        ServiceOrder::isCustomerComplaintEditable()). Begitu order masuk
+                        quality_control dst, field dikunci jadi tampilan read-only. */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Customer Complaint</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {customerComplaintEditable ? (
+                                <form onSubmit={handleComplaintSubmit} className="space-y-2">
+                                    <Textarea
+                                        value={complaintForm.data.customer_complaint}
+                                        onChange={(e) =>
+                                            complaintForm.setData(
+                                                'customer_complaint',
+                                                e.target.value
+                                            )
+                                        }
+                                        placeholder="What did the customer report/complain about their vehicle?"
+                                        rows={3}
+                                    />
+                                    {complaintForm.errors.customer_complaint && (
+                                        <p className="text-sm text-urgent">
+                                            {complaintForm.errors.customer_complaint}
+                                        </p>
+                                    )}
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-vw-grey">
+                                            Editable until the order reaches Quality Control.
+                                        </p>
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={complaintForm.processing}
+                                        >
+                                            {complaintForm.processing ? 'Saving...' : 'Save'}
+                                        </Button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <p className="text-sm text-gray-900">
+                                    {order.customer_complaint || (
+                                        <span className="text-vw-grey">
+                                            No complaint recorded.
+                                        </span>
+                                    )}
+                                </p>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -1348,6 +1493,43 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
                             </CardContent>
                         </Card>
 
+                        {/* Report Link — copy link + pesan siap kirim jadi 1 klik, SA
+                            tinggal paste manual ke WhatsApp customer. Muncul mulai
+                            work_in_progress (belum relevan saat masih appointment),
+                            hilang kalau order sudah all_rejected_cancelled. */}
+                        {canShareReportLink && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Report Link</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-2">
+                                    <p className="text-xs text-vw-grey">
+                                        Copies a ready-to-send WhatsApp message with the
+                                        customer's report link. Paste it manually into their
+                                        WhatsApp chat.
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full"
+                                        onClick={handleCopyReportLink}
+                                        disabled={!reportUrl}
+                                    >
+                                        {reportLinkCopied ? (
+                                            <>
+                                                <Check className="mr-1 h-4 w-4" /> Copied!
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy className="mr-1 h-4 w-4" /> Copy Link & Message
+                                            </>
+                                        )}
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        )}
+
                         {/* Invoice PDF section — disembunyikan selama work_in_progress
                             (dan sebelumnya), baru muncul mulai invoice_preparation. */}
                         {showInvoiceSection && (
@@ -1650,8 +1832,9 @@ export default function Show({ order, settings, maxInvoices, breakdownByGroup })
             </div>
 
             {/* Satu AlertDialog generik untuk semua aksi destruktif/berisiko di
-                halaman ini (delete item/invoice/estimation doc/receipt, reopen
-                item, ubah status, revert status) — menggantikan window.confirm(). */}
+                halaman ini (delete item/invoice/estimation doc/receipt/order,
+                reopen item, ubah status, revert status) — menggantikan
+                window.confirm(). */}
             <AlertDialog open={!!confirmDialog} onOpenChange={(open) => !open && closeConfirmDialog()}>
                 <AlertDialogContent>
                     <AlertDialogHeader>

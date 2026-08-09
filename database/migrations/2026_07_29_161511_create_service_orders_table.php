@@ -27,6 +27,14 @@ return new class extends Migration
                 'all_rejected_cancelled',
             ])->default('appointment');
 
+            // Timestamp kapan `status` terakhir kali berubah (BUKAN kapan record
+            // terakhir di-save). Dipakai sebagai basis akurat untuk proxy "lama
+            // di status" di Dashboard, menggantikan `updated_at` yang sebelumnya
+            // dipakai sebagai proxy sementara (lihat PROJECT-RULES.md bagian 7).
+            // Di-set otomatis lewat model event `saving` di ServiceOrder.php,
+            // BUKAN di-set manual di controller manapun.
+            $table->timestamp('status_changed_at')->nullable();
+
             $table->enum('items_approval_status', [
                 'pending',
                 'partially_approved',
@@ -37,6 +45,13 @@ return new class extends Migration
             $table->decimal('inspection_fee', 12, 2);
             $table->text('inspection_fee_note')->nullable();
             $table->text('personal_message')->nullable();
+
+            // Keluhan/permintaan customer, diinput SA saat create order.
+            // Masih editable selama status appointment & work_in_progress,
+            // di-lock (read-only) begitu status masuk quality_control dan
+            // seterusnya — guard dilakukan di ServiceOrderController, pola sama
+            // dengan guard `finalized_at` yang sudah ada.
+            $table->text('customer_complaint')->nullable();
 
             $table->string('inspection_token')->unique()->nullable();
             $table->timestamp('inspection_token_expires_at')->nullable();

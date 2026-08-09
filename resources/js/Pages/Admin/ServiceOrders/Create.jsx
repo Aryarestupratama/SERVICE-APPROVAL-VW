@@ -393,6 +393,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
         personal_message: '',
         inspection_fee: '',
         inspection_fee_note: '',
+        // Keluhan/permintaan customer, diinput SA saat create order — masih
+        // editable via halaman Show selama status appointment/work_in_progress,
+        // dikunci begitu masuk quality_control (lihat
+        // ServiceOrder::CUSTOMER_COMPLAINT_EDITABLE_STATUSES di backend).
+        customer_complaint: '',
         inspection_items: [],
        // Skema baru: 1 video utama saja, upload file langsung (opsi Link
         // dihapus — keputusan owner 2026-08-09). Video lain (jika ada)
@@ -487,7 +492,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                             <CardHeader>
                                 <CardTitle>Work Order</CardTitle>
                             </CardHeader>
-                            <CardContent>
+                            <CardContent className="space-y-4">
                                 <div className="max-w-sm space-y-1.5">
                                     <Label>Work Order Number</Label>
                                     <Input
@@ -498,6 +503,23 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     {errors.work_order_number && (
                                         <p className="text-sm text-urgent">{errors.work_order_number}</p>
                                     )}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label>Customer Complaint (optional)</Label>
+                                    <Textarea
+                                        value={data.customer_complaint}
+                                        onChange={(e) => setData('customer_complaint', e.target.value)}
+                                        placeholder="What did the customer report/complain about their vehicle?"
+                                        rows={3}
+                                    />
+                                    {errors.customer_complaint && (
+                                        <p className="text-sm text-urgent">{errors.customer_complaint}</p>
+                                    )}
+                                    <p className="text-xs text-vw-grey">
+                                        Still editable on the order page until it reaches Quality
+                                        Control.
+                                    </p>
                                 </div>
                             </CardContent>
                         </Card>

@@ -22,7 +22,7 @@ export default function GuestLayout({ children }) {
 
                 <div className="absolute inset-x-0 bottom-0 p-12">
                     <p className="text-2xl font-semibold text-white">
-                        VW PIK Service
+                        New VW PIK Service Process
                     </p>
                     <p className="mt-2 max-w-sm text-sm text-white/80">
                         Internal system for tracking vehicle inspections,

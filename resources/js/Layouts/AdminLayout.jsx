@@ -111,7 +111,7 @@ export default function AdminLayout({ children, title, headerActions }) {
                         <span className="text-center text-[12px] font-semibold leading-tight tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
                             VW PIK
                             <br />
-                            SERVICE
+                            New Service Process
                         </span>
                     </Link>
                 </SidebarHeader>

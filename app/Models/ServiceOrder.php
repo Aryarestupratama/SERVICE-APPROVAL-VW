@@ -22,6 +22,15 @@ class ServiceOrder extends Model
     public const ITEMS_APPROVAL_APPROVED = 'approved';
     public const ITEMS_APPROVAL_REJECTED = 'rejected';
 
+    // Status di mana kolom customer_complaint masih boleh diedit.
+    // Begitu status masuk quality_control / invoice_preparation / completed /
+    // all_rejected_cancelled, kolom ini di-lock (read-only) — guard dipakai di
+    // ServiceOrderController (mirip pola guard finalized_at yang sudah ada).
+    public const CUSTOMER_COMPLAINT_EDITABLE_STATUSES = [
+        self::STATUS_APPOINTMENT,
+        self::STATUS_WORK_IN_PROGRESS,
+    ];
+
     protected $fillable = [
         'vehicle_id',
         'service_advisor_id',
@@ -32,6 +41,7 @@ class ServiceOrder extends Model
         'inspection_fee',
         'inspection_fee_note',
         'personal_message',
+        'customer_complaint',
         'inspection_token',
         'inspection_token_expires_at',
         'finalized_at',
@@ -45,6 +55,7 @@ class ServiceOrder extends Model
             'inspection_fee' => 'decimal:2',
             'inspection_token_expires_at' => 'datetime',
             'finalized_at' => 'datetime',
+            'status_changed_at' => 'datetime',
         ];
     }
 
@@ -55,6 +66,25 @@ class ServiceOrder extends Model
                 $order->inspection_token = Str::random(32);
                 // Default masa berlaku link publik — sesuaikan kalau ada aturan lain
                 $order->inspection_token_expires_at = Carbon::now()->addDays(30);
+            }
+
+            // status_changed_at diisi juga saat create, supaya order baru
+            // langsung punya basis waktu yang benar untuk proxy "lama di status"
+            // (bukan kosong sampai status pertama kali berubah).
+            $order->status_changed_at = Carbon::now();
+        });
+
+        // Auto-set status_changed_at HANYA saat kolom status benar-benar berubah
+        // nilainya — bukan tiap kali record di-save() untuk alasan lain (misal
+        // update harga item, edit customer_complaint, dst). Ini menggantikan
+        // proxy updated_at yang sebelumnya dipakai di Dashboard (PROJECT-RULES
+        // bagian 7 — TODO ini sebelumnya ditunda karena butuh event handling,
+        // sekarang diimplementasikan di sini sebagai satu-satunya tempat yang
+        // men-set kolom ini; controller manapun yang mengubah status TIDAK perlu
+        // set status_changed_at secara manual).
+        static::saving(function (ServiceOrder $order) {
+            if ($order->isDirty('status') && ! $order->wasRecentlyCreated) {
+                $order->status_changed_at = Carbon::now();
             }
         });
     }
@@ -107,6 +137,15 @@ class ServiceOrder extends Model
     {
         return $this->inspection_token_expires_at !== null
             && $this->inspection_token_expires_at->isPast();
+    }
+
+    // Helper cek apakah customer_complaint masih boleh diedit di status saat ini.
+    // Dipakai di ServiceOrderController (guard backend) dan bisa juga dikirim
+    // sebagai prop ke frontend (Show.jsx) supaya field di-disable di UI tanpa
+    // perlu duplikasi daftar status di sisi React.
+    public function isCustomerComplaintEditable(): bool
+    {
+        return in_array($this->status, self::CUSTOMER_COMPLAINT_EDITABLE_STATUSES, true);
     }
 
     public function invoice()

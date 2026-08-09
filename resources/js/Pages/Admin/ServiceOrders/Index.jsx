@@ -1,8 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Link, router, Head } from '@inertiajs/react';
+import { Link, router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
+import { Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/Components/ui/alert-dialog';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
@@ -41,107 +53,171 @@ function formatCurrency(value) {
     }).format(Number(value));
 }
 
-const columns = [
-    {
-        accessorKey: 'work_order_number',
-        header: 'Work Order Number',
-        meta: { label: 'Work Order Number' },
-        cell: ({ row }) => (
-            <span className="font-medium">{row.original.work_order_number}</span>
-        ),
-    },
-    {
-        id: 'customer',
-        header: 'Customer',
-        meta: { label: 'Customer' },
-        // Sorting server-side belum di-support untuk kolom relasi ini (butuh
-        // join ke customers/users, di luar scope TODO "sorting Grand Total").
-        // Kalau dibiarkan sortable, klik header jadi silently no-op karena
-        // manualSorting: true dan backend tidak kenal field 'customer'.
-        enableSorting: false,
-        accessorFn: (row) => row.vehicle?.customer?.name ?? '',
-        cell: ({ row }) => (
-            <span className="font-medium">{row.original.vehicle?.customer?.name ?? '—'}</span>
-        ),
-    },
-    {
-        id: 'vehicle',
-        header: 'Vehicle',
-        meta: { label: 'Vehicle' },
-        enableSorting: false,
-        accessorFn: (row) =>
-            row.vehicle ? `${row.vehicle.brand} ${row.vehicle.model} ${row.vehicle.plate_number}` : '',
-        cell: ({ row }) => {
-            const v = row.original.vehicle;
-            return v ? `${v.brand} ${v.model} · ${v.plate_number}` : '—';
-        },
-    },
-    {
-        id: 'service_advisor',
-        header: 'Service Advisor',
-        meta: { label: 'Service Advisor' },
-        // Sama alasan dengan kolom 'customer' di atas.
-        enableSorting: false,
-        accessorFn: (row) => row.service_advisor?.name ?? '',
-        cell: ({ row }) => row.original.service_advisor?.name ?? '—',
-    },
-    {
-        accessorKey: 'status',
-        header: 'Status',
-        meta: { label: 'Status' },
-        cell: ({ row }) => (
-            <Badge variant={STATUS_VARIANT[row.original.status] ?? 'default'}>
-                {STATUS_LABEL[row.original.status] ?? row.original.status}
-            </Badge>
-        ),
-    },
-    // Grand Total (estimasi) — live calc semua item apapun statusnya, PPN
-    // rate sekarang. Formula identik InspectionItemPricingService::breakdownByGroup()
-    // (di-sum lintas group), dihitung via subquery SQL di controller supaya
-    // sort/filter/pagination tetap akurat lintas semua order (bukan cuma
-    // 20 baris yang tampil).
-    {
-        id: 'grand_total_estimate',
-        header: 'Grand Total',
-        meta: { label: 'Grand Total' },
-        accessorFn: (row) => Number(row.grand_total_estimate),
-        cell: ({ row }) => (
-            <div className="text-right">{formatCurrency(row.original.grand_total_estimate)}</div>
-        ),
-    },
-    // Grand Total Approved — SUM final_price_snapshot, item approved saja.
-    // Formula identik InspectionItemPricingService::grandTotalForOrder().
-    {
-        id: 'grand_total_approved',
-        header: 'Grand Total Approved',
-        meta: { label: 'Grand Total Approved' },
-        accessorFn: (row) => Number(row.grand_total_approved),
-        cell: ({ row }) => (
-            <div className="text-right font-medium text-approved">
-                {formatCurrency(row.original.grand_total_approved)}
-            </div>
-        ),
-    },
-    {
-        id: 'actions',
-        header: '',
-        enableSorting: false,
-        enableHiding: false,
-        cell: ({ row }) => (
-            <Link
-                href={route('admin.service-orders.show', row.original.id)}
-                className="text-sm font-medium text-vw-light-blue hover:underline"
-            >
-                View
-            </Link>
-        ),
-    },
-];
+// Dialog konfirmasi hapus — dipisah jadi komponen sendiri di file yang sama
+// (bukan file terpisah) karena state-nya (order mana yang mau dihapus) perlu
+// diangkat ke level Index, tidak bisa dikelola per-baris independen (row cell
+// tidak boleh punya state sendiri yang lepas dari row yang lain kalau mau
+// pola "1 dialog dipakai ulang untuk semua baris").
+function DeleteServiceOrderDialog({ order, open, onOpenChange }) {
+    const [isDeleting, setIsDeleting] = useState(false);
 
-// Filter panel Service Orders — status & items_approval_status: select dari
-// enum tetap; grand_total_field: pilih target (estimate/approved); grand_total:
-// number (exact/range) mengacu ke field yang dipilih. Pola number identik
-// dengan year di Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
+    const handleDelete = () => {
+        setIsDeleting(true);
+        router.delete(route('admin.service-orders.destroy', order.id), {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error(page.props.flash.error);
+                } else {
+                    toast.success('Service order berhasil dihapus permanen.');
+                }
+                onOpenChange(false);
+            },
+            onError: () => {
+                toast.error('Gagal menghapus service order.');
+            },
+            onFinish: () => setIsDeleting(false),
+        });
+    };
+
+    return (
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this service order?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will permanently delete WO{' '}
+                        <span className="font-medium text-foreground">
+                            {order?.work_order_number}
+                        </span>{' '}
+                        and all its related data (inspection items, videos, estimation
+                        documents, invoice, payment receipts). This action cannot be
+                        undone.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                        {isDeleting ? 'Deleting...' : 'Delete Permanently'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
+// columns didefinisikan sebagai fungsi (bukan konstanta statis di top-level
+// seperti sebelumnya) karena kolom 'actions' sekarang butuh tahu role user
+// (buat show/hide tombol Delete) dan handler buka dialog — keduanya cuma
+// tersedia di dalam komponen Index, tidak bisa diakses dari luar function.
+function buildColumns({ isAdmin, onRequestDelete }) {
+    return [
+        {
+            accessorKey: 'work_order_number',
+            header: 'Work Order Number',
+            meta: { label: 'Work Order Number' },
+            cell: ({ row }) => (
+                <span className="font-medium">{row.original.work_order_number}</span>
+            ),
+        },
+        {
+            id: 'customer',
+            header: 'Customer',
+            meta: { label: 'Customer' },
+            enableSorting: false,
+            accessorFn: (row) => row.vehicle?.customer?.name ?? '',
+            cell: ({ row }) => (
+                <span className="font-medium">{row.original.vehicle?.customer?.name ?? '—'}</span>
+            ),
+        },
+        {
+            id: 'vehicle',
+            header: 'Vehicle',
+            meta: { label: 'Vehicle' },
+            enableSorting: false,
+            accessorFn: (row) =>
+                row.vehicle ? `${row.vehicle.brand} ${row.vehicle.model} ${row.vehicle.plate_number}` : '',
+            cell: ({ row }) => {
+                const v = row.original.vehicle;
+                return v ? `${v.brand} ${v.model} · ${v.plate_number}` : '—';
+            },
+        },
+        {
+            id: 'service_advisor',
+            header: 'Service Advisor',
+            meta: { label: 'Service Advisor' },
+            enableSorting: false,
+            accessorFn: (row) => row.service_advisor?.name ?? '',
+            cell: ({ row }) => row.original.service_advisor?.name ?? '—',
+        },
+        {
+            accessorKey: 'status',
+            header: 'Status',
+            meta: { label: 'Status' },
+            cell: ({ row }) => (
+                <Badge variant={STATUS_VARIANT[row.original.status] ?? 'default'}>
+                    {STATUS_LABEL[row.original.status] ?? row.original.status}
+                </Badge>
+            ),
+        },
+        {
+            id: 'grand_total_estimate',
+            header: 'Grand Total',
+            meta: { label: 'Grand Total' },
+            accessorFn: (row) => Number(row.grand_total_estimate),
+            cell: ({ row }) => (
+                <div className="text-right">{formatCurrency(row.original.grand_total_estimate)}</div>
+            ),
+        },
+        {
+            id: 'grand_total_approved',
+            header: 'Grand Total Approved',
+            meta: { label: 'Grand Total Approved' },
+            accessorFn: (row) => Number(row.grand_total_approved),
+            cell: ({ row }) => (
+                <div className="text-right font-medium text-approved">
+                    {formatCurrency(row.original.grand_total_approved)}
+                </div>
+            ),
+        },
+        {
+            id: 'actions',
+            header: '',
+            enableSorting: false,
+            enableHiding: false,
+            cell: ({ row }) => (
+                <div className="flex items-center justify-end gap-3">
+                    <Link
+                        href={route('admin.service-orders.show', row.original.id)}
+                        className="text-sm font-medium text-vw-light-blue hover:underline"
+                    >
+                        View
+                    </Link>
+                    {/* Delete cuma dirender untuk admin — SA tidak punya akses
+                        sama sekali di route-nya juga (dipisah dari resource
+                        service-orders di web.php), ini lapisan UX tambahan
+                        supaya SA tidak lihat tombol yang bakal 403 kalau
+                        dipencet. */}
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={() => onRequestDelete(row.original)}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label={`Delete WO ${row.original.work_order_number}`}
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+            ),
+        },
+    ];
+}
+
 const filterDefs = [
     {
         key: 'status',
@@ -172,6 +248,9 @@ const filterDefs = [
 const emptyGrandTotalFilter = { mode: 'exact', value: '', from: '', to: '' };
 
 export default function Index({ orders, search, filters }) {
+    const { auth } = usePage().props;
+    const isAdmin = auth?.user?.role === 'admin';
+
     const [searchTerm, setSearchTerm] = useState(search ?? '');
     const [activeFilters, setActiveFilters] = useState(() => ({
         status: filters?.status ?? '',
@@ -188,9 +267,6 @@ export default function Index({ orders, search, filters }) {
                 : { mode: 'exact', value: filters?.grand_total_value ?? '', from: '', to: '' },
     }));
 
-    // Sorting server-side — sinkron ke query params URL, sama pola dengan
-    // searchTerm/activeFilters. Kolom yang di-support backend saat ini:
-    // work_order_number, status, grand_total_estimate, grand_total_approved.
     const [sorting, setSorting] = useState(() =>
         filters?.sort_by
             ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }]
@@ -198,6 +274,16 @@ export default function Index({ orders, search, filters }) {
     );
 
     const [isLoading, setIsLoading] = useState(false);
+
+    // State dialog delete — 1 dialog dipakai ulang untuk semua baris,
+    // 'orderToDelete' menyimpan row mana yang lagi mau dihapus (null = dialog
+    // tertutup).
+    const [orderToDelete, setOrderToDelete] = useState(null);
+
+    const columns = buildColumns({
+        isAdmin,
+        onRequestDelete: (order) => setOrderToDelete(order),
+    });
 
     const table = useDataTable({
         data: orders.data,
@@ -207,8 +293,6 @@ export default function Index({ orders, search, filters }) {
         onSortingChange: setSorting,
     });
 
-    // Wiring isLoading ke DataTable — sama pola dengan Admin/Vehicles/Index.jsx
-    // (PROJECT-RULES bagian 7, TODO "Wire prop isLoading").
     useEffect(() => {
         const removeStart = router.on('start', () => setIsLoading(true));
         const removeFinish = router.on('finish', () => setIsLoading(false));
@@ -219,17 +303,8 @@ export default function Index({ orders, search, filters }) {
         };
     }, []);
 
-    // Flag "sudah pernah mount belum" — useEffect di bawah selalu jalan sekali
-    // saat render pertama juga (bukan cuma saat searchTerm/activeFilters/sorting
-    // berubah dari interaksi user). Tanpa guard ini, tiap kali halaman dibuka
-    // dari sidebar terjadi 2 request: (1) load awal dari Inertia visit, lalu
-    // (2) request redundan dari effect ini 400ms kemudian dengan search/filter/
-    // sort yang isinya sama persis — terlihat seperti halaman "reload 2x".
-    // Sama fix-nya dengan Vehicles/Customers/Users/Vehicle Customer Index.jsx.
     const isFirstRender = useRef(true);
 
-    // Search dan filter digabung jadi satu request/debounce — sama pola
-    // dengan Admin/Vehicles/Index.jsx (PROJECT-RULES bagian 10.5).
     useEffect(() => {
         if (isFirstRender.current) {
             isFirstRender.current = false;
@@ -307,6 +382,14 @@ export default function Index({ orders, search, filters }) {
                         onClear={handleFilterClear}
                     />
                 }
+            />
+
+            <DeleteServiceOrderDialog
+                order={orderToDelete}
+                open={orderToDelete !== null}
+                onOpenChange={(open) => {
+                    if (!open) setOrderToDelete(null);
+                }}
             />
         </AdminLayout>
     );
