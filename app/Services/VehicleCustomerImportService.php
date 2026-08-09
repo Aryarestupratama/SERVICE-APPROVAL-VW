@@ -55,6 +55,8 @@ class VehicleCustomerImportService
             $model = trim((string) $this->cell($row, self::COL_MODEL));
             $phoneClean = $this->cleanPhone((string) $phoneRaw);
 
+            $model = $this->stripBrandPrefix($model, $brand);
+
             // Auto-dedupe: Contact Name == primary (case-insensitive) →
             // dianggap 1 customer saja, TIDAK butuh review manual (keputusan owner FINAL).
             $isContactDedup = $contactName !== null
@@ -120,6 +122,24 @@ class VehicleCustomerImportService
     private function cleanPhone(string $raw): string
     {
         return preg_replace('/\D/', '', $raw) ?? '';
+    }
+
+    /**
+     * Buang prefix nama brand dari model kalau sudah ikut ketulis di sana
+     * (case-insensitive, exact word match di awal string). Contoh:
+     * brand="AUDI", model="Audi A6" → "A6". Kalau model TIDAK diawali nama
+     * brand, dibiarkan apa adanya (tidak ada perubahan).
+     */
+    private function stripBrandPrefix(string $model, string $brand): string
+    {
+        $brand = trim($brand);
+        if ($brand === '' || $model === '') {
+            return $model;
+        }
+
+        // Match brand diikuti spasi/akhir string, case-insensitive.
+        $pattern = '/^' . preg_quote($brand, '/') . '\s+/i';
+        return trim(preg_replace($pattern, '', $model));
     }
 
     private function cell(array $row, int $index): ?string
