@@ -79,15 +79,21 @@ class UserController extends Controller
             unset($validated['password']);
         }
 
+        $oldPhotoPath = null;
+
         if ($request->hasFile('photo')) {
-            if ($user->photo_path) {
-                Storage::disk('public')->delete($user->photo_path);
-            }
+            $oldPhotoPath = $user->photo_path;
+            // Simpan file baru DULU — kalau ini gagal, foto lama masih utuh.
             $validated['photo_path'] = $request->file('photo')->store('users', 'public');
         }
         unset($validated['photo']);
 
         $user->update($validated);
+
+        // Baru hapus foto lama SETELAH file baru + row DB dipastikan berhasil.
+        if ($oldPhotoPath) {
+            Storage::disk('public')->delete($oldPhotoPath);
+        }
 
         return back()->with('success', 'Staff account updated.');
     }

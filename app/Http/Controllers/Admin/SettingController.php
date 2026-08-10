@@ -54,21 +54,31 @@ class SettingController extends Controller
             'survey_form_url' => $validated['survey_form_url'] ?? null,
         ]);
 
+        $oldLogoPath = null;
+        $oldHeroImagePath = null;
+
         if ($request->hasFile('logo')) {
-            if ($settings->logo_path) {
-                Storage::disk('public')->delete($settings->logo_path);
-            }
+            $oldLogoPath = $settings->logo_path;
+            // Simpan file baru DULU — kalau ini gagal, logo lama masih utuh.
             $settings->logo_path = $request->file('logo')->store('settings', 'public');
         }
 
         if ($request->hasFile('hero_image')) {
-            if ($settings->hero_image_path) {
-                Storage::disk('public')->delete($settings->hero_image_path);
-            }
+            $oldHeroImagePath = $settings->hero_image_path;
+            // Simpan file baru DULU — kalau ini gagal, hero image lama masih utuh.
             $settings->hero_image_path = $request->file('hero_image')->store('settings', 'public');
         }
 
         $settings->save();
+
+        // Baru hapus file lama SETELAH file baru + row DB dipastikan berhasil.
+        if ($oldLogoPath) {
+            Storage::disk('public')->delete($oldLogoPath);
+        }
+
+        if ($oldHeroImagePath) {
+            Storage::disk('public')->delete($oldHeroImagePath);
+        }
 
         return back()->with('success', 'Workshop settings updated.');
     }
