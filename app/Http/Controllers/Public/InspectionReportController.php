@@ -281,11 +281,9 @@ class InspectionReportController extends Controller
 
         DB::transaction(function () use ($validated, $request, $serviceOrder) {
             $existing = $serviceOrder->customerPaymentReceipt;
+            $oldPath = $existing?->file_path;
 
-            if ($existing && $existing->file_path) {
-                Storage::disk('public')->delete($existing->file_path);
-            }
-
+            // Simpan file baru DULU — kalau ini gagal, bukti bayar lama masih utuh.
             $path = $request->file('receipt')->store('payment-receipts', 'public');
 
             ServiceOrderPaymentReceipt::updateOrCreate(
@@ -298,6 +296,11 @@ class InspectionReportController extends Controller
                     'uploaded_at' => now(),
                 ]
             );
+
+            // Baru hapus yang lama SETELAH file baru + row DB dipastikan berhasil.
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
         });
 
         return back()->with('success', 'Payment receipt uploaded.');

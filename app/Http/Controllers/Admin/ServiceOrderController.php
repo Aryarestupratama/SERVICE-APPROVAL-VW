@@ -567,10 +567,9 @@ class ServiceOrderController extends Controller
                 ->where('group', $validated['group'])
                 ->first();
 
-            if ($existing && $existing->pdf_path) {
-                Storage::disk('public')->delete($existing->pdf_path);
-            }
+            $oldPath = $existing?->pdf_path;
 
+            // Simpan file baru DULU — kalau ini gagal, file lama masih utuh.
             $path = $request->file('pdf')->store('estimation-documents', 'public');
 
             ServiceOrderEstimationDocument::updateOrCreate(
@@ -584,6 +583,11 @@ class ServiceOrderController extends Controller
                     'uploaded_by' => $request->user()->id,
                 ]
             );
+
+            // Baru hapus file lama SETELAH file baru + row DB dipastikan berhasil.
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
         });
 
         return back()->with('success', 'Estimation form berhasil diupload.');
@@ -624,10 +628,7 @@ class ServiceOrderController extends Controller
 
         DB::transaction(function () use ($validated, $request, $serviceOrder) {
             $existing = $serviceOrder->invoice;
-
-            if ($existing && $existing->file_path) {
-                Storage::disk('public')->delete($existing->file_path);
-            }
+            $oldPath = $existing?->file_path;
 
             $path = $request->file('invoice_pdf')->store('invoices', 'public');
 
@@ -639,6 +640,10 @@ class ServiceOrderController extends Controller
                     'uploaded_by' => $request->user()->id,
                 ]
             );
+
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
         });
 
         return back()->with('success', 'Invoice PDF berhasil diupload.');
@@ -696,10 +701,7 @@ class ServiceOrderController extends Controller
 
         DB::transaction(function () use ($validated, $request, $serviceOrder) {
             $existing = $serviceOrder->staffPaymentReceipt;
-
-            if ($existing && $existing->file_path) {
-                Storage::disk('public')->delete($existing->file_path);
-            }
+            $oldPath = $existing?->file_path;
 
             $path = $request->file('receipt')->store('payment-receipts', 'public');
 
@@ -714,6 +716,10 @@ class ServiceOrderController extends Controller
                     'uploaded_by' => $request->user()->id,
                 ]
             );
+
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
         });
 
         return back()->with('success', 'Receipt berhasil diupload.');

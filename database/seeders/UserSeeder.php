@@ -19,6 +19,15 @@ class UserSeeder extends Seeder
         ]);
 
         User::create([
+            'name' => 'Admin VW PIK Service',
+            'email' => 'adminvwpikservice@vw.co.id',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+            'phone' => '0800000000',
+            'email_verified_at' => now(),
+        ]);
+
+        User::create([
             'name' => 'Bayu Mega Widiyantoro',
             'email' => 'bayu.widiyantoro@vw.co.id',
             'password' => Hash::make('password'),
@@ -51,6 +60,7 @@ class UserSeeder extends Seeder
             'phone' => '081212764645',
             'email_verified_at' => now(),
         ]);
+
         User::create([
             'name' => 'Slamet Nurohim',
             'email' => 'slamet.nurohim@vw.co.id',
