@@ -38,12 +38,14 @@ const GROUP_LABEL = {
 // paling atas sampai Appearance paling bawah, BUKAN badge per item lagi.
 const GROUP_ORDER = ['related', 'safety', 'durability', 'experience', 'appearance'];
 
+// Label pendek dipakai di stepper mode mobile (kriteria mobile-responsive
+// TODO #2) supaya tidak sempit/tumpang tindih di layar sempit (~320-375px).
 const STATUS_STEPS = [
-    { key: 'appointment', label: 'Appointment' },
-    { key: 'work_in_progress', label: 'In Progress' },
-    { key: 'quality_control', label: 'Quality Control' },
-    { key: 'invoice_preparation', label: 'Invoice' },
-    { key: 'completed', label: 'Completed' },
+    { key: 'appointment', label: 'Appointment', shortLabel: 'Appt' },
+    { key: 'work_in_progress', label: 'In Progress', shortLabel: 'Progress' },
+    { key: 'quality_control', label: 'Quality Control', shortLabel: 'QC' },
+    { key: 'invoice_preparation', label: 'Invoice', shortLabel: 'Invoice' },
+    { key: 'completed', label: 'Completed', shortLabel: 'Done' },
 ];
 
 function groupItems(items) {
@@ -199,6 +201,7 @@ export default function InspectionReport({
     const workshopName = settings.workshop_name ?? 'Volkswagen PIK';
 
     const currentStepIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
+    const currentStep = STATUS_STEPS[currentStepIndex];
     const isCancelled = order.status === 'all_rejected_cancelled';
     const progressValue = currentStepIndex >= 0 ? ((currentStepIndex + 1) / STATUS_STEPS.length) * 100 : 0;
 
@@ -209,7 +212,7 @@ export default function InspectionReport({
             <div className="min-h-screen bg-white pb-24">
                 {/* Navbar — kriteria #1: nama VW PIK + logo, terpisah dari hero. */}
                 <header className="sticky top-0 z-40 border-b border-vw-grey/10 bg-white/95 backdrop-blur">
-                    <div className="mx-auto flex max-w-3xl items-center gap-3 px-6 py-3 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
+                    <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
                         <Avatar className="h-9 w-9 shrink-0 rounded-sm">
                             <AvatarImage src={settings.logo_path ? `/storage/${settings.logo_path}` : undefined} alt={workshopName} className="object-contain" />
                             <AvatarFallback className="rounded-sm bg-vw-blue text-xs font-bold text-white">
@@ -218,15 +221,17 @@ export default function InspectionReport({
                         </Avatar>
                         <div className="min-w-0">
                             <p className="truncate text-sm font-bold text-gray-900">{workshopName}</p>
-                            <p className="text-[10px] uppercase tracking-widest text-vw-grey">Service Inspection Report</p>
+                            <p className="truncate text-[10px] uppercase tracking-widest text-vw-grey">Service Inspection Report</p>
                         </div>
                     </div>
                 </header>
 
                 {/* Hero image — kriteria #2 & #3: gambar dari upload Settings, ganti-ganti tanpa sentuh kode.
-                    Kriteria #13: tidak ada lagi "Report No." di sini. */}
-                <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden px-6 sm:rounded-lg sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                    <div className="relative aspect-[16/7] w-full overflow-hidden sm:rounded-lg">
+                    Kriteria #13: tidak ada lagi "Report No." di sini.
+                    Mobile: aspect ratio dipertinggi (4/3) supaya judul+subtitle tidak sempit,
+                    balik ke wide 16/7 mulai breakpoint sm ke atas. */}
+                <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden px-4 sm:rounded-lg sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-md sm:aspect-[16/7] sm:rounded-lg">
                         {settings.hero_image_path ? (
                             <img
                                 src={`/storage/${settings.hero_image_path}`}
@@ -237,8 +242,8 @@ export default function InspectionReport({
                             <div className="absolute inset-0 bg-gradient-to-br from-vw-blue to-[#001233]" />
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-vw-blue/90 via-vw-blue/30 to-transparent" />
-                        <div className="absolute inset-x-0 bottom-0 px-6 pb-5 sm:px-8">
-                            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                        <div className="absolute inset-x-0 bottom-0 px-5 pb-4 sm:px-8 sm:pb-5">
+                            <h1 className="text-lg font-semibold tracking-tight text-white sm:text-2xl">
                                 Vehicle Inspection Report
                             </h1>
                             <p className="mt-0.5 text-sm text-white/80">
@@ -248,38 +253,54 @@ export default function InspectionReport({
                     </div>
                 </section>
 
-                {/* Status progress — kriteria opsional: step indicator 5 tahap. */}
-                <section className="mt-6 px-6 sm:px-10 xl:mx-auto xl:max-w-4xl xl:px-24">
+                {/* Status progress — kriteria opsional: step indicator 5 tahap.
+                    Mobile (<sm): tampilkan versi ringkas "Step X of 5 — <label>" + progress bar,
+                    supaya tidak ada 5 label kecil berdesakan di layar sempit.
+                    sm ke atas: full stepper 5 label seperti sebelumnya. */}
+                <section className="mt-6 px-4 sm:px-10 xl:mx-auto xl:max-w-4xl xl:px-24">
                     {isCancelled ? (
                         <div className="flex items-center gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-vw-grey">
                             This order has been cancelled.
                         </div>
                     ) : (
                         <>
-                            <div className="flex items-center justify-between gap-1">
+                            {/* Mobile compact stepper */}
+                            <div className="flex items-center justify-between gap-2 sm:hidden">
+                                <span className="text-xs font-bold uppercase tracking-wider text-vw-blue">
+                                    {currentStep ? currentStep.label : ''}
+                                </span>
+                                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-vw-grey">
+                                    Step {currentStepIndex + 1} of {STATUS_STEPS.length}
+                                </span>
+                            </div>
+
+                            {/* Desktop/tablet full stepper */}
+                            <div className="hidden items-center justify-between gap-1 sm:flex">
                                 {STATUS_STEPS.map((step, idx) => (
                                     <span
                                         key={step.key}
-                                        className={`text-center text-[9px] font-bold uppercase leading-tight tracking-wider sm:text-[10px] sm:tracking-wider
+                                        className={`text-center text-[10px] font-bold uppercase leading-tight tracking-wider
                                             ${idx <= currentStepIndex ? 'text-vw-blue' : 'text-vw-grey/50'}`}
                                     >
                                         {step.label}
                                     </span>
                                 ))}
                             </div>
+
                             <Progress value={progressValue} className="mt-2 h-1.5" />
                         </>
                     )}
                 </section>
 
-                <div className="mx-auto max-w-3xl px-6 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                    {/* Vehicle & customer strip — kriteria #4: License Number, bukan Plate Number. */}
-                    <div className="-mt-4 grid grid-cols-2 gap-3 sm:mt-6">
-                        <div className="rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
+                <div className="mx-auto max-w-3xl px-4 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
+                    {/* Vehicle & customer strip — kriteria #4: License Number, bukan Plate Number.
+                        truncate ditambahkan supaya plat nomor panjang tidak overflow di grid sempit. */}
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6">
+                        <div className="min-w-0 rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
                             <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">License Number</p>
-                            <p className="mt-0.5 font-mono text-sm font-semibold text-gray-900">{vehicle.plate_number}</p>
+                            <p className="mt-0.5 truncate font-mono text-sm font-semibold text-gray-900">{vehicle.plate_number}</p>
                         </div>
-                        <div className="rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
+                        <div className="min-w-0 rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
                             <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">Customer</p>
                             <p className="mt-0.5 truncate text-sm font-medium text-gray-900">{customer.name}</p>
                         </div>
@@ -452,7 +473,7 @@ export default function InspectionReport({
                             <button
                                 type="button"
                                 onClick={() => setShowModal(true)}
-                                className="mt-6 w-full rounded-md bg-vw-blue py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
+                                className="mt-6 min-h-[44px] w-full rounded-md bg-vw-blue py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
                             >
                                 Submit Decision
                             </button>
@@ -483,8 +504,8 @@ export default function InspectionReport({
                                                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                                     <FileText className="h-4 w-4" />
                                                 </span>
-                                                <span>
-                                                    <span className="block font-medium text-gray-900">
+                                                <span className="min-w-0">
+                                                    <span className="block truncate font-medium text-gray-900">
                                                         {GROUP_LABEL[doc.group] ?? doc.group} Estimation (PDF)
                                                     </span>
                                                     <span className="text-xs text-vw-grey">Opens in a new tab</span>
@@ -517,8 +538,8 @@ export default function InspectionReport({
                                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                                 <FileText className="h-4 w-4" />
                                             </span>
-                                            <span>
-                                                <span className="block font-medium text-gray-900">View Invoice (PDF)</span>
+                                            <span className="min-w-0">
+                                                <span className="block truncate font-medium text-gray-900">View Invoice (PDF)</span>
                                                 <span className="text-xs text-vw-grey">Opens in a new tab</span>
                                             </span>
                                         </a>
@@ -573,7 +594,7 @@ export default function InspectionReport({
                                         <button
                                             type="submit"
                                             disabled={uploadingReceipt || !receiptFile}
-                                            className="w-full shrink-0 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto"
+                                            className="min-h-[44px] w-full shrink-0 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto sm:min-h-0"
                                         >
                                             {uploadingReceipt ? 'Uploading...' : 'Upload'}
                                         </button>
@@ -629,7 +650,7 @@ export default function InspectionReport({
                                             href={settings.survey_form_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center justify-center gap-2 rounded-md bg-vw-blue px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
+                                            className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-vw-blue px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
                                         >
                                             Share Your Feedback
                                             <ExternalLink className="h-3.5 w-3.5" />
@@ -656,7 +677,7 @@ export default function InspectionReport({
                                     href={waHref}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 sm:w-auto"
+                                    className="flex min-h-[44px] w-full shrink-0 items-center justify-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 sm:w-auto sm:min-h-0"
                                 >
                                     <MessageCircle className="h-3.5 w-3.5" />
                                     Contact SA
@@ -672,7 +693,7 @@ export default function InspectionReport({
                         <div>
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Contact</h2>
                             <div className="mt-2 flex items-center gap-3">
-                                <Avatar className="h-12 w-12">
+                                <Avatar className="h-12 w-12 shrink-0">
                                     <AvatarImage
                                         src={serviceAdvisor.photo_path ? `/storage/${serviceAdvisor.photo_path}` : undefined}
                                         alt={serviceAdvisor.name}
@@ -682,8 +703,8 @@ export default function InspectionReport({
                                         {initials(serviceAdvisor.name)}
                                     </AvatarFallback>
                                 </Avatar>
-                                <div>
-                                    <p className="font-medium text-gray-900">{serviceAdvisor.name}</p>
+                                <div className="min-w-0">
+                                    <p className="truncate font-medium text-gray-900">{serviceAdvisor.name}</p>
                                     <p className="text-sm text-vw-grey">Service Advisor</p>
                                 </div>
                             </div>
@@ -694,22 +715,22 @@ export default function InspectionReport({
                                         href={waHref}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
+                                        className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
                                     >
                                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                             <Phone className="h-4 w-4" />
                                         </span>
-                                        <span className="font-mono">{serviceAdvisor.phone}</span>
+                                        <span className="truncate font-mono">{serviceAdvisor.phone}</span>
                                     </a>
                                 )}
                                 <a
                                     href={`mailto:${serviceAdvisor.email}`}
-                                    className="flex items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
+                                    className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
                                 >
                                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                         <Mail className="h-4 w-4" />
                                     </span>
-                                    <span className="truncate font-mono">{serviceAdvisor.email}</span>
+                                    <span className="min-w-0 truncate font-mono">{serviceAdvisor.email}</span>
                                 </a>
                             </div>
                         </div>
@@ -721,7 +742,7 @@ export default function InspectionReport({
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                     <MapPin className="h-4 w-4" />
                                 </span>
-                                <p className="text-sm text-gray-700">{settings.address ?? '[Address]'}</p>
+                                <p className="min-w-0 text-sm text-gray-700">{settings.address ?? '[Address]'}</p>
                             </div>
 
                             {settings.google_maps_embed_url && (
@@ -733,7 +754,7 @@ export default function InspectionReport({
                                     allowFullScreen=""
                                     loading="lazy"
                                     referrerPolicy="strict-origin-when-cross-origin"
-                                    className="mt-3 rounded-md border border-vw-grey/15"
+                                    className="mt-3 w-full rounded-md border border-vw-grey/15"
                                 />
                             )}
 
@@ -743,7 +764,7 @@ export default function InspectionReport({
                                         href={settings.google_maps_url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                     >
                                         <MapPin className="h-3.5 w-3.5" />
                                         Open in Maps
@@ -754,7 +775,7 @@ export default function InspectionReport({
                                         href={settings.website_url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                     >
                                         <Globe className="h-3.5 w-3.5" />
                                         Visit Website
@@ -765,7 +786,7 @@ export default function InspectionReport({
                                         href={bookingWaHref}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-vw-blue px-4 py-2 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-blue px-4 py-2 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
                                     >
                                         <MessageCircle className="h-3.5 w-3.5" />
                                         Book a service
@@ -777,7 +798,9 @@ export default function InspectionReport({
                 </div>
             </div>
 
-            {/* Modal konfirmasi final — tidak berubah dari sebelumnya. */}
+            {/* Modal konfirmasi final. Tombol footer dibuat tumpuk vertikal (flex-col-reverse)
+                di layar mobile sempit supaya label "Confirm & Submit" tidak kepepet, lalu
+                bersisian lagi mulai breakpoint sm. */}
             <Sheet open={showModal} onOpenChange={setShowModal}>
                 <SheetContent side="bottom" className="rounded-t-lg sm:mx-auto sm:max-w-sm">
                     <SheetHeader className="text-left">
@@ -815,7 +838,7 @@ export default function InspectionReport({
                         </div>
                     </div>
 
-                    <SheetFooter className="mt-5 flex-row gap-3 sm:flex-row">
+                    <SheetFooter className="mt-5 flex-col-reverse gap-2 sm:flex-row sm:gap-3">
                         <SheetClose asChild>
                             <button
                                 type="button"

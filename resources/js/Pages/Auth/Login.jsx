@@ -1,6 +1,7 @@
 import InputError from '@/Components/InputError';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
+import { PasswordInput } from '@/Components/ui/password-input';
 import { Label } from '@/Components/ui/label';
 import GuestLayout from '@/Layouts/GuestLayout';
 import { Head, useForm } from '@inertiajs/react';
@@ -53,9 +54,8 @@ export default function Login({ status }) {
 
                 <div className="space-y-2">
                     <Label htmlFor="password">Password</Label>
-                    <Input
+                    <PasswordInput
                         id="password"
-                        type="password"
                         name="password"
                         value={data.password}
                         autoComplete="current-password"

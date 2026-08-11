@@ -41,6 +41,7 @@ import {
     Copy,
     Check,
     FileText,
+    RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -1452,9 +1453,18 @@ export default function Show({
                     <div className="lg:sticky lg:top-6 space-y-6">
                         <Card>
                             <CardHeader>
-                                <CardTitle>Update Status</CardTitle>
+                                <CardTitle>Update Status Progress</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="w-full"
+                                    onClick={() => window.location.reload()}
+                                >
+                                    <RefreshCw className="mr-2 h-4 w-4" /> Refresh Page
+                                </Button>
+
                                 {availableTransitions.length > 0 ? (
                                     <>
                                         <Select
@@ -1812,14 +1822,18 @@ export default function Show({
                                                 )}
                                             </Button>
                                             {canReportToCashier ? (
-                                                <a
-                                                    href={CASHIER_WA_GROUP_URL}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        window.open(
+                                                            CASHIER_WA_GROUP_URL,
+                                                            'wa_cashier_tab'
+                                                        )
+                                                    }
                                                     className="block w-full rounded-md bg-vw-blue px-4 py-2 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
                                                 >
                                                     Open Cashier WA Group
-                                                </a>
+                                                </button>
                                             ) : (
                                                 <button
                                                     type="button"

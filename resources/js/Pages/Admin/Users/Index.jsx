@@ -5,6 +5,7 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
+import { PasswordInput } from '@/Components/ui/password-input';
 import { Label } from '@/Components/ui/label';
 import {
     Select,
@@ -177,9 +178,8 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
 
             <div className="space-y-1.5">
                 <Label htmlFor="password">{isEdit ? 'New Password (optional)' : 'Password'}</Label>
-                <Input
+                <PasswordInput
                     id="password"
-                    type="password"
                     value={data.password}
                     onChange={(e) => setData('password', e.target.value)}
                     placeholder={isEdit ? 'Leave blank to keep current password' : ''}
