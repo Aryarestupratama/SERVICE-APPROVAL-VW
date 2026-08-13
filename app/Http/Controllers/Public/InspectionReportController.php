@@ -29,7 +29,14 @@ class InspectionReportController extends Controller
         // Section "Estimation Form" vs "Invoice Form" dinamis berdasarkan status
         // (PROJECT-RULES.md bagian 5) — hanya salah satu yang aktif di satu waktu,
         // bukan 2 section terpisah selamanya.
-        $showEstimationViewer = $serviceOrder->status === ServiceOrder::STATUS_WORK_IN_PROGRESS;
+        // CHANGED: estimation form sekarang tetap tampil di quality_control juga,
+        // tidak cuma work_in_progress — supaya customer masih bisa lihat/refer ke
+        // estimation form selama proses QC berlangsung, sebelum invoice section
+        // menggantikannya begitu masuk invoice_preparation.
+        $showEstimationViewer = in_array($serviceOrder->status, [
+            ServiceOrder::STATUS_WORK_IN_PROGRESS,
+            ServiceOrder::STATUS_QUALITY_CONTROL,
+        ], true);
 
         $showInvoiceViewer = in_array($serviceOrder->status, [
             ServiceOrder::STATUS_QUALITY_CONTROL,
@@ -113,7 +120,8 @@ class InspectionReportController extends Controller
                 ]
                 : null,
             // Estimation form per kelompok — hanya kirim yang benar-benar sudah
-            // ada file-nya (pdf_path terisi), dan hanya saat work_in_progress.
+            // ada file-nya (pdf_path terisi), dan hanya saat work_in_progress
+            // atau quality_control (lihat $showEstimationViewer di atas).
             'estimationDocuments' => $showEstimationViewer
                 ? $serviceOrder->estimationDocuments
                     ->filter(fn ($doc) => !empty($doc->pdf_path))

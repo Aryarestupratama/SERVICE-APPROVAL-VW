@@ -25,17 +25,27 @@ use Inertia\Inertia;
 class ServiceOrderController extends Controller
 {
     /**
-     * Status yang boleh dipindah manual lewat updateStatus().
-     * Guard sederhana dulu (linear, sesuai 5 tahap final di PROJECT-RULES bagian 2).
-     * TODO (bagian 7C #4): ini masih versi dasar — belum ada aturan siapa boleh
-     * pindah dari status apa ke status apa secara granular per role, dan belum
-     * menangani percabangan ke `all_rejected_cancelled`.
+     * Statuses that can be moved manually via updateStatus().
+     * Simple guard for now (linear, following the 5 final stages in PROJECT-RULES section 2).
+     * TODO (section 7C #4): this is still a basic version — there are no granular
+     * rules yet for which role can move from which status to which status, and it
+     * doesn't yet handle the branch to `all_rejected_cancelled`.
      */
     private const ALLOWED_TRANSITIONS = [
         'appointment' => ['work_in_progress'],
         'work_in_progress' => ['quality_control', 'all_rejected_cancelled'],
         'quality_control' => ['invoice_preparation'],
         'invoice_preparation' => ['completed'],
+    ];
+
+    /**
+     * Statuses in which inspection items may be added/edited/deleted/reopened.
+     * Extended to include 'appointment' in addition to 'work_in_progress' (owner
+     * request: items should be preparable/editable before the order enters work).
+     */
+    private const ITEM_EDITABLE_STATUSES = [
+        ServiceOrder::STATUS_APPOINTMENT,
+        ServiceOrder::STATUS_WORK_IN_PROGRESS,
     ];
 
     public function index(Request $request)
@@ -163,9 +173,9 @@ class ServiceOrderController extends Controller
             'inspection_fee' => ['required', 'numeric', 'min:0'],
             'inspection_fee_note' => ['nullable', 'string'],
 
-            // Keluhan/permintaan customer, diinput SA saat create order — masih
-            // editable saat work_in_progress lewat updateCustomerComplaint(),
-            // dikunci begitu masuk quality_control (lihat
+            // Customer complaint/request, entered by the SA when creating the order —
+            // still editable during work_in_progress via updateCustomerComplaint(),
+            // and locked once it enters quality_control (see
             // ServiceOrder::CUSTOMER_COMPLAINT_EDITABLE_STATUSES).
             'customer_complaint' => ['nullable', 'string'],
 
@@ -192,11 +202,11 @@ class ServiceOrderController extends Controller
         ]);
 
         if (!$validated['customer_id'] && empty($validated['new_customer'])) {
-            return back()->withErrors(['customer_id' => 'Pilih customer yang sudah ada, atau isi data customer baru.']);
+            return back()->withErrors(['customer_id' => 'Select an existing customer, or fill in new customer data.']);
         }
 
         if (!$validated['vehicle_id'] && empty($validated['new_vehicle'])) {
-            return back()->withErrors(['vehicle_id' => 'Pilih kendaraan yang sudah ada, atau isi data kendaraan baru.']);
+            return back()->withErrors(['vehicle_id' => 'Select an existing vehicle, or fill in new vehicle data.']);
         }
 
         $serviceOrder = DB::transaction(function () use ($validated, $request) {
@@ -276,7 +286,7 @@ class ServiceOrderController extends Controller
 
         return redirect()
             ->route('admin.service-orders.show', $serviceOrder->id)
-            ->with('success', 'Service order berhasil dibuat.');
+            ->with('success', 'Service order created successfully.');
     }
 
     public function show(Request $request, ServiceOrder $serviceOrder, InspectionItemPricingService $pricingService)
@@ -307,28 +317,30 @@ class ServiceOrderController extends Controller
             'settings' => $settings,
             'groups' => InspectionItem::GROUPS,
             'breakdownByGroup' => $breakdownByGroup,
-            // customer_complaint sendiri ada di dalam 'order' (kolom model
-            // biasa), tapi flag editability dikirim terpisah supaya Show.jsx
-            // tidak perlu menduplikasi daftar status "editable" — satu sumber
-            // kebenaran tetap di ServiceOrder::isCustomerComplaintEditable().
+            // customer_complaint itself is already inside 'order' (a regular
+            // model column), but the editability flag is sent separately so
+            // Show.jsx doesn't need to duplicate the list of "editable"
+            // statuses — a single source of truth stays in
+            // ServiceOrder::isCustomerComplaintEditable().
             'customerComplaintEditable' => $serviceOrder->isCustomerComplaintEditable(),
         ]);
     }
 
     /**
-     * Update kolom customer_complaint secara terpisah dari update lain — dipakai
-     * saat SA mengubah keluhan customer selama appointment/work_in_progress.
-     * Dikunci (ditolak backend) begitu status masuk quality_control dan
-     * seterusnya, walaupun request-nya "berhasil sampai" ke server (mis. tab
-     * lama yang belum di-refresh, atau race condition status berubah barusan) —
-     * guard ini sumber kebenaran final, bukan cuma disable tombol di frontend.
+     * Update the customer_complaint column separately from other updates —
+     * used when the SA changes the customer's complaint during
+     * appointment/work_in_progress. Locked (rejected by the backend) once the
+     * status enters quality_control and beyond, even if the request "makes it"
+     * to the server (e.g. an old tab that hasn't been refreshed, or a race
+     * condition where the status just changed) — this guard is the final
+     * source of truth, not just a disabled button on the frontend.
      */
     public function updateCustomerComplaint(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
         if (!$serviceOrder->isCustomerComplaintEditable()) {
-            return back()->with('error', 'Customer complaint tidak bisa diubah lagi setelah order masuk Quality Control.');
+            return back()->with('error', 'Customer complaint can no longer be changed once the order is in Quality Control.');
         }
 
         $validated = $request->validate([
@@ -337,7 +349,7 @@ class ServiceOrderController extends Controller
 
         $serviceOrder->update($validated);
 
-        return back()->with('success', 'Customer complaint berhasil disimpan.');
+        return back()->with('success', 'Customer complaint saved successfully.');
     }
 
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)
@@ -360,22 +372,47 @@ class ServiceOrderController extends Controller
 
         $allowed = self::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
         if (!in_array($newStatus, $allowed, true)) {
-            return back()->with('error', "Tidak bisa pindah status dari '{$currentStatus}' ke '{$newStatus}'.");
+            return back()->with('error', "Cannot move status from '{$currentStatus}' to '{$newStatus}'.");
         }
 
-        if ($newStatus === ServiceOrder::STATUS_QUALITY_CONTROL && empty($serviceOrder->finalized_at)) {
-            return back()->with('error', 'Belum bisa pindah ke Quality Control — customer belum selesai memutuskan semua item inspeksi.');
+        if ($newStatus === ServiceOrder::STATUS_QUALITY_CONTROL) {
+            if (empty($serviceOrder->finalized_at)) {
+                return back()->with('error', 'Cannot move to Quality Control yet — the customer has not finished deciding on all inspection items.');
+            }
+
+            // NEW: every group that has at least 1 item MUST already have an
+            // estimation form uploaded, because this form is what stays visible
+            // to the customer on the public page from Work In Progress through QC.
+            $groupsWithItems = $serviceOrder->inspectionItems()
+                ->select('group')
+                ->distinct()
+                ->pluck('group');
+
+            $groupsWithDocs = $serviceOrder->estimationDocuments()
+                ->whereIn('group', $groupsWithItems)
+                ->whereNotNull('pdf_path')
+                ->pluck('group');
+
+            $missingGroups = $groupsWithItems->diff($groupsWithDocs);
+
+            if ($missingGroups->isNotEmpty()) {
+                $labels = $missingGroups
+                    ->map(fn ($g) => InspectionItem::GROUP_LABELS[$g] ?? ucfirst(str_replace('_', ' ', $g)))
+                    ->implode(', ');
+
+                return back()->with('error', "Cannot move to Quality Control yet — the estimation form has not been uploaded for group: {$labels}.");
+            }
         }
 
         if ($newStatus === ServiceOrder::STATUS_COMPLETED && !$serviceOrder->hasInvoiceUploaded()) {
-            return back()->with('error', 'Upload minimal 1 invoice PDF dulu sebelum menandai order selesai.');
+            return back()->with('error', 'Upload at least 1 invoice PDF before marking the order as complete.');
         }
 
         $updates = ['status' => $newStatus];
 
         $serviceOrder->update($updates);
 
-        return back()->with('success', 'Status berhasil diperbarui.');
+        return back()->with('success', 'Status updated successfully.');
     }
 
     public function revertStatus(Request $request, ServiceOrder $serviceOrder)
@@ -388,15 +425,25 @@ class ServiceOrderController extends Controller
         $target = self::REVERT_TRANSITIONS[$currentStatus] ?? null;
 
         if ($target === null) {
-            return back()->with('error', "Status '{$currentStatus}' tidak bisa dimundurkan.");
+            return back()->with('error', "Status '{$currentStatus}' cannot be reverted.");
         }
+
+        // FIX: previously finalized_at was nulled unconditionally on every
+        // revert, even when all items were already approved — as a result the
+        // order couldn't move forward to Quality Control again even though
+        // there were no items that actually needed to be re-decided. It is now
+        // calculated from the items' actual condition, using the same logic as
+        // recalculateApprovalStatus().
+        $stillPending = $serviceOrder->inspectionItems()
+            ->where('status', 'pending')
+            ->exists();
 
         $serviceOrder->update([
             'status' => $target,
-            'finalized_at' => null,
+            'finalized_at' => $stillPending ? null : now(),
         ]);
 
-        return back()->with('success', "Status dikembalikan ke {$target}.");
+        return back()->with('success', "Status reverted to {$target}.");
     }
 
     public function reopenInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
@@ -407,12 +454,12 @@ class ServiceOrderController extends Controller
             abort(404);
         }
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Item hanya bisa dibuka ulang saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'Item can only be reopened while status is Appointment or Work In Progress.');
         }
 
         if ($inspectionItem->status !== 'rejected') {
-            return back()->with('error', 'Hanya item dengan status Rejected yang bisa dibuka ulang.');
+            return back()->with('error', 'Only items with status Rejected can be reopened.');
         }
 
         DB::transaction(function () use ($inspectionItem, $request, $serviceOrder) {
@@ -435,15 +482,15 @@ class ServiceOrderController extends Controller
             $this->recalculateApprovalStatus($serviceOrder);
         });
 
-        return back()->with('success', 'Item berhasil dibuka ulang, menunggu keputusan customer.');
+        return back()->with('success', 'Item reopened successfully, awaiting customer decision.');
     }
 
     public function storeInspectionItem(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Item hanya bisa ditambahkan saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'Item can only be added while status is Appointment or Work In Progress.');
         }
 
         $validated = $request->validate([
@@ -471,7 +518,7 @@ class ServiceOrderController extends Controller
             $this->recalculateApprovalStatus($serviceOrder);
         });
 
-        return back()->with('success', 'Item berhasil ditambahkan.');
+        return back()->with('success', 'Item added successfully.');
     }
 
     public function updateInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
@@ -482,12 +529,19 @@ class ServiceOrderController extends Controller
             abort(404);
         }
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Item hanya bisa diubah saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'Item can only be changed while status is Appointment or Work In Progress.');
         }
 
-        if ($inspectionItem->isLocked()) {
-            return back()->with('error', 'Item yang sudah disetujui customer (approved) tidak bisa diubah.');
+        // CHANGED: previously approved items were fully blocked (isLocked()).
+        // Now they can be edited — but any edit on an approved item
+        // automatically reverts it to 'pending' (awaiting a new customer
+        // decision), since its price/content has changed from what was
+        // originally approved. Rejected items STILL cannot go through here —
+        // they must be reopened first, so the SA is aware they're reopening a
+        // negotiation, not silently editing it.
+        if ($inspectionItem->status === 'rejected') {
+            return back()->with('error', 'A rejected item must be reopened before it can be edited.');
         }
 
         $validated = $request->validate([
@@ -500,10 +554,10 @@ class ServiceOrderController extends Controller
             'group' => ['required', Rule::in(InspectionItem::GROUPS)],
         ]);
 
-        DB::transaction(function () use ($validated, $inspectionItem, $serviceOrder) {
-            $wasRejected = $inspectionItem->status === 'rejected';
+        DB::transaction(function () use ($validated, $inspectionItem, $serviceOrder, $request) {
+            $wasApproved = $inspectionItem->status === 'approved';
 
-            $inspectionItem->update([
+            $updates = [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
                 'cost_item' => $validated['cost_item'],
@@ -511,14 +565,32 @@ class ServiceOrderController extends Controller
                 'discount_item_percent' => $validated['discount_item_percent'] ?? 0,
                 'discount_labour_percent' => $validated['discount_labour_percent'] ?? 0,
                 'group' => $validated['group'],
-            ]);
+            ];
 
-            if (!$wasRejected) {
-                $this->recalculateApprovalStatus($serviceOrder);
+            if ($wasApproved) {
+                $updates['status'] = 'pending';
+                $updates['decided_at'] = null;
+                $updates['final_price_snapshot'] = null;
+
+                $inspectionItem->logs()->create([
+                    'old_status' => 'approved',
+                    'new_status' => 'pending',
+                    'actor_type' => 'staff',
+                    'actor_id' => $request->user()->id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
             }
+
+            $inspectionItem->update($updates);
+
+            // FIX: previously recalculateApprovalStatus() was only called if
+            // !$wasRejected — but rejected items are now already blocked above
+            // (they never reach this point), so call it always, unconditionally.
+            $this->recalculateApprovalStatus($serviceOrder);
         });
 
-        return back()->with('success', 'Item berhasil diperbarui.');
+        return back()->with('success', 'Item updated successfully.');
     }
 
     public function destroyInspectionItem(Request $request, ServiceOrder $serviceOrder, InspectionItem $inspectionItem)
@@ -529,16 +601,16 @@ class ServiceOrderController extends Controller
             abort(404);
         }
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Item hanya bisa dihapus saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'Item can only be deleted while status is Appointment or Work In Progress.');
         }
 
         if ($inspectionItem->isLocked()) {
-            return back()->with('error', 'Item yang sudah disetujui customer (approved) tidak bisa dihapus.');
+            return back()->with('error', 'An item already approved by the customer (approved) cannot be deleted.');
         }
 
         if ($serviceOrder->inspectionItems()->count() <= 1) {
-            return back()->with('error', 'Order harus punya minimal 1 item inspeksi.');
+            return back()->with('error', 'The order must have at least 1 inspection item.');
         }
 
         DB::transaction(function () use ($inspectionItem, $serviceOrder) {
@@ -546,15 +618,15 @@ class ServiceOrderController extends Controller
             $this->recalculateApprovalStatus($serviceOrder);
         });
 
-        return back()->with('success', 'Item berhasil dihapus.');
+        return back()->with('success', 'Item deleted successfully.');
     } 
 
     public function uploadEstimationDocument(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Estimation form hanya bisa diubah saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The estimation form can only be changed while status is Appointment or Work In Progress.');
         }
 
         $validated = $request->validate([
@@ -569,7 +641,7 @@ class ServiceOrderController extends Controller
 
             $oldPath = $existing?->pdf_path;
 
-            // Simpan file baru DULU — kalau ini gagal, file lama masih utuh.
+            // Store the new file FIRST — if this fails, the old file remains intact.
             $path = $request->file('pdf')->store('estimation-documents', 'public');
 
             ServiceOrderEstimationDocument::updateOrCreate(
@@ -584,13 +656,13 @@ class ServiceOrderController extends Controller
                 ]
             );
 
-            // Baru hapus file lama SETELAH file baru + row DB dipastikan berhasil.
+            // Only delete the old file AFTER the new file + DB row are confirmed successful.
             if ($oldPath) {
                 Storage::disk('public')->delete($oldPath);
             }
         });
 
-        return back()->with('success', 'Estimation form berhasil diupload.');
+        return back()->with('success', 'Estimation form uploaded successfully.');
     }
 
     public function deleteEstimationDocument(Request $request, ServiceOrder $serviceOrder, ServiceOrderEstimationDocument $estimationDocument)
@@ -601,8 +673,8 @@ class ServiceOrderController extends Controller
             abort(404);
         }
 
-        if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
-            return back()->with('error', 'Estimation form hanya bisa dihapus saat status Work In Progress.');
+        if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The estimation form can only be deleted while status is Appointment or Work In Progress.');
         }
 
         if ($estimationDocument->pdf_path) {
@@ -611,7 +683,7 @@ class ServiceOrderController extends Controller
 
         $estimationDocument->delete();
 
-        return back()->with('success', 'Estimation form berhasil dihapus.');
+        return back()->with('success', 'Estimation form deleted successfully.');
     }
 
     public function uploadInvoice(Request $request, ServiceOrder $serviceOrder)
@@ -619,7 +691,7 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
-            return back()->with('error', 'Order sudah completed, invoice tidak bisa diubah lagi.');
+            return back()->with('error', 'The order is already completed, the invoice can no longer be changed.');
         }
 
         $validated = $request->validate([
@@ -646,7 +718,7 @@ class ServiceOrderController extends Controller
             }
         });
 
-        return back()->with('success', 'Invoice PDF berhasil diupload.');
+        return back()->with('success', 'Invoice PDF uploaded successfully.');
     }
 
     public function deleteInvoice(Request $request, ServiceOrder $serviceOrder)
@@ -654,19 +726,19 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
-            return back()->with('error', 'Order sudah completed, invoice tidak bisa dihapus lagi.');
+            return back()->with('error', 'The order is already completed, the invoice can no longer be deleted.');
         }
 
         $invoice = $serviceOrder->invoice;
 
         if (!$invoice) {
-            return back()->with('error', 'Tidak ada invoice untuk dihapus.');
+            return back()->with('error', 'There is no invoice to delete.');
         }
 
         Storage::disk('public')->delete($invoice->file_path);
         $invoice->delete();
 
-        return back()->with('success', 'Invoice PDF berhasil dihapus.');
+        return back()->with('success', 'Invoice PDF deleted successfully.');
     }
 
     public function updatePaymentDetails(Request $request, ServiceOrder $serviceOrder)
@@ -674,7 +746,7 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
-            return back()->with('error', 'Payment details hanya bisa diubah saat status Invoice Preparation.');
+            return back()->with('error', 'Payment details can only be changed while status is Invoice Preparation.');
         }
 
         $validated = $request->validate([
@@ -684,7 +756,7 @@ class ServiceOrderController extends Controller
 
         $serviceOrder->update($validated);
 
-        return back()->with('success', 'Payment details berhasil disimpan.');
+        return back()->with('success', 'Payment details saved successfully.');
     }
 
     public function uploadStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
@@ -692,7 +764,7 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
-            return back()->with('error', 'Receipt hanya bisa diupload saat status Invoice Preparation.');
+            return back()->with('error', 'Receipt can only be uploaded while status is Invoice Preparation.');
         }
 
         $validated = $request->validate([
@@ -722,7 +794,7 @@ class ServiceOrderController extends Controller
             }
         });
 
-        return back()->with('success', 'Receipt berhasil diupload.');
+        return back()->with('success', 'Receipt uploaded successfully.');
     }
 
     public function deleteStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
@@ -732,28 +804,30 @@ class ServiceOrderController extends Controller
         $receipt = $serviceOrder->staffPaymentReceipt;
 
         if (!$receipt) {
-            return back()->with('error', 'Tidak ada receipt untuk dihapus.');
+            return back()->with('error', 'There is no receipt to delete.');
         }
 
         Storage::disk('public')->delete($receipt->file_path);
         $receipt->delete();
 
-        return back()->with('success', 'Receipt berhasil dihapus.');
+        return back()->with('success', 'Receipt deleted successfully.');
     }
 
     /**
-     * Hard delete service order — HANYA admin, berlaku untuk SEMUA status
-     * termasuk 'completed' (keputusan owner, terutama untuk keperluan bersih-
-     * bersih WO dummy/testing setelah live di hosting). Row anak (inspection
-     * items, videos, estimation documents, invoice, payment receipts) ikut
-     * terhapus lewat cascadeOnDelete() di migration masing-masing — TAPI file
-     * fisik di storage TIDAK otomatis ikut kehapus oleh cascade DB, jadi wajib
-     * dibersihkan manual di sini SEBELUM $serviceOrder->delete() dipanggil.
+     * Hard delete service order — ONLY admin, applies to ALL statuses
+     * including 'completed' (owner's decision, mainly for cleaning up
+     * dummy/testing WOs after going live on hosting). Child rows (inspection
+     * items, videos, estimation documents, invoice, payment receipts) are
+     * deleted along with it via cascadeOnDelete() in each migration — BUT the
+     * physical files in storage are NOT automatically removed by the DB
+     * cascade, so they must be cleaned up manually here BEFORE
+     * $serviceOrder->delete() is called.
      *
-     * TIDAK ADA guard status di sini secara sengaja — order tetap bisa dihapus
-     * walau customer sudah approve/reject item, sudah completed, dsb. Ini
-     * DESTRUKTIF dan PERMANEN, tidak ada soft delete/recovery. Konfirmasi di
-     * frontend (AlertDialog) wajib eksplisit sebelum memanggil endpoint ini.
+     * There is INTENTIONALLY NO status guard here — the order can still be
+     * deleted even if the customer has already approved/rejected items, is
+     * already completed, etc. This is DESTRUCTIVE and PERMANENT, there is no
+     * soft delete/recovery. Explicit confirmation on the frontend (AlertDialog)
+     * is required before calling this endpoint.
      */
     public function destroy(Request $request, ServiceOrder $serviceOrder)
     {
@@ -770,9 +844,9 @@ class ServiceOrderController extends Controller
         ]);
 
         DB::transaction(function () use ($serviceOrder) {
-            // Video upload lokal (video_source = 'upload') punya file fisik di
-            // disk 'public'. Video 'external_link' (mis. YouTube) tidak punya
-            // file untuk dihapus — video_url-nya cuma string URL eksternal.
+            // Locally uploaded videos (video_source = 'upload') have a physical
+            // file on the 'public' disk. 'external_link' videos (e.g. YouTube)
+            // have no file to delete — their video_url is just an external URL string.
             foreach ($serviceOrder->videos as $video) {
                 if ($video->video_source === 'upload' && $video->video_url) {
                     $path = str_replace(Storage::disk('public')->url(''), '', $video->video_url);
@@ -798,16 +872,17 @@ class ServiceOrderController extends Controller
                 Storage::disk('public')->delete($serviceOrder->staffPaymentReceipt->file_path);
             }
 
-            // delete() ini men-trigger cascadeOnDelete() DB untuk semua relasi
-            // hasMany/hasOne di atas (inspection_items, videos,
-            // estimation_documents, invoice, payment_receipts) — row-nya ikut
-            // terhapus otomatis, file fisiknya sudah dibersihkan manual di atas.
+            // This delete() triggers the DB cascadeOnDelete() for all
+            // hasMany/hasOne relations above (inspection_items, videos,
+            // estimation_documents, invoice, payment_receipts) — their rows are
+            // automatically deleted along with it, and the physical files have
+            // already been cleaned up manually above.
             $serviceOrder->delete();
         });
 
         return redirect()
             ->route('admin.service-orders.index')
-            ->with('success', 'Service order berhasil dihapus permanen.');
+            ->with('success', 'Service order permanently deleted.');
     }
 
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void
@@ -818,7 +893,7 @@ class ServiceOrderController extends Controller
             return;
         }
 
-        abort(403, 'Anda tidak punya akses ke service order ini.');
+        abort(403, 'You do not have access to this service order.');
     }
 
     private const REVERT_TRANSITIONS = [

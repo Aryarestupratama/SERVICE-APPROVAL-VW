@@ -62,9 +62,15 @@ function groupItems(items) {
     return [...knownOrder, ...unknownOrder].map((key) => ({ key, items: buckets[key] }));
 }
 
-const ESTIMATION_VISIBLE_STATUSES = ['work_in_progress'];
+// CHANGED: estimation form sekarang tetap tampil saat quality_control juga,
+// selaras dengan $showEstimationViewer di InspectionReportController::show().
+const ESTIMATION_VISIBLE_STATUSES = ['work_in_progress', 'quality_control'];
 const DECIDABLE_STATUSES = ['appointment', 'work_in_progress'];
-const INVOICE_VISIBLE_STATUSES = ['quality_control', 'invoice_preparation', 'completed'];
+// Invoice baru terlihat oleh customer mulai status invoice_preparation —
+// meskipun admin sudah bisa mulai upload invoice dari quality_control (lihat
+// Admin/ServiceOrders/Show.jsx), customer belum perlu melihatnya sampai
+// tahap ini karena QC masih proses cek & belum tentu harga sudah final.
+const INVOICE_VISIBLE_STATUSES = ['invoice_preparation', 'completed'];
 const FINAL_PRICING_STATUSES = ['quality_control', 'invoice_preparation', 'completed'];
 const THANK_YOU_VISIBLE_STATUSES = ['completed'];
 

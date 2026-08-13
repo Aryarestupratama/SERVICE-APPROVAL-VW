@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { useForm, router, usePage, Link, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -25,10 +25,39 @@ import {
     AlertDialogTitle,
 } from '@/Components/ui/alert-dialog';
 import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/Components/ui/collapsible';
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/Components/ui/dialog';
+import {
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
+} from '@/Components/ui/tabs';
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '@/Components/ui/table';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/Components/ui/tooltip';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from '@/Components/ui/accordion';
+import { Alert, AlertTitle, AlertDescription } from '@/Components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Separator } from '@/Components/ui/separator';
 import {
@@ -37,11 +66,12 @@ import {
     Pencil,
     Trash2,
     RotateCcw,
-    ChevronDown,
     Copy,
     Check,
     FileText,
     RefreshCw,
+    Eye,
+    Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -59,6 +89,11 @@ const REVERT_TRANSITIONS = {
     invoice_preparation: 'work_in_progress',
     completed: 'work_in_progress',
 };
+
+// Status di mana inspection item boleh di-add/edit/delete/reopen. Selaras
+// dengan ServiceOrderController::ITEM_EDITABLE_STATUSES di backend — guard
+// sumber kebenaran tetap di server, ini cuma dipakai untuk kontrol UI.
+const ITEM_EDITABLE_STATUSES = ['appointment', 'work_in_progress'];
 
 const STATUS_VARIANT = {
     appointment: 'secondary',
@@ -175,6 +210,203 @@ const BANK_ACCOUNTS = [
 const CASHIER_WA_GROUP_URL =
     'https://chat.whatsapp.com/Jqsdzukbkjk1hXMzAzXR1Q?s=sh&p=i&ilr=2&amv=2';
 
+// Tombol icon kecil (view/edit/delete/reopen) yang selalu dibungkus Tooltip —
+// dipakai berulang di tabel item, disatukan di sini supaya konsisten &
+// gayanya sama persis dengan IconActionButton di halaman Create.
+function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={label}
+                    className={cn(
+                        'shrink-0 transition-colors',
+                        tone === 'danger'
+                            ? 'text-vw-grey hover:text-urgent'
+                            : tone === 'warning'
+                            ? 'text-vw-grey hover:text-amber-600'
+                            : 'text-vw-grey hover:text-vw-light-blue'
+                    )}
+                >
+                    <Icon className="h-4 w-4" />
+                </button>
+            </TooltipTrigger>
+            <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+    );
+}
+
+// Input harga dengan pemisah ribuan real-time (mis. 10.000.000), sama
+// seperti di Create.jsx — nilai yang dikirim ke form state tetap angka
+// murni tanpa titik (string of digits), kompatibel dengan validasi
+// backend 'numeric'.
+function CurrencyInput({ id, value, onChange, placeholder }) {
+    const formatDisplay = (val) => {
+        const digits = String(val ?? '').replace(/\D/g, '');
+        if (digits === '') return '';
+        return new Intl.NumberFormat('id-ID').format(Number(digits));
+    };
+
+    const [display, setDisplay] = useState(formatDisplay(value));
+
+    useEffect(() => {
+        setDisplay(formatDisplay(value));
+    }, [value]);
+
+    const handleChange = (e) => {
+        const digits = e.target.value.replace(/\D/g, '');
+        setDisplay(formatDisplay(digits));
+        onChange(digits);
+    };
+
+    return (
+        <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-vw-grey">
+                Rp
+            </span>
+            <Input
+                id={id}
+                inputMode="numeric"
+                value={display}
+                onChange={handleChange}
+                placeholder={placeholder}
+                className="pl-9"
+            />
+        </div>
+    );
+}
+
+// Field set item — dipakai bareng oleh Dialog Add & Edit item.
+function ItemFormFields({ data, errors, onChange }) {
+    return (
+        <div className="space-y-3">
+            <div className="space-y-1.5">
+                <Label>Item Name</Label>
+                <Input value={data.name} onChange={(e) => onChange('name', e.target.value)} />
+                {errors.name && <p className="text-sm text-urgent">{errors.name}</p>}
+            </div>
+            <div className="space-y-1.5">
+                <Label>Description (optional)</Label>
+                <Textarea
+                    value={data.description}
+                    onChange={(e) => onChange('description', e.target.value)}
+                    rows={2}
+                />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                    <Label>Labour Price</Label>
+                    <CurrencyInput
+                        value={data.cost_labour}
+                        onChange={(v) => onChange('cost_labour', v)}
+                        placeholder="0"
+                    />
+                    {errors.cost_labour && (
+                        <p className="text-sm text-urgent">{errors.cost_labour}</p>
+                    )}
+                </div>
+                <div className="space-y-1.5">
+                    <Label>Part Price</Label>
+                    <CurrencyInput
+                        value={data.cost_item}
+                        onChange={(v) => onChange('cost_item', v)}
+                        placeholder="0"
+                    />
+                    {errors.cost_item && <p className="text-sm text-urgent">{errors.cost_item}</p>}
+                </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                    <Label>Labour Discount (%)</Label>
+                    <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={data.discount_labour_percent}
+                        onChange={(e) => onChange('discount_labour_percent', e.target.value)}
+                    />
+                </div>
+                <div className="space-y-1.5">
+                    <Label>Part Discount (%)</Label>
+                    <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={data.discount_item_percent}
+                        onChange={(e) => onChange('discount_item_percent', e.target.value)}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Baris tabel item — 1 baris per item di dalam TabsContent tiap group.
+// Nama item bisa diklik untuk buka View Dialog (read-only, tersedia untuk
+// semua status termasuk approved). Actions cuma tampil sesuai status:
+// Edit/Delete untuk non-approved, Reopen khusus rejected.
+function ItemTableRow({ item, canEditItems, onView, onEdit, onDelete, onReopen }) {
+    return (
+        <TableRow>
+            <TableCell>
+                <button
+                    type="button"
+                    onClick={onView}
+                    className="text-left font-medium text-gray-900 underline decoration-dotted underline-offset-2 hover:text-vw-light-blue"
+                >
+                    {item.name}
+                </button>
+            </TableCell>
+            <TableCell className="text-vw-grey">
+                {formatCurrency(item.cost_item)}
+                {Number(item.discount_item_percent) > 0 && (
+                    <span className="ml-1 text-xs">(-{item.discount_item_percent}%)</span>
+                )}
+            </TableCell>
+            <TableCell className="text-vw-grey">
+                {formatCurrency(item.cost_labour)}
+                {Number(item.discount_labour_percent) > 0 && (
+                    <span className="ml-1 text-xs">(-{item.discount_labour_percent}%)</span>
+                )}
+            </TableCell>
+            <TableCell className="text-right font-semibold text-gray-900">
+                {formatCurrency(itemDisplayTotal(item))}
+            </TableCell>
+            <TableCell>
+                <Badge variant={ITEM_STATUS_VARIANT[item.status] ?? 'secondary'}>
+                    {ITEM_STATUS_LABEL[item.status] ?? item.status}
+                </Badge>
+            </TableCell>
+            <TableCell>
+                <div className="flex items-center justify-end gap-3">
+                    <IconActionButton icon={Eye} label="View item" onClick={onView} />
+                    {canEditItems && item.status !== 'rejected' && (
+                        <IconActionButton icon={Pencil} label="Edit item" onClick={onEdit} />
+                    )}
+                    {canEditItems && item.status === 'pending' && (
+                        <IconActionButton
+                            icon={Trash2}
+                            label="Delete item"
+                            onClick={onDelete}
+                            tone="danger"
+                        />
+                    )}
+                    {canEditItems && item.status === 'rejected' && (
+                        <IconActionButton
+                            icon={RotateCcw}
+                            label="Reopen item"
+                            onClick={onReopen}
+                            tone="warning"
+                        />
+                    )}
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+}
+
 export default function Show({
     order,
     settings,
@@ -196,21 +428,12 @@ export default function Show({
     // Group mana yang lagi dipilih file-nya di form upload estimation form.
     const [selectedGroup, setSelectedGroup] = useState(null);
 
-    // State untuk add/edit item — addingToGroup menandai card group mana yang
-    // lagi buka form "tambah item"; editingItemId menandai item mana yang
-    // lagi dalam mode edit.
-    const [addingToGroup, setAddingToGroup] = useState(null);
-    const [editingItemId, setEditingItemId] = useState(null);
-
-    // Group mana yang sedang collapsed — default semua terbuka.
-    const [collapsedGroups, setCollapsedGroups] = useState(new Set());
-    const toggleGroup = (group) => {
-        setCollapsedGroups((prev) => {
-            const next = new Set(prev);
-            next.has(group) ? next.delete(group) : next.add(group);
-            return next;
-        });
-    };
+    // --- Item dialogs state ---
+    // addDialogGroup: group yang Dialog Add-nya sedang terbuka (null = tertutup).
+    // viewingItem / editingItem: item yang sedang dilihat / diedit (null = tertutup).
+    const [addDialogGroup, setAddDialogGroup] = useState(null);
+    const [viewingItem, setViewingItem] = useState(null);
+    const [editingItem, setEditingItem] = useState(null);
 
     const { setData, patch, processing } = useForm({ status: '' });
     const invoiceForm = useForm({ invoice_pdf: null });
@@ -235,18 +458,25 @@ export default function Show({
     const invoice = order.invoice;
     const hasInvoice = !!invoice;
 
-    // Invoice PDF section disembunyikan selama work_in_progress (dan appointment/
-    // quality_control), baru muncul mulai invoice_preparation — permintaan owner.
-    const showInvoiceSection = ['invoice_preparation', 'completed'].includes(order.status);
+    // Invoice PDF section disembunyikan selama appointment/work_in_progress,
+    // baru muncul mulai quality_control — permintaan owner.
+    const showInvoiceSection = ['quality_control', 'invoice_preparation', 'completed'].includes(order.status);
     const showPaymentSection = ['invoice_preparation', 'completed'].includes(order.status);
     const canEditPayment = order.status === 'invoice_preparation';
 
     const docsByGroup = estimationDocsByGroup(order.estimation_documents);
     const vatPercent = Number(settings?.ppn_percent ?? 0);
-    const canEditEstimationDocs = order.status === 'work_in_progress';
-    const canEditItems = order.status === 'work_in_progress';
+    // Estimation form & item boleh di-add/edit/delete/reopen mulai status
+    // Appointment sampai Work In Progress — sebelumnya cuma Work In Progress.
+    // Dikunci begitu order masuk Quality Control (guard final tetap di backend).
+    const canEditEstimationDocs = ITEM_EDITABLE_STATUSES.includes(order.status);
+    const canEditItems = ITEM_EDITABLE_STATUSES.includes(order.status);
 
     // --- Status change ---
+    // FIX (layout): Select "Move to next status" diganti tombol langsung per
+    // transisi tujuan — SA langsung lihat opsi yang tersedia tanpa perlu
+    // buka dropdown dulu. 1 tombol kalau cuma 1 tujuan, 2 tombol berdampingan
+    // kalau ada 2 (work_in_progress -> quality_control / all_rejected_cancelled).
 
     const handleSelectStatus = (value) => {
         setData('status', value);
@@ -260,7 +490,7 @@ export default function Show({
                 </>
             ),
             confirmLabel: 'Confirm',
-            destructive: false,
+            destructive: value === 'all_rejected_cancelled',
             onConfirm: () => {
                 patch(route('admin.service-orders.update-status', order.id), {
                     preserveScroll: true,
@@ -418,35 +648,38 @@ export default function Show({
     };
 
     // --- Item CRUD handlers ---
+    // FIX (layout): Add/Edit item sekarang lewat Dialog (bukan form inline
+    // yang dulu menumpuk di dalam card group), sama persis polanya dengan
+    // Create.jsx.
 
-    const openAddItemForm = (group) => {
-        setAddingToGroup(group);
-        setEditingItemId(null);
+    const openAddItemDialog = (group) => {
+        setAddDialogGroup(group);
         addItemForm.reset();
+        addItemForm.clearErrors();
         addItemForm.setData({ ...EMPTY_ITEM_FORM, group });
     };
 
-    const closeAddItemForm = () => {
-        setAddingToGroup(null);
+    const closeAddItemDialog = () => {
+        setAddDialogGroup(null);
         addItemForm.reset();
+        addItemForm.clearErrors();
     };
 
-    const handleAddItemSubmit = (e) => {
-        e.preventDefault();
+    const handleAddItemSubmit = () => {
         addItemForm.post(route('admin.service-orders.inspection-items.store', order.id), {
             preserveScroll: true,
             onSuccess: (page) => {
                 const ok = flashToast(page, 'Item added');
-                if (ok) closeAddItemForm();
+                if (ok) closeAddItemDialog();
             },
             onError: () => toast.error('Failed to add item — check the form for errors'),
         });
     };
 
-    const openEditItemForm = (item) => {
-        setEditingItemId(item.id);
-        setAddingToGroup(null);
+    const openEditItemDialog = (item) => {
+        setEditingItem(item);
         editItemForm.reset();
+        editItemForm.clearErrors();
         editItemForm.setData({
             name: item.name,
             description: item.description ?? '',
@@ -458,20 +691,20 @@ export default function Show({
         });
     };
 
-    const closeEditItemForm = () => {
-        setEditingItemId(null);
+    const closeEditItemDialog = () => {
+        setEditingItem(null);
         editItemForm.reset();
+        editItemForm.clearErrors();
     };
 
-    const handleEditItemSubmit = (e, itemId) => {
-        e.preventDefault();
+    const handleEditItemSubmit = () => {
         editItemForm.patch(
-            route('admin.service-orders.inspection-items.update', [order.id, itemId]),
+            route('admin.service-orders.inspection-items.update', [order.id, editingItem.id]),
             {
                 preserveScroll: true,
                 onSuccess: (page) => {
                     const ok = flashToast(page, 'Item updated');
-                    if (ok) closeEditItemForm();
+                    if (ok) closeEditItemDialog();
                 },
                 onError: () => toast.error('Failed to update item — check the form for errors'),
             }
@@ -519,13 +752,32 @@ export default function Show({
         });
     };
 
-    // Group yang belum punya item sama sekali — dipakai untuk selector
-    // "Add Item to New Group", karena card group cuma dirender kalau
-    // group itu sudah punya item ATAU sedang dalam proses ditambahkan.
-    const groupsWithItems = new Set(
-        (order.inspection_items ?? []).map((item) => item.group)
+    // Group yang punya minimal 1 item — dipakai untuk daftar Tabs (hanya
+    // group yang benar-benar punya isi yang jadi tab).
+    const groupsWithItems = GROUPS.filter((group) =>
+        (order.inspection_items ?? []).some((item) => item.group === group)
     );
-    const missingGroups = GROUPS.filter((group) => !groupsWithItems.has(group));
+    // Group yang belum punya item sama sekali — dipakai untuk selector
+    // "Add Item to New Group", karena tab-nya belum ada sebelum item pertama
+    // ditambahkan.
+    const missingGroups = GROUPS.filter((group) => !groupsWithItems.includes(group));
+
+    // Group yang sudah punya minimal 1 item TAPI belum punya estimation form
+    // terupload — dipakai untuk blokir transisi ke Quality Control di frontend,
+    // selaras dengan guard yang sama di ServiceOrderController::updateStatus().
+    const missingEstimationGroups = groupsWithItems.filter((group) => {
+        const doc = docsByGroup[group];
+        return !doc?.pdf_path;
+    });
+
+    const isQualityControlBlocked =
+        availableTransitions.includes('quality_control') && missingEstimationGroups.length > 0;
+
+    const [activeGroupTab, setActiveGroupTab] = useState(null);
+    const currentGroupTab =
+        activeGroupTab && groupsWithItems.includes(activeGroupTab)
+            ? activeGroupTab
+            : groupsWithItems[0];
 
     // --- Totals ---
 
@@ -612,13 +864,12 @@ export default function Show({
     };
 
     // --- Copy report link + message untuk dikirim manual ke WA customer ---
-    // Muncul begitu order sudah lewat appointment (mulai work_in_progress) —
-    // sebelum itu belum ada apa-apa yang relevan untuk dilihat customer.
-    // Hilang kalau order sudah masuk cabang all_rejected_cancelled.
+    // Muncul HANYA saat order berada di status work_in_progress — begitu
+    // order pindah ke quality_control (dan seterusnya sampai completed),
+    // link ini tidak relevan lagi jadi disembunyikan (permintaan owner).
     const [reportLinkCopied, setReportLinkCopied] = useState(false);
 
-    const canShareReportLink =
-        order.status !== 'appointment' && order.status !== 'all_rejected_cancelled';
+    const canShareReportLink = order.status === 'work_in_progress';
 
     const reportUrl = order.inspection_token
         ? route('public.inspection-report', order.inspection_token)
@@ -666,6 +917,7 @@ export default function Show({
     };
 
     return (
+        <TooltipProvider delayDuration={200}>
         <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
             <Head title={`Service Order #${order.work_order_number ?? order.id}`} />
             {/* Header — back link + judul + status, dipisah dari Card supaya
@@ -839,14 +1091,7 @@ export default function Show({
                             <CardContent className="flex items-end gap-3">
                                 <div className="flex-1 space-y-1.5">
                                     <Label>Group</Label>
-                                    <Select
-                                        value={
-                                            addingToGroup && missingGroups.includes(addingToGroup)
-                                                ? addingToGroup
-                                                : ''
-                                        }
-                                        onValueChange={(value) => openAddItemForm(value)}
-                                    >
+                                    <Select value="" onValueChange={(value) => openAddItemDialog(value)}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select a group without items yet" />
                                         </SelectTrigger>
@@ -864,426 +1109,98 @@ export default function Show({
                     )}
 
                     {/*
-                        Inspection Items — 1 Collapsible per group, urut tetap sesuai
-                        GROUPS, HANYA muncul kalau group itu punya minimal 1 item (atau
-                        sedang dalam proses menambah item pertama). Header collapsed
-                        tetap menampilkan jumlah item + group total supaya order dengan
-                        banyak group tidak jadi scroll panjang untuk sekadar cek angka.
+                        Inspection Items — FIX (layout): sebelumnya 1 Collapsible
+                        Card per group (5 card berulang, masing-masing menumpuk
+                        form add item + tabel + breakdown + estimation form jadi
+                        satu). Sekarang 1 Card + Tabs (1 tab per group yang sudah
+                        punya item), isi tiap tab dipisah jelas: Table item →
+                        breakdown angka → estimation form, dengan Separator di
+                        antaranya. Add/Edit item pindah ke Dialog terpisah,
+                        aksi per-baris pakai icon + Tooltip (bukan teks kecil).
                     */}
-                    {GROUPS.map((group) => {
-                        const groupItems = (order.inspection_items ?? []).filter(
-                            (item) => item.group === group
-                        );
+                    {groupsWithItems.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Inspection Items</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <Tabs value={currentGroupTab} onValueChange={setActiveGroupTab}>
+                                    <TabsList className="w-full justify-start overflow-x-auto">
+                                        {groupsWithItems.map((group) => {
+                                            const count = (order.inspection_items ?? []).filter(
+                                                (item) => item.group === group
+                                            ).length;
+                                            return (
+                                                <TabsTrigger key={group} value={group}>
+                                                    {GROUP_LABEL[group]}
+                                                    <Badge variant="secondary" className="ml-1.5">
+                                                        {count}
+                                                    </Badge>
+                                                </TabsTrigger>
+                                            );
+                                        })}
+                                    </TabsList>
 
-                        if (groupItems.length === 0 && addingToGroup !== group) return null;
+                                    {groupsWithItems.map((group) => {
+                                        const groupItems = (order.inspection_items ?? []).filter(
+                                            (item) => item.group === group
+                                        );
+                                        const breakdown =
+                                            breakdownByGroup?.[group] ?? {
+                                                subtotal: 0,
+                                                vat_amount: 0,
+                                                grand_total: 0,
+                                            };
+                                        const doc = docsByGroup[group];
+                                        const hasFile = doc?.pdf_path;
 
-                        const breakdown =
-                            breakdownByGroup?.[group] ?? { subtotal: 0, vat_amount: 0, grand_total: 0 };
-                        const doc = docsByGroup[group];
-                        const hasFile = doc?.pdf_path;
-                        const isOpen = !collapsedGroups.has(group);
-
-                        return (
-                            <Card key={group}>
-                                <Collapsible open={isOpen} onOpenChange={() => toggleGroup(group)}>
-                                    <CardHeader className="flex flex-row items-center justify-between py-4">
-                                        <CollapsibleTrigger className="flex flex-1 items-center gap-2 text-left">
-                                            <ChevronDown
-                                                className={cn(
-                                                    'h-4 w-4 shrink-0 text-vw-grey transition-transform',
-                                                    !isOpen && '-rotate-90'
-                                                )}
-                                            />
-                                            <CardTitle className="text-base">
-                                                {GROUP_LABEL[group]}
-                                            </CardTitle>
-                                            <Badge variant="secondary">{groupItems.length}</Badge>
-                                            <span className="ml-auto pr-3 text-sm font-medium text-vw-grey">
-                                                {formatCurrency(breakdown.grand_total)}
-                                            </span>
-                                        </CollapsibleTrigger>
-                                        {canEditItems && (
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => openAddItemForm(group)}
-                                            >
-                                                <Plus className="mr-1 h-4 w-4" /> Add Item
-                                            </Button>
-                                        )}
-                                    </CardHeader>
-
-                                    <CollapsibleContent>
-                                        <CardContent className="space-y-4">
-                                            {/* Form tambah item — hanya muncul kalau lagi buka form untuk group ini */}
-                                            {addingToGroup === group && (
-                                                <form
-                                                    onSubmit={handleAddItemSubmit}
-                                                    className="space-y-3 rounded-md border border-vw-blue/30 bg-vw-blue/5 p-4"
-                                                >
-                                                    <div className="space-y-1.5">
-                                                        <Label>Item Name</Label>
-                                                        <Input
-                                                            value={addItemForm.data.name}
-                                                            onChange={(e) =>
-                                                                addItemForm.setData('name', e.target.value)
-                                                            }
-                                                        />
-                                                        {addItemForm.errors.name && (
-                                                            <p className="text-sm text-urgent">
-                                                                {addItemForm.errors.name}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label>Description (optional)</Label>
-                                                        <Textarea
-                                                            value={addItemForm.data.description}
-                                                            onChange={(e) =>
-                                                                addItemForm.setData(
-                                                                    'description',
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            rows={2}
-                                                        />
-                                                    </div>
-                                                    <div className="grid gap-3 sm:grid-cols-2">
-                                                        <div className="space-y-1.5">
-                                                            <Label>Labour Price (IDR)</Label>
-                                                            <Input
-                                                                type="number"
-                                                                value={addItemForm.data.cost_labour}
-                                                                onChange={(e) =>
-                                                                    addItemForm.setData(
-                                                                        'cost_labour',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                            {addItemForm.errors.cost_labour && (
-                                                                <p className="text-sm text-urgent">
-                                                                    {addItemForm.errors.cost_labour}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                        <div className="space-y-1.5">
-                                                            <Label>Part Price (IDR)</Label>
-                                                            <Input
-                                                                type="number"
-                                                                value={addItemForm.data.cost_item}
-                                                                onChange={(e) =>
-                                                                    addItemForm.setData(
-                                                                        'cost_item',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                            {addItemForm.errors.cost_item && (
-                                                                <p className="text-sm text-urgent">
-                                                                    {addItemForm.errors.cost_item}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="grid gap-3 sm:grid-cols-2">
-                                                        <div className="space-y-1.5">
-                                                            <Label>Labour Discount (%)</Label>
-                                                            <Input
-                                                                type="number"
-                                                                min="0"
-                                                                max="100"
-                                                                value={addItemForm.data.discount_labour_percent}
-                                                                onChange={(e) =>
-                                                                    addItemForm.setData(
-                                                                        'discount_labour_percent',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                        </div>
-                                                        <div className="space-y-1.5">
-                                                            <Label>Part Discount (%)</Label>
-                                                            <Input
-                                                                type="number"
-                                                                min="0"
-                                                                max="100"
-                                                                value={addItemForm.data.discount_item_percent}
-                                                                onChange={(e) =>
-                                                                    addItemForm.setData(
-                                                                        'discount_item_percent',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex justify-end gap-2">
+                                        return (
+                                            <TabsContent key={group} value={group} className="mt-4 space-y-4">
+                                                {canEditItems && (
+                                                    <div className="flex justify-end">
                                                         <Button
                                                             type="button"
-                                                            variant="ghost"
                                                             size="sm"
-                                                            onClick={closeAddItemForm}
+                                                            onClick={() => openAddItemDialog(group)}
                                                         >
-                                                            Cancel
-                                                        </Button>
-                                                        <Button
-                                                            type="submit"
-                                                            size="sm"
-                                                            disabled={addItemForm.processing}
-                                                        >
-                                                            {addItemForm.processing ? 'Saving...' : 'Save Item'}
+                                                            <Plus className="mr-1 h-4 w-4" /> Add Item
                                                         </Button>
                                                     </div>
-                                                </form>
-                                            )}
+                                                )}
 
-                                            {/* Daftar item di dalam group ini */}
-                                            <div className="divide-y divide-vw-grey/10">
-                                                {groupItems.map((item) => (
-                                                    <div key={item.id} className="space-y-2 py-3">
-                                                        {editingItemId === item.id ? (
-                                                            <form
-                                                                onSubmit={(e) =>
-                                                                    handleEditItemSubmit(e, item.id)
-                                                                }
-                                                                className="space-y-3 rounded-md border border-vw-blue/30 bg-vw-blue/5 p-4"
-                                                            >
-                                                                <div className="space-y-1.5">
-                                                                    <Label>Item Name</Label>
-                                                                    <Input
-                                                                        value={editItemForm.data.name}
-                                                                        onChange={(e) =>
-                                                                            editItemForm.setData(
-                                                                                'name',
-                                                                                e.target.value
-                                                                            )
-                                                                        }
-                                                                    />
-                                                                    {editItemForm.errors.name && (
-                                                                        <p className="text-sm text-urgent">
-                                                                            {editItemForm.errors.name}
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                                <div className="space-y-1.5">
-                                                                    <Label>Description (optional)</Label>
-                                                                    <Textarea
-                                                                        value={editItemForm.data.description}
-                                                                        onChange={(e) =>
-                                                                            editItemForm.setData(
-                                                                                'description',
-                                                                                e.target.value
-                                                                            )
-                                                                        }
-                                                                        rows={2}
-                                                                    />
-                                                                </div>
-                                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                                    <div className="space-y-1.5">
-                                                                        <Label>Labour Price (IDR)</Label>
-                                                                        <Input
-                                                                            type="number"
-                                                                            value={editItemForm.data.cost_labour}
-                                                                            onChange={(e) =>
-                                                                                editItemForm.setData(
-                                                                                    'cost_labour',
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </div>
-                                                                    <div className="space-y-1.5">
-                                                                        <Label>Part Price (IDR)</Label>
-                                                                        <Input
-                                                                            type="number"
-                                                                            value={editItemForm.data.cost_item}
-                                                                            onChange={(e) =>
-                                                                                editItemForm.setData(
-                                                                                    'cost_item',
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                                    <div className="space-y-1.5">
-                                                                        <Label>Labour Discount (%)</Label>
-                                                                        <Input
-                                                                            type="number"
-                                                                            min="0"
-                                                                            max="100"
-                                                                            value={
-                                                                                editItemForm.data
-                                                                                    .discount_labour_percent
-                                                                            }
-                                                                            onChange={(e) =>
-                                                                                editItemForm.setData(
-                                                                                    'discount_labour_percent',
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </div>
-                                                                    <div className="space-y-1.5">
-                                                                        <Label>Part Discount (%)</Label>
-                                                                        <Input
-                                                                            type="number"
-                                                                            min="0"
-                                                                            max="100"
-                                                                            value={
-                                                                                editItemForm.data
-                                                                                    .discount_item_percent
-                                                                            }
-                                                                            onChange={(e) =>
-                                                                                editItemForm.setData(
-                                                                                    'discount_item_percent',
-                                                                                    e.target.value
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex justify-end gap-2">
-                                                                    <Button
-                                                                        type="button"
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={closeEditItemForm}
-                                                                    >
-                                                                        Cancel
-                                                                    </Button>
-                                                                    <Button
-                                                                        type="submit"
-                                                                        size="sm"
-                                                                        disabled={editItemForm.processing}
-                                                                    >
-                                                                        {editItemForm.processing
-                                                                            ? 'Saving...'
-                                                                            : 'Save Changes'}
-                                                                    </Button>
-                                                                </div>
-                                                            </form>
-                                                        ) : (
-                                                            <>
-                                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                                                    <div className="min-w-0">
-                                                                        <div className="font-medium text-gray-900">
-                                                                            {item.name}
-                                                                        </div>
-                                                                        {item.description && (
-                                                                            <p className="text-sm text-vw-grey">
-                                                                                {item.description}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex items-center justify-between gap-3 sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
-                                                                        <p className="font-medium text-gray-900">
-                                                                            {formatCurrency(itemDisplayTotal(item))}
-                                                                        </p>
-                                                                        <Badge
-                                                                            variant={
-                                                                                ITEM_STATUS_VARIANT[item.status] ??
-                                                                                'secondary'
-                                                                            }
-                                                                        >
-                                                                            {ITEM_STATUS_LABEL[item.status] ??
-                                                                                item.status}
-                                                                        </Badge>
-                                                                    </div>
-                                                                </div>
+                                                <div className="rounded-md border border-vw-grey/20">
+                                                    <Table>
+                                                        <TableHeader>
+                                                            <TableRow>
+                                                                <TableHead>Item</TableHead>
+                                                                <TableHead>Part</TableHead>
+                                                                <TableHead>Labour</TableHead>
+                                                                <TableHead className="text-right">
+                                                                    Final Price
+                                                                </TableHead>
+                                                                <TableHead>Status</TableHead>
+                                                                <TableHead className="w-28" />
+                                                            </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                            {groupItems.map((item) => (
+                                                                <ItemTableRow
+                                                                    key={item.id}
+                                                                    item={item}
+                                                                    canEditItems={canEditItems}
+                                                                    onView={() => setViewingItem(item)}
+                                                                    onEdit={() => openEditItemDialog(item)}
+                                                                    onDelete={() => handleDeleteItem(item)}
+                                                                    onReopen={() => handleReopenItem(item)}
+                                                                />
+                                                            ))}
+                                                        </TableBody>
+                                                    </Table>
+                                                </div>
 
-                                                                <div className="grid grid-cols-2 gap-2 text-xs text-vw-grey sm:grid-cols-4">
-                                                                    <div>
-                                                                        <span className="block">Part price</span>
-                                                                        <span className="text-gray-900">
-                                                                            {formatCurrency(item.cost_item)}
-                                                                        </span>
-                                                                        {Number(item.discount_item_percent) > 0 && (
-                                                                            <span className="ml-1">
-                                                                                (-{item.discount_item_percent}%)
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="block">Labour price</span>
-                                                                        <span className="text-gray-900">
-                                                                            {formatCurrency(item.cost_labour)}
-                                                                        </span>
-                                                                        {Number(item.discount_labour_percent) > 0 && (
-                                                                            <span className="ml-1">
-                                                                                (-{item.discount_labour_percent}%)
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="block">Final price</span>
-                                                                        <span className="text-gray-900">
-                                                                            {item.final_price_snapshot !== null
-                                                                                ? formatCurrency(
-                                                                                      item.final_price_snapshot
-                                                                                  )
-                                                                                : 'Not locked yet'}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="block">Decided at</span>
-                                                                        <span className="text-gray-900">
-                                                                            {item.decided_at
-                                                                                ? formatDate(item.decided_at)
-                                                                                : '—'}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
+                                                <Separator />
 
-                                                                {canEditItems && (
-                                                                    <div className="flex items-center gap-3 pt-1">
-                                                                        {item.status !== 'approved' && (
-                                                                            <>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() =>
-                                                                                        openEditItemForm(item)
-                                                                                    }
-                                                                                    className="flex items-center gap-1 text-xs font-medium text-vw-light-blue hover:underline"
-                                                                                >
-                                                                                    <Pencil className="h-3 w-3" /> Edit
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() =>
-                                                                                        handleDeleteItem(item)
-                                                                                    }
-                                                                                    className="flex items-center gap-1 text-xs font-medium text-urgent hover:underline"
-                                                                                >
-                                                                                    <Trash2 className="h-3 w-3" />{' '}
-                                                                                    Delete
-                                                                                </button>
-                                                                            </>
-                                                                        )}
-                                                                        {item.status === 'rejected' && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleReopenItem(item)}
-                                                                                className="flex items-center gap-1 text-xs font-medium text-amber-600 hover:underline"
-                                                                            >
-                                                                                <RotateCcw className="h-3 w-3" />{' '}
-                                                                                Reopen
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            {/* Cost breakdown khusus group ini */}
-                                            {groupItems.length > 0 && (
-                                                <div className="space-y-1 border-t border-vw-grey/10 pt-3">
+                                                <div className="space-y-1">
                                                     <div className="flex items-center justify-between text-sm">
                                                         <p className="text-vw-grey">Subtotal</p>
                                                         <p className="text-gray-900">
@@ -1297,16 +1214,20 @@ export default function Show({
                                                         </p>
                                                     </div>
                                                     <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                                        <p className="font-semibold text-gray-900">Group Total</p>
+                                                        <p className="font-semibold text-gray-900">
+                                                            Group Total
+                                                        </p>
                                                         <p className="font-semibold text-gray-900">
                                                             {formatCurrency(breakdown.grand_total)}
                                                         </p>
                                                     </div>
                                                 </div>
-                                            )}
 
-                                            {/* Estimation form khusus group ini */}
-                                            {groupItems.length > 0 && (
+                                                <Separator />
+
+                                                {/* Estimation form — dikasih kotak sendiri supaya
+                                                    jelas ini "dokumen", terpisah secara visual dari
+                                                    breakdown angka di atasnya. */}
                                                 <div className="rounded-lg border border-vw-grey/10 p-3">
                                                     <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900">
                                                         <FileText className="h-4 w-4 text-vw-grey" />
@@ -1316,7 +1237,8 @@ export default function Show({
                                                     {!canEditEstimationDocs && (
                                                         <p className="text-xs text-vw-grey">
                                                             Estimation forms can only be uploaded or changed
-                                                            while the order is at Work In Progress.
+                                                            while the order is at Appointment or Work In
+                                                            Progress.
                                                         </p>
                                                     )}
 
@@ -1399,13 +1321,13 @@ export default function Show({
                                                         </p>
                                                     )}
                                                 </div>
-                                            )}
-                                        </CardContent>
-                                    </CollapsibleContent>
-                                </Collapsible>
-                            </Card>
-                        );
-                    })}
+                                            </TabsContent>
+                                        );
+                                    })}
+                                </Tabs>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {(order.inspection_items?.length ?? 0) === 0 && (
                         <Card>
@@ -1467,34 +1389,54 @@ export default function Show({
 
                                 {availableTransitions.length > 0 ? (
                                     <>
-                                        <Select
-                                            value=""
-                                            onValueChange={handleSelectStatus}
-                                            disabled={processing}
+                                        <div
+                                            className={cn(
+                                                'grid gap-2',
+                                                availableTransitions.length > 1 && 'grid-cols-2'
+                                            )}
                                         >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Move to next status" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {availableTransitions.map((status) => (
-                                                    <SelectItem
+                                            {availableTransitions.map((status) => {
+                                                const disabled =
+                                                    (status === 'completed' && !hasInvoice) ||
+                                                    (status === 'quality_control' && isQualityControlBlocked);
+                                                const isDestructive =
+                                                    status === 'all_rejected_cancelled';
+                                                return (
+                                                    <Button
                                                         key={status}
-                                                        value={status}
-                                                        disabled={status === 'completed' && !hasInvoice}
+                                                        type="button"
+                                                        variant={isDestructive ? 'outline' : 'default'}
+                                                        className={cn(
+                                                            isDestructive &&
+                                                                'border-urgent text-urgent hover:bg-urgent/10 hover:text-urgent'
+                                                        )}
+                                                        disabled={disabled || processing}
+                                                        onClick={() => handleSelectStatus(status)}
                                                     >
                                                         {STATUS_LABEL[status]}
-                                                        {status === 'completed' &&
-                                                            !hasInvoice &&
-                                                            ' (upload invoice first)'}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                                    </Button>
+                                                );
+                                            })}
+                                        </div>
                                         {isCompletedBlocked && (
-                                            <p className="text-xs text-urgent">
-                                                Upload minimal 1 invoice PDF dulu sebelum bisa menandai
-                                                order completed.
-                                            </p>
+                                            <Alert>
+                                                <Info className="h-4 w-4" />
+                                                <AlertTitle className="text-sm">Invoice required</AlertTitle>
+                                                <AlertDescription className="text-xs">
+                                                    Upload at least 1 invoice PDF before this order can be marked completed.
+                                                </AlertDescription>
+                                            </Alert>
+                                        )}
+
+                                        {isQualityControlBlocked && (
+                                            <Alert>
+                                                <Info className="h-4 w-4" />
+                                                <AlertTitle className="text-sm">Estimation form required</AlertTitle>
+                                                <AlertDescription className="text-xs">
+                                                    Upload the estimation form for: {missingEstimationGroups.map((g) => GROUP_LABEL[g]).join(', ')}{' '}
+                                                    before this order can move to Quality Control.
+                                                </AlertDescription>
+                                            </Alert>
                                         )}
                                     </>
                                 ) : (
@@ -1529,9 +1471,9 @@ export default function Show({
                         </Card>
 
                         {/* Report Link — copy link + pesan siap kirim jadi 1 klik, SA
-                            tinggal paste manual ke WhatsApp customer. Muncul mulai
-                            work_in_progress (belum relevan saat masih appointment),
-                            hilang kalau order sudah all_rejected_cancelled. */}
+                            tinggal paste manual ke WhatsApp customer. Muncul HANYA
+                            saat status work_in_progress — hilang lagi begitu order
+                            pindah ke quality_control dan seterusnya. */}
                         {canShareReportLink && (
                             <Card>
                                 <CardHeader>
@@ -1565,8 +1507,8 @@ export default function Show({
                             </Card>
                         )}
 
-                        {/* Invoice PDF section — disembunyikan selama work_in_progress
-                            (dan sebelumnya), baru muncul mulai invoice_preparation. */}
+                        {/* Invoice PDF section — disembunyikan selama appointment/
+                            work_in_progress, baru muncul mulai quality_control. */}
                         {showInvoiceSection && (
                             <Card>
                                 <CardHeader>
@@ -1643,212 +1585,257 @@ export default function Show({
                             </Card>
                         )}
 
+                        {/* Payment — FIX (layout): sebelumnya 5 sub-fungsi (bank info,
+                            invoice details, customer receipt, staff receipt, report to
+                            cashier) ditumpuk jadi 1 card panjang. Sekarang dipecah pakai
+                            Accordion, "Invoice Details" default terbuka karena itu yang
+                            paling sering dicek/diedit duluan. */}
                         {showPaymentSection && (
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Payment</CardTitle>
                                 </CardHeader>
-                                <CardContent className="space-y-4">
-                                    {/* Info rekening — statis, PT Wahana Wirawan */}
-                                    <div className="space-y-1.5 rounded-md bg-vw-grey-light p-3 text-xs">
-                                        {BANK_ACCOUNTS.map((acc) => (
-                                            <div key={acc.bank}>
-                                                <p className="font-semibold text-gray-900">{acc.bank}</p>
-                                                <p className="text-vw-grey">{acc.account}</p>
-                                            </div>
-                                        ))}
-                                    </div>
+                                <CardContent>
+                                    <Accordion
+                                        type="single"
+                                        collapsible
+                                        defaultValue="invoice-details"
+                                    >
+                                        <AccordionItem value="bank-accounts">
+                                            <AccordionTrigger>Bank Accounts</AccordionTrigger>
+                                            <AccordionContent>
+                                                <div className="space-y-1.5 rounded-md bg-vw-grey-light p-3 text-xs">
+                                                    {BANK_ACCOUNTS.map((acc) => (
+                                                        <div key={acc.bank}>
+                                                            <p className="font-semibold text-gray-900">
+                                                                {acc.bank}
+                                                            </p>
+                                                            <p className="text-vw-grey">{acc.account}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
 
-                                    {/* Invoice number & bill to */}
-                                    {canEditPayment ? (
-                                        <form onSubmit={handlePaymentDetailsSubmit} className="space-y-2">
-                                            <div className="space-y-1.5">
-                                                <Label>Invoice Number</Label>
-                                                <Input
-                                                    value={paymentDetailsForm.data.invoice_number}
-                                                    onChange={(e) =>
-                                                        paymentDetailsForm.setData(
-                                                            'invoice_number',
-                                                            e.target.value
-                                                        )
-                                                    }
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label>Bill To</Label>
-                                                <Input
-                                                    value={paymentDetailsForm.data.bill_to}
-                                                    onChange={(e) =>
-                                                        paymentDetailsForm.setData('bill_to', e.target.value)
-                                                    }
-                                                />
-                                            </div>
-                                            <Button
-                                                type="submit"
-                                                size="sm"
-                                                disabled={paymentDetailsForm.processing}
-                                            >
-                                                {paymentDetailsForm.processing ? 'Saving...' : 'Save'}
-                                            </Button>
-                                        </form>
-                                    ) : (
-                                        <div className="space-y-1 text-sm">
-                                            <p>
-                                                <span className="text-vw-grey">Invoice Number:</span>{' '}
-                                                {order.invoice_number ?? '—'}
-                                            </p>
-                                            <p>
-                                                <span className="text-vw-grey">Bill To:</span>{' '}
-                                                {order.bill_to ?? '—'}
-                                            </p>
-                                        </div>
-                                    )}
+                                        <AccordionItem value="invoice-details">
+                                            <AccordionTrigger>Invoice Details</AccordionTrigger>
+                                            <AccordionContent>
+                                                {canEditPayment ? (
+                                                    <form
+                                                        onSubmit={handlePaymentDetailsSubmit}
+                                                        className="space-y-2"
+                                                    >
+                                                        <div className="space-y-1.5">
+                                                            <Label>Invoice Number</Label>
+                                                            <Input
+                                                                value={paymentDetailsForm.data.invoice_number}
+                                                                onChange={(e) =>
+                                                                    paymentDetailsForm.setData(
+                                                                        'invoice_number',
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label>Bill To</Label>
+                                                            <Input
+                                                                value={paymentDetailsForm.data.bill_to}
+                                                                onChange={(e) =>
+                                                                    paymentDetailsForm.setData(
+                                                                        'bill_to',
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                            />
+                                                        </div>
+                                                        <Button
+                                                            type="submit"
+                                                            size="sm"
+                                                            disabled={paymentDetailsForm.processing}
+                                                        >
+                                                            {paymentDetailsForm.processing
+                                                                ? 'Saving...'
+                                                                : 'Save'}
+                                                        </Button>
+                                                    </form>
+                                                ) : (
+                                                    <div className="space-y-1 text-sm">
+                                                        <p>
+                                                            <span className="text-vw-grey">
+                                                                Invoice Number:
+                                                            </span>{' '}
+                                                            {order.invoice_number ?? '—'}
+                                                        </p>
+                                                        <p>
+                                                            <span className="text-vw-grey">Bill To:</span>{' '}
+                                                            {order.bill_to ?? '—'}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </AccordionContent>
+                                        </AccordionItem>
 
-                                    {/* Receipt customer (read-only, upload dari halaman publik) */}
-                                    <div className="border-t border-vw-grey/10 pt-3">
-                                        <p className="text-sm font-medium text-gray-900">Customer Receipt</p>
-                                        {order.customer_payment_receipt ? (
-                                            <a
-                                                href={`/storage/${order.customer_payment_receipt.file_path}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-blue-600 underline"
-                                            >
-                                                View receipt
-                                            </a>
-                                        ) : (
-                                            <p className="text-sm text-vw-grey">
-                                                Not uploaded by customer yet.
-                                            </p>
-                                        )}
-                                    </div>
+                                        <AccordionItem value="receipts">
+                                            <AccordionTrigger>Receipts</AccordionTrigger>
+                                            <AccordionContent className="space-y-4">
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900">
+                                                        Customer Receipt
+                                                    </p>
+                                                    {order.customer_payment_receipt ? (
+                                                        <a
+                                                            href={`/storage/${order.customer_payment_receipt.file_path}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-sm text-blue-600 underline"
+                                                        >
+                                                            View receipt
+                                                        </a>
+                                                    ) : (
+                                                        <p className="text-sm text-vw-grey">
+                                                            Not uploaded by customer yet.
+                                                        </p>
+                                                    )}
+                                                </div>
 
-                                    {/* Receipt versi SA */}
-                                    <div className="border-t border-vw-grey/10 pt-3">
-                                        <p className="text-sm font-medium text-gray-900">Staff Receipt</p>
-                                        {order.staff_payment_receipt ? (
-                                            <div className="flex items-center justify-between">
-                                                <a
-                                                    href={`/storage/${order.staff_payment_receipt.file_path}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-sm text-blue-600 underline"
-                                                >
-                                                    View receipt
-                                                </a>
-                                                {canEditPayment && (
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900">
+                                                        Staff Receipt
+                                                    </p>
+                                                    {order.staff_payment_receipt ? (
+                                                        <div className="flex items-center justify-between">
+                                                            <a
+                                                                href={`/storage/${order.staff_payment_receipt.file_path}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-sm text-blue-600 underline"
+                                                            >
+                                                                View receipt
+                                                            </a>
+                                                            {canEditPayment && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="text-urgent hover:text-urgent/80"
+                                                                    onClick={handleDeleteStaffReceipt}
+                                                                >
+                                                                    Delete
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-sm text-vw-grey">
+                                                            No receipt uploaded yet.
+                                                        </p>
+                                                    )}
+                                                    {canEditPayment && (
+                                                        <form
+                                                            onSubmit={handleStaffReceiptUpload}
+                                                            className="mt-2 flex items-center gap-2"
+                                                        >
+                                                            <Input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                                className="text-xs"
+                                                                onChange={handleStaffReceiptChange}
+                                                            />
+                                                            <Button
+                                                                type="submit"
+                                                                size="sm"
+                                                                disabled={
+                                                                    staffReceiptForm.processing ||
+                                                                    !staffReceiptForm.data.receipt
+                                                                }
+                                                            >
+                                                                {staffReceiptForm.processing
+                                                                    ? 'Uploading...'
+                                                                    : 'Upload'}
+                                                            </Button>
+                                                        </form>
+                                                    )}
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
+
+                                        {canEditPayment && (
+                                            <AccordionItem value="report-to-cashier">
+                                                <AccordionTrigger>Report to Cashier</AccordionTrigger>
+                                                <AccordionContent className="space-y-2">
+                                                    {!canReportToCashier && (
+                                                        <p className="text-xs text-amber-600">
+                                                            Fill in Invoice Number, Bill To, and upload
+                                                            at least one receipt before reporting to
+                                                            cashier.
+                                                        </p>
+                                                    )}
+
+                                                    {(order.customer_payment_receipt ||
+                                                        order.staff_payment_receipt) && (
+                                                        <a
+                                                            href={`/storage/${
+                                                                (
+                                                                    order.staff_payment_receipt ??
+                                                                    order.customer_payment_receipt
+                                                                ).file_path
+                                                            }`}
+                                                            download
+                                                            className="block w-full rounded-md border border-vw-grey px-4 py-2 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                                        >
+                                                            Download Receipt
+                                                        </a>
+                                                    )}
                                                     <Button
                                                         type="button"
-                                                        variant="ghost"
+                                                        variant="outline"
                                                         size="sm"
-                                                        className="text-urgent hover:text-urgent/80"
-                                                        onClick={handleDeleteStaffReceipt}
+                                                        className="w-full"
+                                                        onClick={handleCopyMessage}
+                                                        disabled={!canReportToCashier}
                                                     >
-                                                        Delete
+                                                        {copied ? (
+                                                            <>
+                                                                <Check className="mr-1 h-4 w-4" /> Copied!
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Copy className="mr-1 h-4 w-4" /> Copy
+                                                                Message
+                                                            </>
+                                                        )}
                                                     </Button>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-vw-grey">No receipt uploaded yet.</p>
+                                                    {canReportToCashier ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                window.open(
+                                                                    CASHIER_WA_GROUP_URL,
+                                                                    'wa_cashier_tab'
+                                                                )
+                                                            }
+                                                            className="block w-full rounded-md bg-vw-blue px-4 py-2 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
+                                                        >
+                                                            Open Cashier WA Group
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-4 py-2 text-center text-xs font-semibold text-white"
+                                                        >
+                                                            Open Cashier WA Group
+                                                        </button>
+                                                    )}
+                                                    <p className="text-xs text-vw-grey">
+                                                        1) Download the receipt · 2) Copy the message ·
+                                                        3) Open the group and paste the message + attach
+                                                        the receipt manually.
+                                                    </p>
+                                                </AccordionContent>
+                                            </AccordionItem>
                                         )}
-                                        {canEditPayment && (
-                                            <form
-                                                onSubmit={handleStaffReceiptUpload}
-                                                className="mt-2 flex items-center gap-2"
-                                            >
-                                                <Input
-                                                    type="file"
-                                                    accept=".pdf,.jpg,.jpeg,.png"
-                                                    className="text-xs"
-                                                    onChange={handleStaffReceiptChange}
-                                                />
-                                                <Button
-                                                    type="submit"
-                                                    size="sm"
-                                                    disabled={
-                                                        staffReceiptForm.processing ||
-                                                        !staffReceiptForm.data.receipt
-                                                    }
-                                                >
-                                                    {staffReceiptForm.processing ? 'Uploading...' : 'Upload'}
-                                                </Button>
-                                            </form>
-                                        )}
-                                    </div>
-
-                                    {/* Report to Cashier — download receipt + copy pesan template secara
-                                        terpisah, karena link grup WA (beda dari wa.me personal) tidak
-                                        mendukung auto-isi teks pesan. */}
-                                    {canEditPayment && (
-                                        <div className="space-y-2 border-t border-vw-grey/10 pt-3">
-                                            {!canReportToCashier && (
-                                                <p className="text-xs text-amber-600">
-                                                    Fill in Invoice Number, Bill To, and upload at least
-                                                    one receipt before reporting to cashier.
-                                                </p>
-                                            )}
-
-                                            {(order.customer_payment_receipt ||
-                                                order.staff_payment_receipt) && (
-                                                <a
-                                                    href={`/storage/${
-                                                        (
-                                                            order.staff_payment_receipt ??
-                                                            order.customer_payment_receipt
-                                                        ).file_path
-                                                    }`}
-                                                    download
-                                                    className="block w-full rounded-md border border-vw-grey px-4 py-2 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
-                                                >
-                                                    Download Receipt
-                                                </a>
-                                            )}
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="w-full"
-                                                onClick={handleCopyMessage}
-                                                disabled={!canReportToCashier}
-                                            >
-                                                {copied ? (
-                                                    <>
-                                                        <Check className="mr-1 h-4 w-4" /> Copied!
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Copy className="mr-1 h-4 w-4" /> Copy Message
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {canReportToCashier ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        window.open(
-                                                            CASHIER_WA_GROUP_URL,
-                                                            'wa_cashier_tab'
-                                                        )
-                                                    }
-                                                    className="block w-full rounded-md bg-vw-blue px-4 py-2 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
-                                                >
-                                                    Open Cashier WA Group
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    disabled
-                                                    className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-4 py-2 text-center text-xs font-semibold text-white"
-                                                >
-                                                    Open Cashier WA Group
-                                                </button>
-                                            )}
-                                            <p className="text-xs text-vw-grey">
-                                                1) Download the receipt · 2) Copy the message · 3) Open the
-                                                group and paste the message + attach the receipt manually.
-                                            </p>
-                                        </div>
-                                    )}
+                                    </Accordion>
                                 </CardContent>
                             </Card>
                         )}
@@ -1869,6 +1856,153 @@ export default function Show({
                     </div>
                 </div>
             </div>
+
+            {/* View Item Dialog — read-only, tersedia untuk semua item apapun
+                statusnya (termasuk approved, yang tidak lagi bisa dibuka lewat
+                Edit). Menampilkan semua detail sekunder yang di-drop dari
+                tabel: description, harga+discount, final price, decided_at. */}
+            <Dialog open={!!viewingItem} onOpenChange={(open) => !open && setViewingItem(null)}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>{viewingItem?.name}</DialogTitle>
+                    </DialogHeader>
+                    {viewingItem && (
+                        <div className="space-y-4 text-sm">
+                            <div>
+                                <p className="text-vw-grey">Description</p>
+                                <p className="text-gray-900">
+                                    {viewingItem.description || (
+                                        <span className="text-vw-grey">No description.</span>
+                                    )}
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-vw-grey">Part Price</p>
+                                    <p className="text-gray-900">
+                                        {formatCurrency(viewingItem.cost_item)}
+                                        {Number(viewingItem.discount_item_percent) > 0 &&
+                                            ` (-${viewingItem.discount_item_percent}%)`}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-vw-grey">Labour Price</p>
+                                    <p className="text-gray-900">
+                                        {formatCurrency(viewingItem.cost_labour)}
+                                        {Number(viewingItem.discount_labour_percent) > 0 &&
+                                            ` (-${viewingItem.discount_labour_percent}%)`}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-vw-grey">Final Price</p>
+                                    <p className="text-gray-900">
+                                        {viewingItem.final_price_snapshot !== null &&
+                                        viewingItem.final_price_snapshot !== undefined
+                                            ? formatCurrency(viewingItem.final_price_snapshot)
+                                            : 'Not locked yet'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-vw-grey">Decided At</p>
+                                    <p className="text-gray-900">
+                                        {viewingItem.decided_at
+                                            ? formatDate(viewingItem.decided_at)
+                                            : '—'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div>
+                                <p className="text-vw-grey">Status</p>
+                                <Badge
+                                    variant={ITEM_STATUS_VARIANT[viewingItem.status] ?? 'secondary'}
+                                >
+                                    {ITEM_STATUS_LABEL[viewingItem.status] ?? viewingItem.status}
+                                </Badge>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setViewingItem(null)}>
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Add Item Dialog — dipicu dari tombol "Add Item" tiap tab group,
+                atau dari selector "Add Item to a New Group" untuk group yang
+                belum punya tab sama sekali. */}
+            <Dialog
+                open={!!addDialogGroup}
+                onOpenChange={(open) => !open && closeAddItemDialog()}
+            >
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Add Item {addDialogGroup && `— ${GROUP_LABEL[addDialogGroup]}`}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <ItemFormFields
+                        data={addItemForm.data}
+                        errors={addItemForm.errors}
+                        onChange={(field, value) => addItemForm.setData(field, value)}
+                    />
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={closeAddItemDialog}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleAddItemSubmit}
+                            disabled={addItemForm.processing || !addItemForm.data.name.trim()}
+                        >
+                            {addItemForm.processing ? 'Saving...' : 'Add Item'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Item Dialog — cuma dipicu untuk item yang belum approved
+                (lihat guard di ItemTableRow). */}
+            <Dialog
+                open={!!editingItem}
+                onOpenChange={(open) => !open && closeEditItemDialog()}
+            >
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Edit Item</DialogTitle>
+                    </DialogHeader>
+
+                    {editingItem?.status === 'approved' && (
+                        <Alert>
+                            <Info className="h-4 w-4" />
+                            <AlertTitle className="text-sm">This item was already approved</AlertTitle>
+                            <AlertDescription className="text-xs">
+                                Saving changes will reset it to "Waiting Approval" — the customer
+                                will need to review and approve it again.
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
+                    <ItemFormFields
+                        data={editItemForm.data}
+                        errors={editItemForm.errors}
+                        onChange={(field, value) => editItemForm.setData(field, value)}
+                    />
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={closeEditItemDialog}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleEditItemSubmit}
+                            disabled={editItemForm.processing || !editItemForm.data.name.trim()}
+                        >
+                            {editItemForm.processing ? 'Saving...' : 'Save Changes'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Satu AlertDialog generik untuk semua aksi destruktif/berisiko di
                 halaman ini (delete item/invoice/estimation doc/receipt/order,
@@ -1895,5 +2029,6 @@ export default function Show({
                 </AlertDialogContent>
             </AlertDialog>
         </AdminLayout>
+        </TooltipProvider>
     );
 }
