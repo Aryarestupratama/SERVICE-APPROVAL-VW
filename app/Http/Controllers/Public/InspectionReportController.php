@@ -73,6 +73,10 @@ class InspectionReportController extends Controller
                 'inspection_fee_note' => $serviceOrder->inspection_fee_note,
                 'invoice_number' => $serviceOrder->invoice_number,
                 'bill_to' => $serviceOrder->bill_to,
+                // Nilai awal untuk hook polling di sisi frontend — supaya poll
+                // pertama punya basis pembanding tanpa perlu fetch tambahan
+                // begitu halaman dibuka (PROJECT-RULES.md bagian 12.4).
+                'last_activity_at' => optional($serviceOrder->last_activity_at)->toJSON(),
             ],
             'vehicle' => [
                 'plate_number' => $serviceOrder->vehicle->plate_number,
@@ -138,6 +142,21 @@ class InspectionReportController extends Controller
                     'uploaded_at' => $serviceOrder->customerPaymentReceipt->uploaded_at,
                 ]
                 : null,
+        ]);
+    }
+
+    /**
+     * Endpoint super ringan untuk polling + change-detection sisi publik
+     * (PROJECT-RULES.md bagian 12.4 poin 3) — akses pakai token, bukan {id}
+     * langsung, sama seperti endpoint publik lainnya. HANYA mengembalikan
+     * last_activity_at, tidak query relasi apapun.
+     */
+    public function lastActivity(string $token)
+    {
+        $serviceOrder = ServiceOrder::where('inspection_token', $token)->firstOrFail();
+
+        return response()->json([
+            'last_activity_at' => optional($serviceOrder->last_activity_at)->toJSON(),
         ]);
     }
 
@@ -234,17 +253,16 @@ class InspectionReportController extends Controller
             }
 
             $freshItems = $serviceOrder->inspectionItems()->get();
-            $stillPending = $freshItems->contains(fn ($item) => $item->status === 'pending');
-            $allRejected = $freshItems->every(fn ($item) => $item->status === 'rejected');
-            $allApproved = $freshItems->every(fn ($item) => $item->status === 'approved');
+            $stillPending = ServiceOrder::hasPendingItems($freshItems);
 
-            $itemsApprovalStatus = match (true) {
-                $allRejected => 'rejected',
-                $allApproved => 'approved',
-                default => 'partially_approved',
-            };
-
-            $updates = ['items_approval_status' => $itemsApprovalStatus];
+            $updates = [
+                'items_approval_status' => ServiceOrder::computeApprovalStatus($freshItems),
+                // Selalu disentuh di sini (bukan cuma saat !$stillPending di
+                // bawah) karena keputusan approve/reject tetap perubahan
+                // relevan buat polling admin walau negosiasi belum final
+                // (PROJECT-RULES.md bagian 12.4 poin 2).
+                'last_activity_at' => now(),
+            ];
 
             // Negosiasi baru dianggap final kalau tidak ada item pending tersisa.
             // Selama masih ada yang pending (skenario reopen item di masa depan),
@@ -256,7 +274,7 @@ class InspectionReportController extends Controller
                 // kalau benar-benar semua item ditolak, order dibatalkan.
                 // Selain itu (approved semua/sebagian), status TETAP 'work_in_progress'
                 // — SA yang lanjutkan manual ke quality_control kapan siap.
-                if ($allRejected) {
+                if ($updates['items_approval_status'] === ServiceOrder::ITEMS_APPROVAL_REJECTED) {
                     $updates['status'] = ServiceOrder::STATUS_ALL_REJECTED_CANCELLED;
                 }
             }
@@ -309,6 +327,8 @@ class InspectionReportController extends Controller
             if ($oldPath) {
                 Storage::disk('public')->delete($oldPath);
             }
+
+            $serviceOrder->touchActivity();
         });
 
         return back()->with('success', 'Payment receipt uploaded.');

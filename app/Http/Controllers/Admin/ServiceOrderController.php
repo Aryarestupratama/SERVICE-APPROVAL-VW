@@ -347,7 +347,7 @@ class ServiceOrderController extends Controller
             'customer_complaint' => ['nullable', 'string'],
         ]);
 
-        $serviceOrder->update($validated);
+        $serviceOrder->update($validated + ['last_activity_at' => now()]);
 
         return back()->with('success', 'Customer complaint saved successfully.');
     }
@@ -379,36 +379,13 @@ class ServiceOrderController extends Controller
             if (empty($serviceOrder->finalized_at)) {
                 return back()->with('error', 'Cannot move to Quality Control yet — the customer has not finished deciding on all inspection items.');
             }
-
-            // NEW: every group that has at least 1 item MUST already have an
-            // estimation form uploaded, because this form is what stays visible
-            // to the customer on the public page from Work In Progress through QC.
-            $groupsWithItems = $serviceOrder->inspectionItems()
-                ->select('group')
-                ->distinct()
-                ->pluck('group');
-
-            $groupsWithDocs = $serviceOrder->estimationDocuments()
-                ->whereIn('group', $groupsWithItems)
-                ->whereNotNull('pdf_path')
-                ->pluck('group');
-
-            $missingGroups = $groupsWithItems->diff($groupsWithDocs);
-
-            if ($missingGroups->isNotEmpty()) {
-                $labels = $missingGroups
-                    ->map(fn ($g) => InspectionItem::GROUP_LABELS[$g] ?? ucfirst(str_replace('_', ' ', $g)))
-                    ->implode(', ');
-
-                return back()->with('error', "Cannot move to Quality Control yet — the estimation form has not been uploaded for group: {$labels}.");
-            }
         }
 
         if ($newStatus === ServiceOrder::STATUS_COMPLETED && !$serviceOrder->hasInvoiceUploaded()) {
             return back()->with('error', 'Upload at least 1 invoice PDF before marking the order as complete.');
         }
 
-        $updates = ['status' => $newStatus];
+        $updates = ['status' => $newStatus, 'last_activity_at' => now()];
 
         $serviceOrder->update($updates);
 
@@ -441,6 +418,7 @@ class ServiceOrderController extends Controller
         $serviceOrder->update([
             'status' => $target,
             'finalized_at' => $stillPending ? null : now(),
+            'last_activity_at' => now(),
         ]);
 
         return back()->with('success', "Status reverted to {$target}.");
@@ -660,6 +638,8 @@ class ServiceOrderController extends Controller
             if ($oldPath) {
                 Storage::disk('public')->delete($oldPath);
             }
+
+            $serviceOrder->touchActivity();
         });
 
         return back()->with('success', 'Estimation form uploaded successfully.');
@@ -682,6 +662,7 @@ class ServiceOrderController extends Controller
         }
 
         $estimationDocument->delete();
+        $serviceOrder->touchActivity();
 
         return back()->with('success', 'Estimation form deleted successfully.');
     }
@@ -716,6 +697,8 @@ class ServiceOrderController extends Controller
             if ($oldPath) {
                 Storage::disk('public')->delete($oldPath);
             }
+
+            $serviceOrder->touchActivity();
         });
 
         return back()->with('success', 'Invoice PDF uploaded successfully.');
@@ -737,6 +720,7 @@ class ServiceOrderController extends Controller
 
         Storage::disk('public')->delete($invoice->file_path);
         $invoice->delete();
+        $serviceOrder->touchActivity();
 
         return back()->with('success', 'Invoice PDF deleted successfully.');
     }
@@ -754,7 +738,7 @@ class ServiceOrderController extends Controller
             'bill_to' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $serviceOrder->update($validated);
+        $serviceOrder->update($validated + ['last_activity_at' => now()]);
 
         return back()->with('success', 'Payment details saved successfully.');
     }
@@ -792,6 +776,11 @@ class ServiceOrderController extends Controller
             if ($oldPath) {
                 Storage::disk('public')->delete($oldPath);
             }
+
+            // Tidak eksplisit disebut di daftar PROJECT-RULES.md 12.4 poin 2,
+            // tapi bukti bayar staff juga tampil di halaman ini — disertakan
+            // di sini supaya audit titik perubahan benar-benar menyeluruh.
+            $serviceOrder->touchActivity();
         });
 
         return back()->with('success', 'Receipt uploaded successfully.');
@@ -809,6 +798,7 @@ class ServiceOrderController extends Controller
 
         Storage::disk('public')->delete($receipt->file_path);
         $receipt->delete();
+        $serviceOrder->touchActivity();
 
         return back()->with('success', 'Receipt deleted successfully.');
     }
@@ -885,6 +875,22 @@ class ServiceOrderController extends Controller
             ->with('success', 'Service order permanently deleted.');
     }
 
+    /**
+     * Endpoint super ringan untuk polling + change-detection sisi admin
+     * (PROJECT-RULES.md bagian 12.4 poin 3) — HANYA mengembalikan
+     * last_activity_at, bukan data order lengkap. Dipanggil dari
+     * Admin/ServiceOrders/Show.jsx tiap beberapa detik selama tab aktif.
+     * Rate-limit dipasang di routes/web.php (throttle), bukan di sini.
+     */
+    public function lastActivity(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        return response()->json([
+            'last_activity_at' => optional($serviceOrder->last_activity_at)->toJSON(),
+        ]);
+    }
+
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void
     {
         $user = $request->user();
@@ -906,19 +912,15 @@ class ServiceOrderController extends Controller
     {
         $freshItems = $serviceOrder->inspectionItems()->get();
 
-        $stillPending = $freshItems->contains(fn ($item) => $item->status === 'pending');
-        $allRejected = $freshItems->isNotEmpty() && $freshItems->every(fn ($item) => $item->status === 'rejected');
-        $allApproved = $freshItems->isNotEmpty() && $freshItems->every(fn ($item) => $item->status === 'approved');
-
-        $itemsApprovalStatus = match (true) {
-            $allRejected => 'rejected',
-            $allApproved => 'approved',
-            default => 'partially_approved',
-        };
-
-        $updates = ['items_approval_status' => $itemsApprovalStatus];
-        $updates['finalized_at'] = $stillPending ? null : now();
-
-        $serviceOrder->update($updates);
+        // Dipanggil dari storeInspectionItem/updateInspectionItem/
+        // destroyInspectionItem/reopenInspectionItem — jadi last_activity_at
+        // disertakan di sini sekali saja (bukan diulang manual di tiap
+        // pemanggil) supaya keempat aksi itu otomatis ter-cover untuk
+        // polling + change-detection (PROJECT-RULES.md bagian 12.4).
+        $serviceOrder->update([
+            'items_approval_status' => ServiceOrder::computeApprovalStatus($freshItems),
+            'finalized_at' => ServiceOrder::hasPendingItems($freshItems) ? null : now(),
+            'last_activity_at' => now(),
+        ]);
     }
 }

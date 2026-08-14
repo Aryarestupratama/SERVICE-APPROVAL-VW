@@ -31,6 +31,14 @@ Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionRep
 Route::post('report/{token}/payment-receipt', [InspectionReportController::class, 'uploadPaymentReceipt'])
     ->name('public.report.upload-payment-receipt');
 
+// Endpoint ringan untuk polling + change-detection (PROJECT-RULES.md bagian
+// 12.4/12.6) — dipanggil sering (tiap beberapa detik) dari tab report yang
+// terbuka, jadi diberi throttle khusus terpisah dari route publik lain di
+// atas supaya tidak kena limit yang sama dengan aksi submit/upload.
+Route::get('report/{token}/last-activity', [InspectionReportController::class, 'lastActivity'])
+    ->middleware('throttle:120,1')
+    ->name('public.report.last-activity');
+
 Route::middleware(['auth', 'verified'])
     ->prefix('admin')
     ->name('admin.')
@@ -86,6 +94,14 @@ Route::middleware(['auth', 'verified'])
             Route::patch('service-orders/{serviceOrder}/status',
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
+
+            // Endpoint ringan untuk polling + change-detection sisi admin
+            // (PROJECT-RULES.md bagian 12.4/12.6) — throttle terpisah dari
+            // batas default karena dipanggil sering per tab yang terbuka.
+            Route::get('service-orders/{serviceOrder}/last-activity',
+                [ServiceOrderController::class, 'lastActivity'])
+                ->middleware('throttle:120,1')
+                ->name('service-orders.last-activity');
 
             // Update kolom customer_complaint — editable saat appointment &
             // work_in_progress, dikunci backend (isCustomerComplaintEditable())

@@ -37,10 +37,14 @@ class User extends Authenticatable
      * Sama persis dengan pola Customer::phone() — lihat PROJECT-RULES.md
      * bagian 2 & TODO bagian 7 (link WhatsApp SA di halaman publik).
      */
-    protected function phone(): Attribute
+   protected function phone(): Attribute
     {
         return Attribute::make(
-            set: function (string $value) {
+            set: function (?string $value) {
+                if ($value === null || trim($value) === '') {
+                    return null;
+                }
+
                 $digits = preg_replace('/\D/', '', $value);
 
                 if (str_starts_with($digits, '0')) {

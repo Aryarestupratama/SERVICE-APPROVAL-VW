@@ -1,11 +1,12 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles, MapPin, Globe } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
 import { Progress } from '@/Components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/Components/ui/sheet';
+import { usePollLastActivity } from '@/Hooks/usePollLastActivity';
 
 function StatusStamp({ status }) {
     if (status === 'pending') {
@@ -89,6 +90,28 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
+// Kontribusi 1 item ke Final Total — item 'rejected' dikecualikan (return
+// null, sudah benar sebelumnya). Item yang sudah locked
+// (final_price_snapshot terisi) TETAP pakai snapshot itu sebagai total
+// (tidak pernah berubah), tapi subtotal & VAT-nya dipecah balik pakai
+// vatPercent SAAT INI — valid selama tarif PPN belum pernah diganti sejak
+// item itu di-lock. Kalau tarif PPN memang berubah di kemudian hari,
+// breakdown Subtotal/VAT bisa sedikit meleset, TAPI Final Total tetap
+// akurat karena tetap pakai angka snapshot asli.
+function itemContribution(item, vatPercent) {
+    if (item.status === 'rejected') return null;
+
+    if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
+        const total = item.final_price_snapshot;
+        const sub = total / (1 + vatPercent / 100);
+        return { subtotal: sub, vat: total - sub, total };
+    }
+
+    const sub = itemSubtotal(item);
+    const vat = sub * (vatPercent / 100);
+    return { subtotal: sub, vat, total: sub + vat };
+}
+
 function youtubeEmbedUrl(url) {
     if (!url) return null;
     try {
@@ -143,12 +166,51 @@ export default function InspectionReport({
     );
     const hasDecisionToSubmit = decidedThisRound.length > 0;
 
+    // Ref supaya effect polling di bawah selalu baca nilai TERBARU tanpa
+    // perlu masuk dependency array (yang akan bikin effect re-subscribe
+    // tiap render karena hasDecisionToSubmit berubah tiap klik approve/reject).
+    const hasDecisionToSubmitRef = useRef(hasDecisionToSubmit);
+    hasDecisionToSubmitRef.current = hasDecisionToSubmit;
+
+    // Polling + change-detection (PROJECT-RULES.md bagian 12) — customer bisa
+    // saja masih membuka tab ini sementara SA update status/upload dokumen di
+    // admin. Sinkronkan `items` dari prop server yang baru HANYA kalau
+    // customer belum punya keputusan approve/reject lokal yang belum
+    // disubmit — supaya reload otomatis di background TIDAK menghapus
+    // pilihan customer yang belum sempat ditekan "Submit".
+    useEffect(() => {
+        if (!hasDecisionToSubmitRef.current) {
+            setItems(initialItems);
+        }
+    }, [initialItems]);
+
+    usePollLastActivity({
+        url: route('public.report.last-activity', token),
+        initialValue: order.last_activity_at,
+        only: ['order', 'items', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'],
+        intervalMs: 4000,
+    });
+
     const vatPercent = Number(settings.ppn_percent ?? 0);
-    const subtotal = items
-        .filter((item) => item.status !== 'rejected')
-        .reduce((sum, item) => sum + itemSubtotal(item), 0);
-    const vatAmount = subtotal * (vatPercent / 100);
-    const grandTotal = subtotal + vatAmount;
+
+    // CHANGED: item 'rejected' tetap dikecualikan (sudah benar sebelumnya).
+    // Yang baru: item yang sudah locked (final_price_snapshot terisi) tetap
+    // pakai snapshot sebagai Final Total (tidak pernah berubah), tapi
+    // Subtotal/VAT-nya dipecah balik pakai vatPercent saat ini — valid
+    // selama tarif PPN belum pernah diganti sejak item itu di-approve.
+    // Lihat catatan di itemContribution() di atas.
+    let subtotal = 0;
+    let vatAmount = 0;
+    let grandTotal = 0;
+
+    for (const item of items) {
+        const contribution = itemContribution(item, vatPercent);
+        if (!contribution) continue; // item rejected, dilewati
+
+        subtotal += contribution.subtotal;
+        vatAmount += contribution.vat;
+        grandTotal += contribution.total;
+    }
 
     const decidedApprovedSubtotal = decidedThisRound
         .filter((item) => item.status === 'approved')

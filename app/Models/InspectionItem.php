@@ -38,11 +38,11 @@ class InspectionItem extends Model
     protected function casts(): array
     {
         return [
-            'cost_item' => 'decimal:2',
-            'cost_labour' => 'decimal:2',
-            'discount_item_percent' => 'decimal:2',
-            'discount_labour_percent' => 'decimal:2',
-            'final_price_snapshot' => 'decimal:2',
+            'cost_item' => 'integer',
+            'cost_labour' => 'integer',
+            'discount_item_percent' => 'integer',
+            'discount_labour_percent' => 'integer',
+            'final_price_snapshot' => 'integer',
             'decided_at' => 'datetime',
         ];
     }

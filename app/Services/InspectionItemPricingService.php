@@ -10,19 +10,10 @@ class InspectionItemPricingService
 {
     /**
      * Hitung & kunci final_price_snapshot untuk satu inspection item.
-     *
-     * Aturan (PROJECT-RULES.md bagian 2, dikonfirmasi owner 2026-07-31):
-     * - Hanya berlaku saat item BARU SAJA di-approve customer.
-     * - Sekali terisi, snapshot TIDAK PERNAH dihitung ulang / diedit lagi —
-     *   diskon juga ikut locked di titik ini, jadi method ini idempotent:
-     *   kalau snapshot sudah ada, langsung return apa adanya tanpa recalculate.
-     * - PPN diambil dari settings.ppn_percent YANG BERLAKU SAAT approve,
-     *   bukan on-the-fly, supaya invoice lama tidak berubah retroaktif
-     *   kalau tarif PPN diganti admin di kemudian hari.
+     * (Tidak berubah dari sebelumnya.)
      */
     public function lockFinalPrice(InspectionItem $item): InspectionItem
     {
-        // Idempotent guard — sudah pernah dikunci sebelumnya, jangan sentuh lagi.
         if ($item->final_price_snapshot !== null) {
             return $item;
         }
@@ -49,7 +40,7 @@ class InspectionItemPricingService
         $subtotal = $itemAfterDiscount + $labourAfterDiscount;
         $finalPrice = $subtotal * (1 + $ppnPercent / 100);
 
-        $item->final_price_snapshot = round($finalPrice, 2);
+        $item->final_price_snapshot = round($finalPrice);
         $item->save();
 
         return $item;
@@ -61,11 +52,50 @@ class InspectionItemPricingService
     }
 
     /**
-     * Total grand total untuk satu service order — jumlah final_price_snapshot
-     * semua item yang statusnya approved. Item pending/rejected tidak dihitung.
+     * Kontribusi 1 item ke total — item 'rejected' dikecualikan (return
+     * null). Item yang sudah locked (final_price_snapshot terisi) TETAP
+     * pakai snapshot itu sebagai 'total' (tidak pernah berubah), tapi
+     * subtotal & VAT-nya dipecah balik pakai $vatPercent SAAT INI — ini
+     * valid selama tarif PPN belum pernah diganti sejak item itu di-lock.
+     * Kalau tarif PPN memang berubah di kemudian hari, breakdown
+     * subtotal/vat bisa sedikit meleset, TAPI 'total' tetap akurat karena
+     * tetap pakai angka snapshot asli, bukan dihitung ulang dari awal.
      *
-     * Catatan: TODO bagian 7C #2 menyebut "grand total per service_order belum
-     * diimplementasi" — method ini yang mengisi kebutuhan itu.
+     * Ini SATU-SATUNYA tempat aturan ini didefinisikan — dipakai oleh
+     * breakdownByGroup() supaya konsisten dengan Show.jsx & InspectionReport.jsx
+     * di frontend yang menerapkan logika identik.
+     */
+    private function itemContribution(InspectionItem $item, float $vatPercent): ?array
+    {
+        if ($item->status === 'rejected') {
+            return null;
+        }
+
+        if ($item->final_price_snapshot !== null) {
+            $total = (float) $item->final_price_snapshot;
+            $sub = $total / (1 + $vatPercent / 100);
+
+            return [
+                'subtotal' => $sub,
+                'vat' => $total - $sub,
+                'total' => $total,
+            ];
+        }
+
+        $sub = $this->itemSubtotal($item);
+        $vat = $sub * ($vatPercent / 100);
+
+        return [
+            'subtotal' => $sub,
+            'vat' => $vat,
+            'total' => $sub + $vat,
+        ];
+    }
+
+    /**
+     * Total grand total untuk satu service order — jumlah item approved
+     * (pakai final_price_snapshot yang sudah locked). Item pending/rejected
+     * tidak dihitung. (Tidak berubah dari sebelumnya.)
      */
     public function grandTotalForOrder(iterable $inspectionItems): float
     {
@@ -81,14 +111,14 @@ class InspectionItemPricingService
     }
 
     /**
-     * Breakdown subtotal/VAT/grand total per kelompok (group) — versi ESTIMASI,
-     * live calculation dari semua item apapun statusnya (pending/approved/rejected),
-     * pakai VAT rate yang berlaku SAAT INI (bukan snapshot).
+     * Breakdown subtotal/VAT/grand total per kelompok (group) — versi
+     * ESTIMASI, live calculation dari item apapun statusnya KECUALI
+     * rejected (dikecualikan), pakai VAT rate yang berlaku SAAT INI.
      *
-     * Beda dengan grandTotalForOrder() yang cuma hitung item approved pakai
-     * final_price_snapshot yang sudah dikunci — dua-duanya sengaja dipertahankan
-     * terpisah (dikonfirmasi owner 2026-08-03): satu untuk "kalau semua item
-     * disetujui hari ini segini totalnya", satu untuk "yang sudah pasti approved".
+     * CHANGED: item 'rejected' sekarang dikecualikan dari perhitungan (dulu
+     * ikut dijumlahkan). Item yang sudah locked pakai final_price_snapshot
+     * sebagai basis grand_total (tidak pernah berubah), tapi subtotal & vat
+     * dipecah balik pakai $vatPercent saat ini — lihat itemContribution().
      */
     public function breakdownByGroup(iterable $inspectionItems, ?float $vatPercent = null): array
     {
@@ -101,17 +131,26 @@ class InspectionItemPricingService
 
         $result = [];
         foreach ($itemsByGroup as $group => $items) {
-            $subtotal = array_reduce(
-                $items,
-                fn ($carry, $item) => $carry + $this->itemSubtotal($item),
-                0.0
-            );
-            $vatAmount = $subtotal * ($vatPercent / 100);
+            $subtotal = 0.0;
+            $vatAmount = 0.0;
+            $grandTotal = 0.0;
+
+            foreach ($items as $item) {
+                $contribution = $this->itemContribution($item, $vatPercent);
+
+                if ($contribution === null) {
+                    continue; // rejected, dikecualikan
+                }
+
+                $subtotal += $contribution['subtotal'];
+                $vatAmount += $contribution['vat'];
+                $grandTotal += $contribution['total'];
+            }
 
             $result[$group] = [
                 'subtotal' => round($subtotal, 2),
                 'vat_amount' => round($vatAmount, 2),
-                'grand_total' => round($subtotal + $vatAmount, 2),
+                'grand_total' => round($grandTotal, 2),
             ];
         }
 

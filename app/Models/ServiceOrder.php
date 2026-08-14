@@ -47,6 +47,7 @@ class ServiceOrder extends Model
         'finalized_at',
         'invoice_number',
         'bill_to',
+        'last_activity_at',
     ];
 
     protected function casts(): array
@@ -56,6 +57,7 @@ class ServiceOrder extends Model
             'inspection_token_expires_at' => 'datetime',
             'finalized_at' => 'datetime',
             'status_changed_at' => 'datetime',
+            'last_activity_at' => 'datetime',
         ];
     }
 
@@ -146,6 +148,56 @@ class ServiceOrder extends Model
     public function isCustomerComplaintEditable(): bool
     {
         return in_array($this->status, self::CUSTOMER_COMPLAINT_EDITABLE_STATUSES, true);
+    }
+
+    /**
+     * Hitung items_approval_status dari koleksi inspection items yang
+     * diberikan. Satu-satunya tempat logika ini didefinisikan — sebelumnya
+     * ditulis ulang terpisah di ServiceOrderController::recalculateApprovalStatus()
+     * dan InspectionReportController::submitDecisions() dengan guard
+     * isNotEmpty() yang tidak konsisten antara keduanya. Sekarang kedua
+     * controller memanggil method ini.
+     *
+     * @param \Illuminate\Support\Collection<int, InspectionItem> $items
+     */
+    public static function computeApprovalStatus($items): string
+    {
+        $allRejected = $items->isNotEmpty() && $items->every(fn ($item) => $item->status === 'rejected');
+        $allApproved = $items->isNotEmpty() && $items->every(fn ($item) => $item->status === 'approved');
+
+        return match (true) {
+            $allRejected => self::ITEMS_APPROVAL_REJECTED,
+            $allApproved => self::ITEMS_APPROVAL_APPROVED,
+            default => self::ITEMS_APPROVAL_PARTIALLY_APPROVED,
+        };
+    }
+
+    /**
+     * Cek apakah masih ada item berstatus 'pending' di koleksi yang
+     * diberikan — dipakai bersamaan dengan computeApprovalStatus() untuk
+     * menentukan finalized_at di kedua controller.
+     *
+     * @param \Illuminate\Support\Collection<int, InspectionItem> $items
+     */
+    public static function hasPendingItems($items): bool
+    {
+        return $items->contains(fn ($item) => $item->status === 'pending');
+    }
+
+    /**
+     * Tandai order ini "baru saja berubah" untuk keperluan polling +
+     * change-detection (PROJECT-RULES.md bagian 12) — dipanggil di setiap
+     * titik perubahan yang relevan ditampilkan di Admin/ServiceOrders/Show.jsx
+     * atau Public/InspectionReport.jsx. Satu-satunya tempat kolom
+     * last_activity_at disentuh secara eksplisit di luar update() yang sudah
+     * menyertakan kolom ini di array-nya sendiri (lihat pemanggil di kedua
+     * controller). Query terpisah (bukan digabung ke update() lain) supaya
+     * tetap konsisten dipanggil walau tidak ada kolom lain yang berubah,
+     * misalnya saat upload/delete file.
+     */
+    public function touchActivity(): void
+    {
+        $this->touch('last_activity_at');
     }
 
     public function invoice()

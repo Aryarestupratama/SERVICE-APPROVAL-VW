@@ -34,6 +34,7 @@ return new class extends Migration
             // Di-set otomatis lewat model event `saving` di ServiceOrder.php,
             // BUKAN di-set manual di controller manapun.
             $table->timestamp('status_changed_at')->nullable();
+            $table->timestamp('last_activity_at')->nullable();
 
             $table->enum('items_approval_status', [
                 'pending',

@@ -74,6 +74,7 @@ import {
     Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePollLastActivity } from '@/Hooks/usePollLastActivity';
 
 const ALLOWED_TRANSITIONS = {
     appointment: ['work_in_progress'],
@@ -183,6 +184,28 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
+// Kontribusi 1 item ke Order Totals — item 'rejected' dikecualikan (return
+// null). Item yang sudah locked (final_price_snapshot terisi) TETAP pakai
+// snapshot itu sebagai total (tidak pernah berubah), tapi subtotal & VAT-nya
+// dipecah balik pakai vatPercent SAAT INI (settings.ppn_percent) — ini valid
+// selama tarif PPN belum pernah diganti sejak item itu di-lock. Kalau tarif
+// PPN memang berubah di kemudian hari, breakdown Subtotal/VAT baris ini bisa
+// sedikit meleset, TAPI Grand Total tetap akurat karena tetap pakai angka
+// snapshot asli, bukan dihitung ulang dari awal.
+function itemContribution(item, vatPercent) {
+    if (item.status === 'rejected') return null;
+
+    if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
+        const total = Number(item.final_price_snapshot);
+        const sub = total / (1 + vatPercent / 100);
+        return { subtotal: sub, vat: total - sub, total };
+    }
+
+    const sub = itemSubtotal(item);
+    const vat = sub * (vatPercent / 100);
+    return { subtotal: sub, vat, total: sub + vat };
+}
+
 // Map estimationDocuments (array, bisa cuma sebagian group yang ada baris-nya)
 // jadi lookup by group.
 function estimationDocsByGroup(docs) {
@@ -244,9 +267,9 @@ function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
 // backend 'numeric'.
 function CurrencyInput({ id, value, onChange, placeholder }) {
     const formatDisplay = (val) => {
-        const digits = String(val ?? '').replace(/\D/g, '');
-        if (digits === '') return '';
-        return new Intl.NumberFormat('id-ID').format(Number(digits));
+        const num = Math.round(Number(val ?? 0));
+        if (!num) return '';
+        return new Intl.NumberFormat('id-ID').format(num);
     };
 
     const [display, setDisplay] = useState(formatDisplay(value));
@@ -416,6 +439,18 @@ export default function Show({
 }) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === 'admin';
+
+    // Polling + change-detection (PROJECT-RULES.md bagian 12) — supaya SA/admin
+    // tidak perlu klik "Refresh Page" manual saat customer approve/reject item
+    // dari link publik sementara halaman ini masih terbuka. Tombol "Refresh
+    // Page" tetap dipertahankan sebagai fallback untuk user awam yang kurang
+    // familiar teknologi (lihat card "Update Status Progress" di bawah).
+    usePollLastActivity({
+        url: route('admin.service-orders.last-activity', order.id),
+        initialValue: order.last_activity_at,
+        only: ['order', 'breakdownByGroup', 'customerComplaintEditable'],
+        intervalMs: 4000,
+    });
 
     // --- Generic confirm dialog (satu state untuk semua aksi destruktif/berisiko) ---
     // Menggantikan seluruh window.confirm() sebelumnya, konsisten dengan pola
@@ -762,17 +797,6 @@ export default function Show({
     // ditambahkan.
     const missingGroups = GROUPS.filter((group) => !groupsWithItems.includes(group));
 
-    // Group yang sudah punya minimal 1 item TAPI belum punya estimation form
-    // terupload — dipakai untuk blokir transisi ke Quality Control di frontend,
-    // selaras dengan guard yang sama di ServiceOrderController::updateStatus().
-    const missingEstimationGroups = groupsWithItems.filter((group) => {
-        const doc = docsByGroup[group];
-        return !doc?.pdf_path;
-    });
-
-    const isQualityControlBlocked =
-        availableTransitions.includes('quality_control') && missingEstimationGroups.length > 0;
-
     const [activeGroupTab, setActiveGroupTab] = useState(null);
     const currentGroupTab =
         activeGroupTab && groupsWithItems.includes(activeGroupTab)
@@ -781,10 +805,27 @@ export default function Show({
 
     // --- Totals ---
 
-    const subtotal =
-        order.inspection_items?.reduce((sum, item) => sum + itemSubtotal(item), 0) ?? 0;
-    const vatAmount = subtotal * (vatPercent / 100);
-    const grandTotal = subtotal + vatAmount;
+    // CHANGED: sebelumnya menjumlahkan SEMUA item (termasuk rejected) dan
+    // selalu recompute VAT pakai vatPercent saat ini, meskipun item itu
+    // sudah 'approved' & final_price_snapshot-nya sudah locked. Sekarang:
+    // - item 'rejected' dikecualikan dari Subtotal/VAT/Grand Total
+    // - item locked: Grand Total tetap pakai final_price_snapshot (tidak
+    //   pernah berubah), Subtotal/VAT-nya dipecah balik pakai vatPercent
+    //   saat ini — valid selama tarif PPN belum pernah diganti sejak item
+    //   itu di-lock (lihat catatan di itemContribution())
+    // - item belum locked tetap dihitung live pakai vatPercent saat ini
+    let subtotal = 0;
+    let vatAmount = 0;
+    let grandTotal = 0;
+
+    for (const item of order.inspection_items ?? []) {
+        const contribution = itemContribution(item, vatPercent);
+        if (!contribution) continue; // item rejected, dilewati
+
+        subtotal += contribution.subtotal;
+        vatAmount += contribution.vat;
+        grandTotal += contribution.total;
+    }
 
     // Grand total khusus item yang sudah approved (final_price_snapshot sudah
     // termasuk VAT saat dikunci) — permintaan owner.
@@ -1215,7 +1256,7 @@ export default function Show({
                                                     </div>
                                                     <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
                                                         <p className="font-semibold text-gray-900">
-                                                            Group Total
+                                                            Estimated Group Total
                                                         </p>
                                                         <p className="font-semibold text-gray-900">
                                                             {formatCurrency(breakdown.grand_total)}
@@ -1337,7 +1378,6 @@ export default function Show({
                         </Card>
                     )}
 
-                    {/* Grand total gabungan seluruh group + grand total khusus approved */}
                     {(order.inspection_items?.length ?? 0) > 0 && (
                         <Card>
                             <CardHeader>
@@ -1353,13 +1393,36 @@ export default function Show({
                                     <p className="text-gray-900">{formatCurrency(vatAmount)}</p>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                    <p className="font-semibold text-gray-900">Grand Total</p>
+                                    <div className="flex items-center gap-1">
+                                        <p className="font-semibold text-gray-900">Estimated Grand Total</p>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
+                                            </TooltipTrigger>
+                                            <TooltipContent className="max-w-64">
+                                                Includes approved items (locked) and pending
+                                                items (still an estimate — may change until
+                                                decided).
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
                                     <p className="font-semibold text-gray-900">
                                         {formatCurrency(grandTotal)}
                                     </p>
                                 </div>
-                                <div className="flex items-center justify-between pt-1 text-sm">
-                                    <p className="font-medium text-vw-grey">Grand Total Approved</p>
+                                <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
+                                    <div className="flex items-center gap-1">
+                                        <p className="font-medium text-gray-900">Confirmed Total</p>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
+                                            </TooltipTrigger>
+                                            <TooltipContent className="max-w-64">
+                                                Approved items only — final and locked, will
+                                                not change.
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
                                     <p className="font-medium text-gray-900">
                                         {formatCurrency(grandTotalApproved)}
                                     </p>
@@ -1397,8 +1460,7 @@ export default function Show({
                                         >
                                             {availableTransitions.map((status) => {
                                                 const disabled =
-                                                    (status === 'completed' && !hasInvoice) ||
-                                                    (status === 'quality_control' && isQualityControlBlocked);
+                                                    status === 'completed' && !hasInvoice;
                                                 const isDestructive =
                                                     status === 'all_rejected_cancelled';
                                                 return (
@@ -1424,17 +1486,6 @@ export default function Show({
                                                 <AlertTitle className="text-sm">Invoice required</AlertTitle>
                                                 <AlertDescription className="text-xs">
                                                     Upload at least 1 invoice PDF before this order can be marked completed.
-                                                </AlertDescription>
-                                            </Alert>
-                                        )}
-
-                                        {isQualityControlBlocked && (
-                                            <Alert>
-                                                <Info className="h-4 w-4" />
-                                                <AlertTitle className="text-sm">Estimation form required</AlertTitle>
-                                                <AlertDescription className="text-xs">
-                                                    Upload the estimation form for: {missingEstimationGroups.map((g) => GROUP_LABEL[g]).join(', ')}{' '}
-                                                    before this order can move to Quality Control.
                                                 </AlertDescription>
                                             </Alert>
                                         )}
