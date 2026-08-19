@@ -912,6 +912,56 @@ export default function Show({
         });
     };
 
+    // Helper copy-to-clipboard dengan fallback.
+    // navigator.clipboard.writeText() bisa gagal/tidak tersedia di beberapa
+    // browser/device (in-app browser, permission ditolak, browser lama, dll),
+    // jadi kalau itu gagal kita fallback ke document.execCommand('copy') lewat
+    // textarea tersembunyi — caranya lebih tua tapi jauh lebih kompatibel.
+    // Return true kalau berhasil (lewat cara apapun), false kalau dua-duanya gagal.
+    const copyToClipboard = async (text) => {
+        // Coba cara modern dulu.
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                // lanjut ke fallback di bawah
+            }
+        }
+
+        // Fallback: textarea tersembunyi + execCommand('copy').
+        try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+
+            // Hindari scroll/zoom aneh & tetap sembunyi dari layar.
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '0';
+            textarea.style.width = '2em';
+            textarea.style.height = '2em';
+            textarea.style.padding = '0';
+            textarea.style.border = 'none';
+            textarea.style.outline = 'none';
+            textarea.style.boxShadow = 'none';
+            textarea.style.background = 'transparent';
+            textarea.style.opacity = '0';
+
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            // Untuk mobile Safari, perlu set selection range eksplisit.
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textarea);
+
+            return successful;
+        } catch {
+            return false;
+        }
+    };
+
     const [copied, setCopied] = useState(false);
 
     // Teks polos untuk clipboard (tidak perlu encodeURIComponent lagi karena
@@ -923,12 +973,12 @@ export default function Show({
         `Mohon dicek, terima kasih.`;
 
     const handleCopyMessage = async () => {
-        try {
-            await navigator.clipboard.writeText(cashierMessageText);
+        const success = await copyToClipboard(cashierMessageText);
+        if (success) {
             setCopied(true);
             toast.success('Message copied to clipboard');
             setTimeout(() => setCopied(false), 2000);
-        } catch {
+        } else {
             toast.error('Failed to copy — please copy the text manually');
         }
     };
@@ -976,12 +1026,12 @@ export default function Show({
         `Di dalamnya ada video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat di cek dan saya tunggu persetujuan dari bapak/ibu selanjutnya. Terima kasih.`;
 
     const handleCopyReportLink = async () => {
-        try {
-            await navigator.clipboard.writeText(reportMessageText);
+        const success = await copyToClipboard(reportMessageText);
+        if (success) {
             setReportLinkCopied(true);
             toast.success('Report link & message copied to clipboard');
             setTimeout(() => setReportLinkCopied(false), 2000);
-        } catch {
+        } else {
             toast.error('Failed to copy — please copy the text manually');
         }
     };
