@@ -55,6 +55,7 @@ import {
     TooltipTrigger,
 } from '@/Components/ui/tooltip';
 import { RadioGroup, RadioGroupItem } from '@/Components/ui/radio-group';
+import { Checkbox } from '@/Components/ui/checkbox';
 import {
     HoverCard,
     HoverCardContent,
@@ -190,7 +191,7 @@ function EntityCombobox({ items, value, onSelect, placeholder, getLabel, getSubL
 // tidak salah hitung jumlah nol. Nilai yang dikirim ke form state tetap angka
 // murni tanpa titik (string of digits) — kompatibel langsung dengan validasi
 // backend 'numeric' (lihat ServiceOrderController::store()).
-function CurrencyInput({ id, value, onChange, placeholder }) {
+function CurrencyInput({ id, value, onChange, placeholder, disabled }) {
     const formatDisplay = (val) => {
         const digits = String(val ?? '').replace(/\D/g, '');
         if (digits === '') return '';
@@ -220,6 +221,7 @@ function CurrencyInput({ id, value, onChange, placeholder }) {
                 value={display}
                 onChange={handleChange}
                 placeholder={placeholder}
+                disabled={disabled}
                 className="pl-9"
             />
         </div>
@@ -655,6 +657,14 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const [editIndex, setEditIndex] = useState(null);
     const [editDraft, setEditDraft] = useState(null);
     const [deleteIndex, setDeleteIndex] = useState(null);
+
+    // Checkbox "fee sudah termasuk di part & labour" — murni aksi UI, tidak
+    // dikirim sebagai field terpisah ke backend (tidak ada kolom database
+    // untuk ini, sengaja biar tidak nambah migration baru). Efeknya cuma:
+    // set inspection_fee jadi 0 + isi inspection_fee_note dengan teks
+    // default (SA masih bisa edit teksnya sebelum submit).
+    const [feeIncludedChecked, setFeeIncludedChecked] = useState(false);
+    const FEE_INCLUDED_NOTE_TEXT = 'Fee sudah termasuk di harga part & labour.';
 
     const { data, setData, post, processing, errors, clearErrors, transform } = useForm({
         work_order_number: '',
@@ -1612,6 +1622,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                 value={data.inspection_fee}
                                                 onChange={(v) => setData('inspection_fee', v)}
                                                 placeholder="0"
+                                                disabled={feeIncludedChecked}
                                             />
                                             <p className="text-xs text-vw-grey">
                                                 If there is no fee, type 0.
@@ -1621,6 +1632,36 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                     {errors.inspection_fee}
                                                 </p>
                                             )}
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                            <Checkbox
+                                                id="inspection_fee_included"
+                                                checked={feeIncludedChecked}
+                                                onCheckedChange={(checked) => {
+                                                    const isChecked = checked === true;
+                                                    setFeeIncludedChecked(isChecked);
+                                                    // Centang → paksa fee ke 0 & isi note
+                                                    // default (masih bisa diedit manual),
+                                                    // biar SA nggak bingung kenapa 0 padahal
+                                                    // belum diketik apa-apa.
+                                                    if (isChecked) {
+                                                        setData('inspection_fee', '0');
+                                                        if (!data.inspection_fee_note) {
+                                                            setData(
+                                                                'inspection_fee_note',
+                                                                FEE_INCLUDED_NOTE_TEXT
+                                                            );
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                            <Label
+                                                htmlFor="inspection_fee_included"
+                                                className="text-xs font-normal leading-snug text-vw-grey"
+                                            >
+                                                Fee sudah termasuk di harga part & labour (fee
+                                                di-set Rp 0)
+                                            </Label>
                                         </div>
                                         <div className="space-y-1.5">
                                             <Label>Fee Note (optional, reason for this fee)</Label>

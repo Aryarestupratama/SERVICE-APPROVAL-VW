@@ -158,6 +158,37 @@ class InspectionItemPricingService
     }
 
     /**
+     * "Estimated Grand Total" versi order-level (gabungan SEMUA group) —
+     * BEDA dari breakdownByGroup(): di sini SEMUA item ikut dihitung apapun
+     * statusnya, TERMASUK rejected. Sengaja begini atas permintaan owner:
+     * angka ini merepresentasikan total nilai quotation asli (subtotal
+     * setelah diskon + VAT saat ini), dan tidak boleh naik-turun mengikuti
+     * keputusan approve/reject customer — beda tujuan dari breakdownByGroup()
+     * (live estimate per group, exclude rejected) dan grandTotalForOrder()
+     * (Confirmed Total, cuma item approved pakai snapshot).
+     *
+     * Dipakai untuk card "Estimated Grand Total" gabungan di Show.jsx, di
+     * bawah semua breakdown per group.
+     */
+    public function estimatedGrandTotalForOrder(iterable $inspectionItems, ?float $vatPercent = null): array
+    {
+        $vatPercent ??= (float) Setting::current()->ppn_percent;
+
+        $subtotal = 0.0;
+        foreach ($inspectionItems as $item) {
+            $subtotal += $this->itemSubtotal($item);
+        }
+
+        $vatAmount = $subtotal * ($vatPercent / 100);
+
+        return [
+            'subtotal' => round($subtotal, 2),
+            'vat_amount' => round($vatAmount, 2),
+            'grand_total' => round($subtotal + $vatAmount, 2),
+        ];
+    }
+
+    /**
      * Subtotal 1 item SEBELUM VAT — (part - diskon) + (labour - diskon).
      * Dipakai untuk breakdown estimasi (belum tentu approved/locked).
      */

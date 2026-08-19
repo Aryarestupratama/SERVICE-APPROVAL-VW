@@ -7,6 +7,7 @@ import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Textarea } from '@/Components/ui/textarea';
+import { Checkbox } from '@/Components/ui/checkbox';
 import {
     Select,
     SelectContent,
@@ -184,28 +185,6 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
-// Kontribusi 1 item ke Order Totals — item 'rejected' dikecualikan (return
-// null). Item yang sudah locked (final_price_snapshot terisi) TETAP pakai
-// snapshot itu sebagai total (tidak pernah berubah), tapi subtotal & VAT-nya
-// dipecah balik pakai vatPercent SAAT INI (settings.ppn_percent) — ini valid
-// selama tarif PPN belum pernah diganti sejak item itu di-lock. Kalau tarif
-// PPN memang berubah di kemudian hari, breakdown Subtotal/VAT baris ini bisa
-// sedikit meleset, TAPI Grand Total tetap akurat karena tetap pakai angka
-// snapshot asli, bukan dihitung ulang dari awal.
-function itemContribution(item, vatPercent) {
-    if (item.status === 'rejected') return null;
-
-    if (item.final_price_snapshot !== null && item.final_price_snapshot !== undefined) {
-        const total = Number(item.final_price_snapshot);
-        const sub = total / (1 + vatPercent / 100);
-        return { subtotal: sub, vat: total - sub, total };
-    }
-
-    const sub = itemSubtotal(item);
-    const vat = sub * (vatPercent / 100);
-    return { subtotal: sub, vat, total: sub + vat };
-}
-
 // Map estimationDocuments (array, bisa cuma sebagian group yang ada baris-nya)
 // jadi lookup by group.
 function estimationDocsByGroup(docs) {
@@ -265,7 +244,7 @@ function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
 // seperti di Create.jsx — nilai yang dikirim ke form state tetap angka
 // murni tanpa titik (string of digits), kompatibel dengan validasi
 // backend 'numeric'.
-function CurrencyInput({ id, value, onChange, placeholder }) {
+function CurrencyInput({ id, value, onChange, placeholder, disabled }) {
     const formatDisplay = (val) => {
         const num = Math.round(Number(val ?? 0));
         if (!num) return '';
@@ -295,6 +274,7 @@ function CurrencyInput({ id, value, onChange, placeholder }) {
                 value={display}
                 onChange={handleChange}
                 placeholder={placeholder}
+                disabled={disabled}
                 className="pl-9"
             />
         </div>
@@ -435,7 +415,9 @@ export default function Show({
     settings,
     maxInvoices,
     breakdownByGroup,
+    estimatedGrandTotal,
     customerComplaintEditable,
+    inspectionFeeEditable,
 }) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === 'admin';
@@ -448,7 +430,13 @@ export default function Show({
     usePollLastActivity({
         url: route('admin.service-orders.last-activity', order.id),
         initialValue: order.last_activity_at,
-        only: ['order', 'breakdownByGroup', 'customerComplaintEditable'],
+        only: [
+            'order',
+            'breakdownByGroup',
+            'estimatedGrandTotal',
+            'customerComplaintEditable',
+            'inspectionFeeEditable',
+        ],
         intervalMs: 4000,
     });
 
@@ -486,6 +474,32 @@ export default function Show({
     // lihat ServiceOrder::isCustomerComplaintEditable(), dikirim controller
     // lewat prop `customerComplaintEditable`).
     const complaintForm = useForm({ customer_complaint: order.customer_complaint ?? '' });
+
+    // Form khusus inspection fee — editable SA selama status masih
+    // termasuk INSPECTION_FEE_EDITABLE_STATUSES di backend (guard sumber
+    // kebenaran tetap di ServiceOrder::isInspectionFeeEditable(), dikirim
+    // lewat prop `inspectionFeeEditable`, pola sama dengan customer complaint
+    // di atas).
+    const inspectionFeeForm = useForm({
+        inspection_fee: order.inspection_fee ?? '',
+        inspection_fee_note: order.inspection_fee_note ?? '',
+    });
+
+    // Toggle tampilan Inspection Fee: default read-only (nilai "paten"),
+    // baru masuk mode form kalau SA klik ikon pensil. Direset ke false tiap
+    // habis save/cancel biar nggak nyangkut kebuka.
+    const [isEditingFee, setIsEditingFee] = useState(false);
+
+    // Checkbox "fee sudah termasuk di part & labour" murni aksi UI — TIDAK
+    // ada kolom database terpisah untuk ini (sengaja, biar tidak nambah
+    // migration baru). Efeknya cuma: set inspection_fee jadi 0 + isi
+    // inspection_fee_note dengan teks default (SA masih bisa edit teksnya).
+    // Konsekuensinya: checkbox ini tidak "diingat" lagi begitu form ditutup
+    // & dibuka ulang — tapi itu nggak masalah, karena begitu tersimpan,
+    // Rp 0 + catatan "Sudah termasuk di harga part & labour" sudah cukup
+    // jelas dibaca di tampilan read-only-nya.
+    const [feeIncludedChecked, setFeeIncludedChecked] = useState(false);
+    const FEE_INCLUDED_NOTE_TEXT = 'Fee sudah termasuk di harga part & labour.';
 
     const availableTransitions = ALLOWED_TRANSITIONS[order.status] ?? [];
     const revertTarget = REVERT_TRANSITIONS[order.status] ?? null;
@@ -573,6 +587,31 @@ export default function Show({
             onSuccess: (page) => flashToast(page, 'Customer complaint saved'),
             onError: () => toast.error('Failed to save customer complaint'),
         });
+    };
+
+    // --- Inspection fee ---
+
+    const handleInspectionFeeSubmit = (e) => {
+        e.preventDefault();
+        inspectionFeeForm.patch(route('admin.service-orders.update-inspection-fee', order.id), {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                flashToast(page, 'Inspection fee updated');
+                setIsEditingFee(false);
+                setFeeIncludedChecked(false);
+            },
+            onError: () => toast.error('Failed to update inspection fee'),
+        });
+    };
+
+    const handleInspectionFeeCancel = () => {
+        inspectionFeeForm.clearErrors();
+        inspectionFeeForm.setData({
+            inspection_fee: order.inspection_fee ?? '',
+            inspection_fee_note: order.inspection_fee_note ?? '',
+        });
+        setFeeIncludedChecked(false);
+        setIsEditingFee(false);
     };
 
     // --- Delete service order (admin only, hard delete, permanen) ---
@@ -805,34 +844,24 @@ export default function Show({
 
     // --- Totals ---
 
-    // CHANGED: sebelumnya menjumlahkan SEMUA item (termasuk rejected) dan
-    // selalu recompute VAT pakai vatPercent saat ini, meskipun item itu
-    // sudah 'approved' & final_price_snapshot-nya sudah locked. Sekarang:
-    // - item 'rejected' dikecualikan dari Subtotal/VAT/Grand Total
-    // - item locked: Grand Total tetap pakai final_price_snapshot (tidak
-    //   pernah berubah), Subtotal/VAT-nya dipecah balik pakai vatPercent
-    //   saat ini — valid selama tarif PPN belum pernah diganti sejak item
-    //   itu di-lock (lihat catatan di itemContribution())
-    // - item belum locked tetap dihitung live pakai vatPercent saat ini
-    let subtotal = 0;
-    let vatAmount = 0;
-    let grandTotal = 0;
-
-    for (const item of order.inspection_items ?? []) {
-        const contribution = itemContribution(item, vatPercent);
-        if (!contribution) continue; // item rejected, dilewati
-
-        subtotal += contribution.subtotal;
-        vatAmount += contribution.vat;
-        grandTotal += contribution.total;
-    }
-
-    // Grand total khusus item yang sudah approved (final_price_snapshot sudah
-    // termasuk VAT saat dikunci) — permintaan owner.
+    // "Confirmed Total" — cuma item yang sudah approved (final_price_snapshot
+    // sudah termasuk VAT saat dikunci, tidak pernah berubah lagi).
     const grandTotalApproved =
         order.inspection_items
             ?.filter((item) => item.status === 'approved')
             .reduce((sum, item) => sum + Number(item.final_price_snapshot ?? 0), 0) ?? 0;
+
+    // "Grand Total" final di card Order Totals = Confirmed Total + Inspection
+    // Fee (bukan lagi Estimated). Inspection fee jasa cek awal, terpisah dari
+    // harga per-item, ditambahkan langsung di sini.
+    const finalGrandTotal = grandTotalApproved + Number(order.inspection_fee ?? 0);
+
+    // Catatan: "Estimated Grand Total" gabungan semua group (card terpisah,
+    // di bawah breakdown per group) TIDAK dihitung di sini lagi — datang
+    // dari prop `estimatedGrandTotal` (backend, InspectionItemPricingService::
+    // estimatedGrandTotalForOrder()) karena sengaja menghitung SEMUA item
+    // apapun statusnya termasuk rejected, beda dari itemContribution() yang
+    // dipakai breakdown per group.
 
     const isCompletedBlocked = !hasInvoice && availableTransitions.includes('completed');
 
@@ -1381,38 +1410,55 @@ export default function Show({
                     {(order.inspection_items?.length ?? 0) > 0 && (
                         <Card>
                             <CardHeader>
-                                <CardTitle>Order Totals</CardTitle>
+                                <CardTitle className="flex items-center gap-1">
+                                    Estimated Grand Total
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-64">
+                                            Full quotation value — ALL inspection items across
+                                            every group, regardless of status (pending,
+                                            approved, or rejected). Does not change based on
+                                            approve/reject decisions.
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-1">
                                 <div className="flex items-center justify-between text-sm">
                                     <p className="text-vw-grey">Subtotal</p>
-                                    <p className="text-gray-900">{formatCurrency(subtotal)}</p>
+                                    <p className="text-gray-900">
+                                        {formatCurrency(estimatedGrandTotal?.subtotal ?? 0)}
+                                    </p>
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <p className="text-vw-grey">VAT ({vatPercent}%)</p>
-                                    <p className="text-gray-900">{formatCurrency(vatAmount)}</p>
-                                </div>
-                                <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                    <div className="flex items-center gap-1">
-                                        <p className="font-semibold text-gray-900">Estimated Grand Total</p>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
-                                            </TooltipTrigger>
-                                            <TooltipContent className="max-w-64">
-                                                Includes approved items (locked) and pending
-                                                items (still an estimate — may change until
-                                                decided).
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </div>
-                                    <p className="font-semibold text-gray-900">
-                                        {formatCurrency(grandTotal)}
+                                    <p className="text-gray-900">
+                                        {formatCurrency(estimatedGrandTotal?.vat_amount ?? 0)}
                                     </p>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
+                                    <p className="font-semibold text-gray-900">
+                                        Estimated Grand Total
+                                    </p>
+                                    <p className="font-semibold text-gray-900">
+                                        {formatCurrency(estimatedGrandTotal?.grand_total ?? 0)}
+                                    </p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {(order.inspection_items?.length ?? 0) > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Order Totals</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-1">
+                                <div className="flex items-center justify-between text-sm">
                                     <div className="flex items-center gap-1">
-                                        <p className="font-medium text-gray-900">Confirmed Total</p>
+                                        <p className="text-vw-grey">Confirmed Total</p>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
@@ -1423,8 +1469,141 @@ export default function Show({
                                             </TooltipContent>
                                         </Tooltip>
                                     </div>
-                                    <p className="font-medium text-gray-900">
-                                        {formatCurrency(grandTotalApproved)}
+                                    <p className="text-gray-900">{formatCurrency(grandTotalApproved)}</p>
+                                </div>
+
+                                {/* Inspection Fee — dulu Card terpisah, sekarang jadi baris
+                                    di sini. Default tampilan "paten" (read-only), baru masuk
+                                    mode edit kalau SA klik ikon pensil (guard sumber
+                                    kebenaran tetap di backend, lihat
+                                    ServiceOrder::isInspectionFeeEditable()). */}
+                                {isEditingFee ? (
+                                    <form
+                                        onSubmit={handleInspectionFeeSubmit}
+                                        className="space-y-2 border-t border-vw-grey/10 pt-1.5"
+                                    >
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="inspection_fee" className="text-vw-grey">
+                                                Inspection Fee
+                                            </Label>
+                                            <CurrencyInput
+                                                id="inspection_fee"
+                                                value={inspectionFeeForm.data.inspection_fee}
+                                                onChange={(v) =>
+                                                    inspectionFeeForm.setData('inspection_fee', v)
+                                                }
+                                                placeholder="0"
+                                                disabled={feeIncludedChecked}
+                                            />
+                                            {inspectionFeeForm.errors.inspection_fee && (
+                                                <p className="text-xs text-urgent">
+                                                    {inspectionFeeForm.errors.inspection_fee}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-start gap-2 pt-1">
+                                            <Checkbox
+                                                id="inspection_fee_included"
+                                                checked={feeIncludedChecked}
+                                                onCheckedChange={(checked) => {
+                                                    const isChecked = checked === true;
+                                                    setFeeIncludedChecked(isChecked);
+                                                    // Centang → paksa fee ke 0 & isi note
+                                                    // default (masih bisa diedit manual),
+                                                    // biar SA nggak bingung kenapa 0 padahal
+                                                    // belum diketik.
+                                                    if (isChecked) {
+                                                        inspectionFeeForm.setData(
+                                                            'inspection_fee',
+                                                            '0'
+                                                        );
+                                                        if (
+                                                            !inspectionFeeForm.data
+                                                                .inspection_fee_note
+                                                        ) {
+                                                            inspectionFeeForm.setData(
+                                                                'inspection_fee_note',
+                                                                FEE_INCLUDED_NOTE_TEXT
+                                                            );
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                            <Label
+                                                htmlFor="inspection_fee_included"
+                                                className="text-xs font-normal leading-snug text-vw-grey"
+                                            >
+                                                Fee sudah termasuk di harga part & labour (fee
+                                                di-set Rp 0)
+                                            </Label>
+                                        </div>
+
+                                        <Textarea
+                                            value={inspectionFeeForm.data.inspection_fee_note}
+                                            onChange={(e) =>
+                                                inspectionFeeForm.setData(
+                                                    'inspection_fee_note',
+                                                    e.target.value
+                                                )
+                                            }
+                                            placeholder="Inspection fee note (optional)"
+                                            rows={2}
+                                            className="text-sm"
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={handleInspectionFeeCancel}
+                                                disabled={inspectionFeeForm.processing}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                type="submit"
+                                                size="sm"
+                                                disabled={inspectionFeeForm.processing}
+                                            >
+                                                {inspectionFeeForm.processing
+                                                    ? 'Saving...'
+                                                    : 'Save Fee'}
+                                            </Button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <div className="space-y-0.5 border-t border-vw-grey/10 pt-1.5">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <div className="flex items-center gap-1">
+                                                <p className="text-vw-grey">Inspection Fee</p>
+                                                {inspectionFeeEditable && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsEditingFee(true)}
+                                                        className="text-vw-grey hover:text-gray-900"
+                                                        aria-label="Edit inspection fee"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <p className="text-gray-900">
+                                                {formatCurrency(order.inspection_fee)}
+                                            </p>
+                                        </div>
+                                        {order.inspection_fee_note && (
+                                            <p className="text-xs text-vw-grey">
+                                                {order.inspection_fee_note}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
+                                    <p className="font-semibold text-gray-900">Grand Total</p>
+                                    <p className="font-semibold text-gray-900">
+                                        {formatCurrency(finalGrandTotal)}
                                     </p>
                                 </div>
                             </CardContent>
@@ -1891,19 +2070,6 @@ export default function Show({
                             </Card>
                         )}
 
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Inspection Fee</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                <p className="text-2xl font-semibold text-gray-900">
-                                    {formatCurrency(order.inspection_fee)}
-                                </p>
-                                {order.inspection_fee_note && (
-                                    <p className="text-sm text-vw-grey">{order.inspection_fee_note}</p>
-                                )}
-                            </CardContent>
-                        </Card>
                     </div>
                 </div>
             </div>

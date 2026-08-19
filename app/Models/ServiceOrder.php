@@ -31,6 +31,18 @@ class ServiceOrder extends Model
         self::STATUS_WORK_IN_PROGRESS,
     ];
 
+    // Status di mana inspection_fee (& inspection_fee_note) masih boleh
+    // diedit SA — sengaja dibuat sedikit lebih longgar dari
+    // CUSTOMER_COMPLAINT_EDITABLE_STATUSES (ikut quality_control) karena
+    // Grand Total (Confirmed Total + inspection_fee) baru benar-benar
+    // final saat masuk invoice_preparation. ASUMSI, tolong dikonfirmasi
+    // ke owner kalau perlu beda aturan.
+    public const INSPECTION_FEE_EDITABLE_STATUSES = [
+        self::STATUS_APPOINTMENT,
+        self::STATUS_WORK_IN_PROGRESS,
+        self::STATUS_QUALITY_CONTROL,
+    ];
+
     protected $fillable = [
         'vehicle_id',
         'service_advisor_id',
@@ -148,6 +160,15 @@ class ServiceOrder extends Model
     public function isCustomerComplaintEditable(): bool
     {
         return in_array($this->status, self::CUSTOMER_COMPLAINT_EDITABLE_STATUSES, true);
+    }
+
+    // Guard backend (sumber kebenaran) untuk apakah inspection_fee masih
+    // boleh diedit SA — dipakai di ServiceOrderController::updateInspectionFee()
+    // dan dikirim ke Show.jsx sebagai prop supaya field di-disable di UI
+    // tanpa duplikasi daftar status di sisi React.
+    public function isInspectionFeeEditable(): bool
+    {
+        return in_array($this->status, self::INSPECTION_FEE_EDITABLE_STATUSES, true);
     }
 
     /**

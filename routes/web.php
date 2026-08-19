@@ -112,6 +112,13 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'updateCustomerComplaint'])
                 ->name('service-orders.update-customer-complaint');
 
+            // Update inspection_fee (& inspection_fee_note) — editable SA
+            // selama status termasuk INSPECTION_FEE_EDITABLE_STATUSES,
+            // dikunci backend (isInspectionFeeEditable()). Pola sama dengan
+            // update-customer-complaint di atas.
+            Route::patch('service-orders/{serviceOrder}/inspection-fee', [ServiceOrderController::class, 'updateInspectionFee'])
+                ->name('service-orders.update-inspection-fee');
+
             Route::post('service-orders/{serviceOrder}/estimation-document',
                 [ServiceOrderController::class, 'uploadEstimationDocument'])
                 ->name('service-orders.upload-estimation-document');

@@ -53,12 +53,19 @@ class ServiceOrderController extends Controller
         $user = $request->user();
         $vatPercent = (float) \App\Models\Setting::current()->ppn_percent;
 
+        // NOTE: item 'rejected' dikecualikan di sini supaya konsisten dengan
+        // InspectionItemPricingService::breakdownByGroup()/itemContribution(),
+        // Show.jsx, dan InspectionReport.jsx (lihat PROJECT-RULES.md bagian 1
+        // poin 1) — sebelumnya query ini kelewat saat fix itu diterapkan, jadi
+        // "Grand Total Estimate" di listing bisa beda dari "Order Totals" di
+        // halaman detail order yang sama.
         $estimateSql = "(SELECT COALESCE(SUM(
                 (cost_item * (1 - discount_item_percent / 100))
                 + (cost_labour * (1 - discount_labour_percent / 100))
             ), 0) * (1 + ? / 100)
             FROM inspection_items
             WHERE inspection_items.service_order_id = service_orders.id
+            AND status != 'rejected'
         )";
 
         $approvedSql = "(SELECT COALESCE(SUM(final_price_snapshot), 0)
@@ -312,18 +319,65 @@ class ServiceOrderController extends Controller
             (float) $settings->ppn_percent
         );
 
+        // Order-level "Estimated Grand Total" — gabungan semua group, SEMUA
+        // item apapun statusnya (termasuk rejected), tidak bergantung
+        // approve/reject. Beda tujuan dari breakdownByGroup() (per group,
+        // exclude rejected) dan Confirmed Total (grandTotalApproved, dihitung
+        // di frontend dari final_price_snapshot item approved). Lihat
+        // InspectionItemPricingService::estimatedGrandTotalForOrder().
+        $estimatedGrandTotal = $pricingService->estimatedGrandTotalForOrder(
+            $serviceOrder->inspectionItems,
+            (float) $settings->ppn_percent
+        );
+
         return Inertia::render('Admin/ServiceOrders/Show', [
             'order' => $serviceOrder,
             'settings' => $settings,
             'groups' => InspectionItem::GROUPS,
             'breakdownByGroup' => $breakdownByGroup,
+            'estimatedGrandTotal' => $estimatedGrandTotal,
             // customer_complaint itself is already inside 'order' (a regular
             // model column), but the editability flag is sent separately so
             // Show.jsx doesn't need to duplicate the list of "editable"
             // statuses — a single source of truth stays in
             // ServiceOrder::isCustomerComplaintEditable().
             'customerComplaintEditable' => $serviceOrder->isCustomerComplaintEditable(),
+            // Same pattern as above but for inspection_fee — single source
+            // of truth in ServiceOrder::isInspectionFeeEditable().
+            'inspectionFeeEditable' => $serviceOrder->isInspectionFeeEditable(),
         ]);
+    }
+
+    /**
+     * Update inspection_fee (& inspection_fee_note) — dipisah dari update
+     * lain, pola sama persis dengan updateCustomerComplaint(). Guard
+     * backend adalah sumber kebenaran (ServiceOrder::isInspectionFeeEditable()),
+     * bukan cuma disabled state di frontend, supaya tetap aman kalau ada
+     * request "nyasar" dari tab lama / race condition status berubah.
+     */
+    public function updateInspectionFee(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if (! $serviceOrder->isInspectionFeeEditable()) {
+            return back()->withErrors([
+                'inspection_fee' => 'Inspection fee can no longer be edited at this order status.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'inspection_fee' => ['required', 'numeric', 'min:0'],
+            'inspection_fee_note' => ['nullable', 'string'],
+        ]);
+
+        $serviceOrder->update([
+            'inspection_fee' => $validated['inspection_fee'],
+            'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
+        ]);
+
+        $serviceOrder->touchActivity();
+
+        return back()->with('success', 'Inspection fee updated.');
     }
 
     /**

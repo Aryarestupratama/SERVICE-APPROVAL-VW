@@ -14,15 +14,13 @@ const STATUS_LABELS = {
 };
 
 const REASON_LABELS = {
-    stuck_status: 'Stuck in status too long',
-    pending_approval: 'Customer approval pending',
-    missing_invoice: 'Invoice not uploaded',
+    waiting_for_parts: 'Menunggu Part',
+    waiting_for_pickup: 'Menunggu Diambil',
 };
 
 const REASON_VARIANT = {
-    stuck_status: 'destructive',
-    pending_approval: 'secondary',
-    missing_invoice: 'outline',
+    waiting_for_parts: 'destructive',
+    waiting_for_pickup: 'secondary',
 };
 
 export default function Dashboard({ statusCounts, actionItems, stuckThresholdDays }) {
@@ -54,7 +52,7 @@ export default function Dashboard({ statusCounts, actionItems, stuckThresholdDay
                         </CardTitle>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Orders stuck &gt; {stuckThresholdDays} days, pending customer approval too long, or missing invoice.
+                        Orders stuck &gt; {stuckThresholdDays} days in Work in Progress (waiting for parts) or Invoice Preparation (waiting for pickup).
                     </p>
                 </CardHeader>
                 <CardContent>
