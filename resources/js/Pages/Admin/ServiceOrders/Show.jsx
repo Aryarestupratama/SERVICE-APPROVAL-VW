@@ -75,7 +75,7 @@ import {
     Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePollLastActivity } from '@/Hooks/usePollLastActivity';
+import { usePollLastActivity } from '@/hooks/usePollLastActivity';
 
 const ALLOWED_TRANSITIONS = {
     appointment: ['work_in_progress'],
@@ -1020,9 +1020,17 @@ export default function Show({
               .join(' ')
         : '-';
 
+    // Nama customer diambil dari relasi vehicle->customer yang terikat ke order ini.
+    // Fallback ke sapaan generik lama kalau data customer belum lengkap (jangan sampai
+    // pesan jadi "Selamat Sore ," / nama kosong).
+    const customerName = order.vehicle?.customer?.name;
+    const customerGreetingName = customerName
+        ? `Bapak/Ibu ${customerName}`
+        : 'Bapak/Ibu Pelanggan VW PIK';
+
     const reportMessageText =
-        `Selamat ${getGreeting()} Bapak/Ibu Pelanggan VW PIK, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda (${vehicleLabel}):\n` +
-        `${reportUrl ?? '-'}\n` +
+        `Selamat ${getGreeting()} ${customerGreetingName}, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda (${vehicleLabel}):\n\n` +
+        `${reportUrl ?? '-'}\n\n` +
         `Di dalamnya ada video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat di cek dan saya tunggu persetujuan dari bapak/ibu selanjutnya. Terima kasih.`;
 
     const handleCopyReportLink = async () => {
