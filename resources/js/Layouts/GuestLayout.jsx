@@ -3,11 +3,19 @@ export default function GuestLayout({ children }) {
         <div className="flex min-h-screen flex-col lg:flex-row">
             <div className="flex w-full flex-col justify-center px-4 py-8 sm:px-6 sm:py-12 lg:w-1/2 lg:px-20">
                 <div className="mx-auto w-full max-w-sm">
-                    <img
-                        src="/images/vw-logo-navy.jpeg"
-                        alt="Volkswagen"
-                        className="mb-8 h-12 w-auto sm:mb-12 sm:h-16"
-                    />
+                    <div className="mb-8 flex items-center gap-4 sm:mb-12">
+                        <img
+                            src="/images/vw-logo-navy.jpeg"
+                            alt="Volkswagen"
+                            className="h-12 w-auto sm:h-16"
+                        />
+                        <div className="h-10 w-px bg-border sm:h-12" />
+                        <img
+                            src="/images/audi.svg"
+                            alt="Audi"
+                            className="h-7 w-auto sm:h-9"
+                        />
+                    </div>
 
                     {children}
                 </div>

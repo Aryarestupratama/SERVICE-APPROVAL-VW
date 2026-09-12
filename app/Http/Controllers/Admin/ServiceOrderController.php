@@ -50,7 +50,6 @@ class ServiceOrderController extends Controller
 
     public function index(Request $request)
     {
-        $user = $request->user();
         $vatPercent = (float) \App\Models\Setting::current()->ppn_percent;
 
         // NOTE: item 'rejected' dikecualikan di sini supaya konsisten dengan
@@ -79,10 +78,13 @@ class ServiceOrderController extends Controller
             ->selectRaw("{$estimateSql} as grand_total_estimate", [$vatPercent])
             ->selectRaw("{$approvedSql} as grand_total_approved");
 
-        if ($user->role === 'service_advisor') {
-            $query->where('service_orders.service_advisor_id', $user->id);
-        }
-
+        // Sengaja TIDAK ada pembatasan `service_advisor_id === $user->id` di
+        // sini — keputusan owner (PROJECT-RULES.md bagian 0, "Akses order"):
+        // semua admin & service advisor boleh akses SEMUA service order,
+        // supaya SA lain bisa backup/handle order kalau SA aslinya
+        // berhalangan. Filter `service_advisor_id` di bawah tetap ada, tapi
+        // itu filter EKSPLISIT dari user (mis. tombol "View Orders" di
+        // Dashboard SA) — bukan pembatasan otomatis berdasar siapa yang login.
         $query
             ->when($request->search, fn ($q, $search) =>
                 $q->where(function ($q2) use ($search) {
@@ -100,6 +102,9 @@ class ServiceOrderController extends Controller
             )
             ->when($request->items_approval_status, fn ($q, $status) =>
                 $q->where('items_approval_status', $status)
+            )
+            ->when($request->service_advisor_id, fn ($q, $saId) =>
+                $q->where('service_orders.service_advisor_id', $saId)
             );
 
         $targetSql = $request->grand_total_field === 'approved' ? $approvedSql : $estimateSql;
@@ -133,7 +138,7 @@ class ServiceOrderController extends Controller
             'orders' => $query->paginate(20)->withQueryString(),
             'search' => $request->search,
             'filters' => $request->only([
-                'status', 'items_approval_status',
+                'status', 'items_approval_status', 'service_advisor_id',
                 'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
                 'sort_by', 'sort_dir',
             ]),

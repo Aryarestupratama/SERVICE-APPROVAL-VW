@@ -185,6 +185,29 @@ function itemSubtotal(item) {
     return itemAfterDiscount + labourAfterDiscount;
 }
 
+// Support link YouTube lama (video_source 'external_link', PROJECT-RULES
+// 9.4 — opsi ini sudah dihapus dari UI Create tapi data lama & enum backend
+// masih mengizinkannya). Video upload baru (mp4) langsung diputar via <video>.
+function youtubeEmbedUrl(url) {
+    if (!url) return null;
+    try {
+        const parsed = new URL(url);
+        let videoId = null;
+        if (parsed.hostname.includes('youtu.be')) {
+            videoId = parsed.pathname.slice(1);
+        } else if (parsed.hostname.includes('youtube.com')) {
+            if (parsed.pathname === '/watch') {
+                videoId = parsed.searchParams.get('v');
+            } else if (parsed.pathname.startsWith('/embed/')) {
+                return url;
+            }
+        }
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    } catch {
+        return null;
+    }
+}
+
 // Map estimationDocuments (array, bisa cuma sebagian group yang ada baris-nya)
 // jadi lookup by group.
 function estimationDocsByGroup(docs) {
@@ -298,48 +321,60 @@ function ItemFormFields({ data, errors, onChange }) {
                     rows={2}
                 />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                    <Label>Labour Price</Label>
-                    <CurrencyInput
-                        value={data.cost_labour}
-                        onChange={(v) => onChange('cost_labour', v)}
-                        placeholder="0"
-                    />
-                    {errors.cost_labour && (
-                        <p className="text-sm text-urgent">{errors.cost_labour}</p>
-                    )}
-                </div>
-                <div className="space-y-1.5">
-                    <Label>Part Price</Label>
-                    <CurrencyInput
-                        value={data.cost_item}
-                        onChange={(v) => onChange('cost_item', v)}
-                        placeholder="0"
-                    />
-                    {errors.cost_item && <p className="text-sm text-urgent">{errors.cost_item}</p>}
+            <div className="space-y-3 rounded-md border border-vw-grey/30 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                    Labour
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                        <Label>Labour Price</Label>
+                        <CurrencyInput
+                            value={data.cost_labour}
+                            onChange={(v) => onChange('cost_labour', v)}
+                            placeholder="0"
+                        />
+                        {errors.cost_labour && (
+                            <p className="text-sm text-urgent">{errors.cost_labour}</p>
+                        )}
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>Labour Discount (%)</Label>
+                        <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={data.discount_labour_percent}
+                            onChange={(e) => onChange('discount_labour_percent', e.target.value)}
+                        />
+                    </div>
                 </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                    <Label>Labour Discount (%)</Label>
-                    <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={data.discount_labour_percent}
-                        onChange={(e) => onChange('discount_labour_percent', e.target.value)}
-                    />
-                </div>
-                <div className="space-y-1.5">
-                    <Label>Part Discount (%)</Label>
-                    <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={data.discount_item_percent}
-                        onChange={(e) => onChange('discount_item_percent', e.target.value)}
-                    />
+            <div className="space-y-3 rounded-md border border-vw-grey/30 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                    Part
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                        <Label>Part Price</Label>
+                        <CurrencyInput
+                            value={data.cost_item}
+                            onChange={(v) => onChange('cost_item', v)}
+                            placeholder="0"
+                        />
+                        {errors.cost_item && (
+                            <p className="text-sm text-urgent">{errors.cost_item}</p>
+                        )}
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>Part Discount (%)</Label>
+                        <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={data.discount_item_percent}
+                            onChange={(e) => onChange('discount_item_percent', e.target.value)}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -506,6 +541,14 @@ export default function Show({
 
     const invoice = order.invoice;
     const hasInvoice = !!invoice;
+
+    // Kriteria arsitektur final (PROJECT-RULES 9.4 & 1J): 1 video per Service
+    // Order, diinput sekali saat Create, tidak ada endpoint update/ganti di
+    // Show. Video ini harus tetap kelihatan di halaman admin di STATUS
+    // APAPUN (appointment s/d completed) — tidak digate oleh order.status,
+    // beda dengan Edit/Delete item yang dibatasi ITEM_EDITABLE_STATUSES.
+    const video = order.videos?.[0] ?? null;
+    const videoEmbedUrl = video ? youtubeEmbedUrl(video.video_url) : null;
 
     // Invoice PDF section disembunyikan selama appointment/work_in_progress,
     // baru muncul mulai quality_control — permintaan owner.
@@ -1156,6 +1199,40 @@ export default function Show({
                                     {order.work_order_number ?? '—'}
                                 </p>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Inspection Video — 1 slot (arsitektur final, lihat
+                        PROJECT-RULES 9.4 & komentar `video` di atas). Sengaja
+                        TIDAK digate oleh order.status: harus tetap tampil di
+                        status apapun, dari appointment sampai completed,
+                        supaya admin/SA bisa cek ulang video kapan saja. */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Inspection Video</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {video ? (
+                                videoEmbedUrl ? (
+                                    <div className="aspect-video overflow-hidden rounded-md">
+                                        <iframe
+                                            src={videoEmbedUrl}
+                                            title="Inspection video"
+                                            className="h-full w-full"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    </div>
+                                ) : (
+                                    <video
+                                        src={video.video_url}
+                                        controls
+                                        className="aspect-video w-full rounded-md bg-black"
+                                    />
+                                )
+                            ) : (
+                                <p className="text-sm text-vw-grey">No video uploaded yet.</p>
+                            )}
                         </CardContent>
                     </Card>
 

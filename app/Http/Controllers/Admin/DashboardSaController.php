@@ -17,48 +17,88 @@ class DashboardSaController extends Controller
 
         $serviceAdvisors = User::where('role', 'service_advisor')->get();
 
-        $stats = $serviceAdvisors->map(function (User $sa) use ($from, $to) {
+        // Kontribusi rupiah 1 item — Part + Labour, masing-masing dikurangi
+        // diskonnya sendiri. Sama definisinya dengan itemContribution() di
+        // InspectionItemPricingService (PHP) / Show.jsx & InspectionReport.jsx
+        // (JS), dan sudah dipakai juga di DashboardPartController — lihat
+        // PROJECT-RULES bagian 1. Dipakai untuk item rejected (tidak pernah
+        // punya final_price_snapshot karena tidak pernah di-lock).
+        $contribution = function (InspectionItem $item) {
+            $itemPrice = (float) $item->cost_item * (1 - ((float) ($item->discount_item_percent ?? 0)) / 100);
+            $labourPrice = (float) $item->cost_labour * (1 - ((float) ($item->discount_labour_percent ?? 0)) / 100);
+
+            return $itemPrice + $labourPrice;
+        };
+
+        $stats = $serviceAdvisors->map(function (User $sa) use ($from, $to, $contribution) {
             $orderQuery = $sa->serviceOrders()
                 ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
 
-            $orderCount = $orderQuery->count();
+            $orderCount = (clone $orderQuery)->count();
+
+            // Status keseluruhan per SERVICE ORDER (bukan per item) — dari
+            // kolom items_approval_status (ServiceOrder::computeApprovalStatus(),
+            // lihat PROJECT-RULES bagian 1). "rejected" sengaja tidak dihitung
+            // di sini (keputusan owner: kasusnya jarang terjadi).
+            $approvedOrderCount = (clone $orderQuery)->where('items_approval_status', 'approved')->count();
+            $partiallyApprovedOrderCount = (clone $orderQuery)
+                ->where('items_approval_status', 'partially_approved')
+                ->count();
 
             $items = InspectionItem::whereHas('serviceOrder', function ($q) use ($sa, $from, $to) {
                 $q->where('service_advisor_id', $sa->id)
                     ->when($from, fn ($q2) => $q2->whereDate('created_at', '>=', $from))
                     ->when($to, fn ($q2) => $q2->whereDate('created_at', '<=', $to));
-            });
+            })->get([
+                'status',
+                'cost_item',
+                'cost_labour',
+                'discount_item_percent',
+                'discount_labour_percent',
+                'final_price_snapshot',
+            ]);
 
-            $approvedCount = (clone $items)->where('status', 'approved')->count();
-            $rejectedCount = (clone $items)->where('status', 'rejected')->count();
-            $decidedCount = $approvedCount + $rejectedCount;
-            $revenue = (clone $items)->where('status', 'approved')->sum('final_price_snapshot');
+            $approvedItems = $items->where('status', 'approved');
+            $rejectedItems = $items->where('status', 'rejected');
+            $decidedCount = $approvedItems->count() + $rejectedItems->count();
+
+            // Item approved sudah locked (final_price_snapshot terisi) — pakai
+            // snapshot itu, bukan recompute, supaya konsisten dengan Grand
+            // Total di Show.jsx/InspectionReport.jsx. Fallback ke
+            // $contribution() cuma jaga-jaga kalau ada data approved lama
+            // yang snapshot-nya kosong.
+            $revenueApproved = $approvedItems->sum(
+                fn (InspectionItem $item) => $item->final_price_snapshot !== null
+                    ? (float) $item->final_price_snapshot
+                    : $contribution($item)
+            );
+
+            $revenueRejected = $rejectedItems->sum($contribution);
 
             return [
                 'id' => $sa->id,
                 'name' => $sa->name,
                 'order_count' => $orderCount,
-                'revenue' => (float) $revenue,
-                'approved_count' => $approvedCount,
-                'rejected_count' => $rejectedCount,
-                'approve_rate' => $decidedCount > 0 ? round($approvedCount / $decidedCount * 100, 1) : null,
-                'reject_rate' => $decidedCount > 0 ? round($rejectedCount / $decidedCount * 100, 1) : null,
+                'approved_order_count' => $approvedOrderCount,
+                'partially_approved_order_count' => $partiallyApprovedOrderCount,
+                'revenue_approved' => (float) $revenueApproved,
+                'revenue_rejected' => (float) $revenueRejected,
+                'approved_count' => $approvedItems->count(),
+                'rejected_count' => $rejectedItems->count(),
+                'approve_rate' => $decidedCount > 0 ? round($approvedItems->count() / $decidedCount * 100, 1) : null,
+                'reject_rate' => $decidedCount > 0 ? round($rejectedItems->count() / $decidedCount * 100, 1) : null,
             ];
         })->values();
-
-        $totalApproved = $stats->sum('approved_count');
-        $totalRejected = $stats->sum('rejected_count');
-        $totalDecided = $totalApproved + $totalRejected;
 
         return Inertia::render('Admin/Dashboards/Sa', [
             'saStats' => $stats,
             'summary' => [
                 'total_orders' => $stats->sum('order_count'),
-                'total_revenue' => $stats->sum('revenue'),
-                'overall_approve_rate' => $totalDecided > 0
-                    ? round($totalApproved / $totalDecided * 100, 1)
-                    : null,
+                'approved_order_count' => $stats->sum('approved_order_count'),
+                'partially_approved_order_count' => $stats->sum('partially_approved_order_count'),
+                // Menggantikan kartu "Overall Approve Rate" lama.
+                'total_revenue_approved' => $stats->sum('revenue_approved'),
             ],
             'filters' => [
                 'period_mode' => $request->input('period_mode', 'preset'),

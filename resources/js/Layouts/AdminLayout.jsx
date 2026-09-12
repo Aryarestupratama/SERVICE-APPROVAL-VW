@@ -103,11 +103,23 @@ export default function AdminLayout({ children, title, headerActions }) {
                         href={route('admin.dashboard')}
                         className="flex flex-col items-center gap-2 px-2 py-4 group-data-[collapsible=icon]:py-2"
                     >
-                        <img
-                            src="/images/vw-logo-white.jpeg"
-                            alt="Volkswagen"
-                            className="h-14 w-auto group-data-[collapsible=icon]:h-7"
-                        />
+                        <div className="flex w-full items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
+                            <div className="flex flex-1 shrink-0 justify-end group-data-[collapsible=icon]:flex-none">
+                                <img
+                                    src="/images/vw-logo-white.png"
+                                    alt="Volkswagen"
+                                    className="h-16 w-auto max-w-none shrink-0 group-data-[collapsible=icon]:h-8"
+                                />
+                            </div>
+                            <div className="h-8 w-px shrink-0 bg-white/20 group-data-[collapsible=icon]:hidden" />
+                            <div className="flex flex-1 shrink-0 justify-start group-data-[collapsible=icon]:hidden">
+                                <img
+                                    src="/images/audi.png"
+                                    alt="Audi"
+                                    className="h-20 w-auto max-w-none shrink-0"
+                                />
+                            </div>
+                        </div>
                         <span className="text-center text-[12px] font-semibold leading-tight tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
                             VW PIK
                             <br />

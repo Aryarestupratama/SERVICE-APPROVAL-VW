@@ -1,10 +1,18 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, Head } from '@inertiajs/react';
+import { router, Head, Link } from '@inertiajs/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
+import { Button } from '@/Components/ui/button';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/Components/ui/tooltip';
+import { Info } from 'lucide-react';
 
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -16,6 +24,24 @@ function formatCurrency(value) {
 
 function formatPercent(value) {
     return value === null || value === undefined ? '—' : `${value}%`;
+}
+
+// Header kolom + icon Info + Tooltip penjelas — dipakai bareng oleh kolom
+// Revenue Approved & Revenue Rejected (sama-sama butuh disclaimer bahwa
+// angka ini gabungan part + labour, sudah dikurangi diskon). Sama pola
+// dengan SummaryLabelWithTooltip di Admin/Dashboards/Part.jsx.
+function ColumnHeaderWithTooltip({ label, tooltip }) {
+    return (
+        <span className="flex items-center gap-1">
+            {label}
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-64">{tooltip}</TooltipContent>
+            </Tooltip>
+        </span>
+    );
 }
 
 const filterDefs = [
@@ -105,10 +131,26 @@ export default function Sa({ saStats, summary, filters }) {
             },
             { accessorKey: 'order_count', header: 'Orders', meta: { label: 'Orders' } },
             {
-                accessorKey: 'revenue',
-                header: 'Revenue',
-                meta: { label: 'Revenue' },
-                cell: ({ row }) => formatCurrency(row.original.revenue),
+                accessorKey: 'revenue_approved',
+                header: () => (
+                    <ColumnHeaderWithTooltip
+                        label="Revenue Approved"
+                        tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied."
+                    />
+                ),
+                meta: { label: 'Revenue Approved' },
+                cell: ({ row }) => formatCurrency(row.original.revenue_approved),
+            },
+            {
+                accessorKey: 'revenue_rejected',
+                header: () => (
+                    <ColumnHeaderWithTooltip
+                        label="Revenue Rejected"
+                        tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied."
+                    />
+                ),
+                meta: { label: 'Revenue Rejected' },
+                cell: ({ row }) => formatCurrency(row.original.revenue_rejected),
             },
             { accessorKey: 'approved_count', header: 'Approved', meta: { label: 'Approved' } },
             { accessorKey: 'rejected_count', header: 'Rejected', meta: { label: 'Rejected' } },
@@ -124,6 +166,24 @@ export default function Sa({ saStats, summary, filters }) {
                 meta: { label: 'Reject Rate' },
                 cell: ({ row }) => formatPercent(row.original.reject_rate),
             },
+            {
+                id: 'actions',
+                header: '',
+                enableSorting: false,
+                enableHiding: false,
+                meta: { label: 'Actions' },
+                // Reuse Admin/ServiceOrders/Index.jsx yang sudah ada (search,
+                // sort, pagination, filter) lewat query filter service_advisor_id
+                // — bukan bikin halaman detail SA baru. Catatan: ServiceOrderController::index()
+                // perlu ditambah `->when($request->service_advisor_id, ...)`.
+                cell: ({ row }) => (
+                    <Button asChild variant="outline" size="sm">
+                        <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id })}>
+                            View Orders
+                        </Link>
+                    </Button>
+                ),
+            },
         ],
         []
     );
@@ -134,26 +194,46 @@ export default function Sa({ saStats, summary, filters }) {
         <AdminLayout title="Dashboard - Service Advisor">
 
             <Head title="Dashboard SA" />
-            <div className="mb-6 grid gap-4 sm:grid-cols-3">
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
-                    </CardHeader>
-                    <CardContent><p className="text-2xl font-semibold">{summary.total_orders}</p></CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
-                    </CardHeader>
-                    <CardContent><p className="text-2xl font-semibold">{formatCurrency(summary.total_revenue)}</p></CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Overall Approve Rate</CardTitle>
-                    </CardHeader>
-                    <CardContent><p className="text-2xl font-semibold">{formatPercent(summary.overall_approve_rate)}</p></CardContent>
-                </Card>
-            </div>
+            <TooltipProvider delayDuration={200}>
+                <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
+                        </CardHeader>
+                        <CardContent><p className="text-2xl font-semibold">{summary.total_orders}</p></CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Approved Orders</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-2xl font-semibold">{summary.approved_order_count}</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Partially Approved Orders
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-2xl font-semibold">{summary.partially_approved_order_count}</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Total Revenue Approved
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-2xl font-semibold">
+                                {formatCurrency(summary.total_revenue_approved)}
+                            </p>
+                        </CardContent>
+                    </Card>
+                </div>
+            </TooltipProvider>
 
             <DataTable
                 table={table}
