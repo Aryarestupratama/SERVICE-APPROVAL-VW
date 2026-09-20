@@ -28,6 +28,12 @@ Route::get('/report/{token}', [InspectionReportController::class, 'show'])
 Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionReportController::class, 'submitDecisions'])
     ->name('public.report.decide');
 
+// Customer membatalkan keputusan approve/reject yang sudah disubmit (item balik
+// ke pending). Hanya boleh selama order masih work_in_progress — dijaga di
+// controller, bukan cuma disembunyikan di frontend.
+Route::post('/report/{token}/undo-decision', [InspectionReportController::class, 'undoDecision'])
+    ->name('public.report.undo-decision');
+
 Route::post('report/{token}/payment-receipt', [InspectionReportController::class, 'uploadPaymentReceipt'])
     ->name('public.report.upload-payment-receipt');
 

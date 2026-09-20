@@ -93,7 +93,10 @@ class InspectionReportController extends Controller
                 'photo_path' => $serviceOrder->serviceAdvisor->photo_path,
             ],
             'chiefTechnician' => $serviceOrder->technician
-                ? ['name' => $serviceOrder->technician->name]
+                ? [
+                    'name' => $serviceOrder->technician->name,
+                    'photo_path' => $serviceOrder->technician->photo_path,
+                ]
                 : null,
             'videos' => $serviceOrder->videos->map(fn ($video) => [
                 'id' => $video->id,
@@ -283,6 +286,84 @@ class InspectionReportController extends Controller
         });
 
         return back()->with('success', 'Your decisions have been submitted.');
+    }
+
+    /**
+     * Customer membatalkan keputusan approve/reject yang SUDAH disubmit — item
+     * dikembalikan ke 'pending' supaya bisa diputuskan ulang lewat
+     * submitDecisions().
+     *
+     * Aturan waktunya sama dengan submitDecisions(): hanya selama order masih
+     * 'work_in_progress'. Begitu SA memindahkan order ke quality_control atau
+     * setelahnya, keputusan terkunci. Guard ini WAJIB di server — menyembunyikan
+     * tombol di frontend bukan pengaman.
+     *
+     * Catatan: kalau SEMUA item ditolak, submitDecisions() otomatis mengubah
+     * status order jadi 'all_rejected_cancelled'. Order yang sudah berstatus itu
+     * TIDAK bisa di-undo dari sini (status bukan work_in_progress lagi).
+     */
+    public function undoDecision(Request $request, string $token)
+    {
+        $validated = $request->validate([
+            'item_id' => ['required', 'integer'],
+        ]);
+
+        DB::transaction(function () use ($request, $token, $validated) {
+            // lockForUpdate: kalau SA menekan "ke Quality Control" di detik yang
+            // sama, salah satu menunggu yang lain — status yang dicek di bawah
+            // pasti yang terbaru, bukan data basi.
+            $serviceOrder = ServiceOrder::where('inspection_token', $token)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($serviceOrder->isInspectionLinkExpired()) {
+                abort(410, 'This link has expired.');
+            }
+
+            if ($serviceOrder->status !== ServiceOrder::STATUS_WORK_IN_PROGRESS) {
+                abort(409, 'Decisions can no longer be changed for this order.');
+            }
+
+            // Lewat relasi order ini, jadi item milik order lain tidak bisa disentuh
+            // walau item_id-nya ditebak.
+            $item = $serviceOrder->inspectionItems()->findOrFail($validated['item_id']);
+
+            if ($item->status === 'pending') {
+                return; // sudah pending, tidak ada yang perlu dibatalkan
+            }
+
+            $oldStatus = $item->status;
+
+            // final_price_snapshot dikosongkan: harga dikunci ulang otomatis oleh
+            // lockFinalPrice() kalau item ini di-approve lagi nanti.
+            $item->update([
+                'status' => 'pending',
+                'decided_at' => null,
+                'final_price_snapshot' => null,
+            ]);
+
+            $item->logs()->create([
+                'old_status' => $oldStatus,
+                'new_status' => 'pending',
+                'actor_type' => 'customer',
+                'actor_id' => null,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            $freshItems = $serviceOrder->inspectionItems()->get();
+
+            $serviceOrder->update([
+                'items_approval_status' => ServiceOrder::computeApprovalStatus($freshItems),
+                // Sekarang ada item pending lagi, jadi negosiasi belum final. Ini juga
+                // otomatis memblokir SA pindah ke quality_control (guard finalized_at
+                // di updateStatus()) sampai customer memutuskan ulang.
+                'finalized_at' => null,
+                'last_activity_at' => now(),
+            ]);
+        });
+
+        return back()->with('success', 'Your decision has been cancelled.');
     }
 
     /**
