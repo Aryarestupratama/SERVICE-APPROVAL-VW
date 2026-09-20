@@ -8,13 +8,6 @@ import { Textarea } from '@/Components/ui/textarea';
 import { Badge } from '@/Components/ui/badge';
 import { Separator } from '@/Components/ui/separator';
 import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardFooter,
-} from '@/Components/ui/card';
-import {
     Select,
     SelectContent,
     SelectItem,
@@ -38,23 +31,13 @@ import {
     Tabs,
     TabsList,
     TabsTrigger,
-    TabsContent,
 } from '@/Components/ui/tabs';
-import {
-    Table,
-    TableHeader,
-    TableBody,
-    TableRow,
-    TableHead,
-    TableCell,
-} from '@/Components/ui/table';
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from '@/Components/ui/tooltip';
-import { RadioGroup, RadioGroupItem } from '@/Components/ui/radio-group';
 import { Checkbox } from '@/Components/ui/checkbox';
 import {
     HoverCard,
@@ -79,7 +62,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/Components/ui/alert-dialog';
-import { Alert, AlertTitle, AlertDescription } from '@/Components/ui/alert';
 import {
     Check,
     ChevronsUpDown,
@@ -367,6 +349,11 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 />
             </div>
 
+            {/* Digrup per konsep (Labour: harga+diskon sebaris, lalu Part:
+                harga+diskon sebaris) — bukan digrup per jenis field (semua
+                harga dulu, baru semua diskon) seperti sebelumnya. Lebih mudah
+                dibaca karena harga & diskon yang saling terkait ada di baris
+                yang sama. */}
             <div className="space-y-1.5">
                 <Label>
                     Labour Price
@@ -380,19 +367,6 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 {err('cost_labour') && <p className="text-sm text-urgent">{err('cost_labour')}</p>}
             </div>
             <div className="space-y-1.5">
-                <Label>
-                    Part Price
-                    <RequiredMark />
-                </Label>
-                <CurrencyInput
-                    value={item.cost_item}
-                    onChange={(v) => onChange('cost_item', v)}
-                    placeholder="0"
-                />
-                {err('cost_item') && <p className="text-sm text-urgent">{err('cost_item')}</p>}
-            </div>
-
-            <div className="space-y-1.5">
                 <Label>Labour Discount (%)</Label>
                 <Input
                     type="number"
@@ -405,6 +379,19 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 {err('discount_labour_percent') && (
                     <p className="text-sm text-urgent">{err('discount_labour_percent')}</p>
                 )}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label>
+                    Part Price
+                    <RequiredMark />
+                </Label>
+                <CurrencyInput
+                    value={item.cost_item}
+                    onChange={(v) => onChange('cost_item', v)}
+                    placeholder="0"
+                />
+                {err('cost_item') && <p className="text-sm text-urgent">{err('cost_item')}</p>}
             </div>
             <div className="space-y-1.5">
                 <Label>Part Discount (%)</Label>
@@ -441,59 +428,73 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
     );
 }
 
-// Baris item di dalam Table per grup — kolom rapi (Name, Labour, Part,
-// Discounts, Subtotal, Actions), lebih gampang di-scan dibanding flex row
-// bebas sebelumnya. Edit membuka Dialog, Delete membuka AlertDialog konfirmasi.
-// incomplete=true menandai baris dengan field wajib yang masih kosong
-// (misalnya item lama sebelum field discount diwajibkan) — dikasih badge
-// merah kecil supaya SA langsung tahu item mana yang perlu dilengkapi.
-function ItemTableRow({ item, incomplete, onEdit, onDelete }) {
+// Baris item bergaya "struk" — 1 kartu vertikal per item (nama di atas,
+// rincian Labour/Part di tengah, subtotal di bawah dengan garis putus-putus
+// seperti nota kasir), dipakai di list Inspection Items step 2. Menggantikan
+// ItemTableRow (baris tabel horizontal) supaya pas dengan container sempit
+// & memanjang ke bawah, bukan tabel lebar. incomplete=true menandai item
+// dengan field wajib yang masih kosong.
+function ItemReceiptRow({ item, incomplete, onEdit, onDelete, readOnly = false }) {
     return (
-        <TableRow>
-            <TableCell className="font-medium text-gray-900">
-                <div className="flex items-center gap-2">
-                    <span>{item.name || 'Untitled item'}</span>
-                    {incomplete && (
-                        <Badge
-                            variant="outline"
-                            className="border-urgent text-urgent text-[10px] font-normal"
-                        >
-                            Incomplete
-                        </Badge>
-                    )}
-                </div>
-            </TableCell>
-            <TableCell className="text-vw-grey">{formatIDR(item.cost_labour)}</TableCell>
-            <TableCell className="text-vw-grey">{formatIDR(item.cost_item)}</TableCell>
-            <TableCell className="text-vw-grey">
-                {Number(item.discount_labour_percent) > 0 || Number(item.discount_item_percent) > 0 ? (
-                    <div className="flex flex-col gap-0.5 text-xs">
-                        {Number(item.discount_labour_percent) > 0 && (
-                            <span>Labour {item.discount_labour_percent}%</span>
-                        )}
-                        {Number(item.discount_item_percent) > 0 && (
-                            <span>Part {item.discount_item_percent}%</span>
+        <div className="rounded-md border border-vw-grey/15 px-3 py-2.5">
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-gray-900">
+                            {item.name || 'Untitled item'}
+                        </p>
+                        {incomplete && (
+                            <Badge
+                                variant="outline"
+                                className="border-urgent text-urgent text-[10px] font-normal"
+                            >
+                                Incomplete
+                            </Badge>
                         )}
                     </div>
-                ) : (
-                    '0%'
-                )}
-            </TableCell>
-            <TableCell className="text-right font-semibold text-gray-900">
-                {formatIDR(itemSubtotal(item))}
-            </TableCell>
-            <TableCell>
-                <div className="flex items-center justify-end gap-3">
-                    <IconActionButton icon={Pencil} label="Edit item" onClick={onEdit} />
-                    <IconActionButton
-                        icon={Trash2}
-                        label="Delete item"
-                        onClick={onDelete}
-                        tone="danger"
-                    />
+                    {item.description && (
+                        <p className="mt-0.5 truncate text-xs text-vw-grey">
+                            {item.description}
+                        </p>
+                    )}
                 </div>
-            </TableCell>
-        </TableRow>
+                {!readOnly && (
+                    <div className="flex shrink-0 items-center gap-1">
+                        <IconActionButton icon={Pencil} label="Edit item" onClick={onEdit} />
+                        <IconActionButton
+                            icon={Trash2}
+                            label="Delete item"
+                            onClick={onDelete}
+                            tone="danger"
+                        />
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-2 space-y-0.5 text-xs text-vw-grey">
+                <div className="flex justify-between">
+                    <span>
+                        Labour
+                        {Number(item.discount_labour_percent) > 0 &&
+                            ` (-${item.discount_labour_percent}%)`}
+                    </span>
+                    <span>{formatIDR(item.cost_labour)}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span>
+                        Part
+                        {Number(item.discount_item_percent) > 0 &&
+                            ` (-${item.discount_item_percent}%)`}
+                    </span>
+                    <span>{formatIDR(item.cost_item)}</span>
+                </div>
+            </div>
+
+            <div className="mt-1.5 flex justify-between border-t border-dashed border-vw-grey/25 pt-1.5 text-sm font-semibold text-gray-900">
+                <span>Subtotal</span>
+                <span>{formatIDR(itemSubtotal(item))}</span>
+            </div>
+        </div>
     );
 }
 
@@ -510,7 +511,7 @@ const STEPS = [
 // supaya tidak "loncat" ke depan tanpa lewat validasi.
 function Stepper({ steps, currentStep, maxVisitedStep, onStepClick }) {
     return (
-        <div className="mb-6 flex items-center">
+        <div className="flex items-center">
             {steps.map((step, index) => {
                 const isCompleted = index < currentStep;
                 const isCurrent = index === currentStep;
@@ -560,40 +561,6 @@ function Stepper({ steps, currentStep, maxVisitedStep, onStepClick }) {
     );
 }
 
-// Order Summary — card biasa di kolom kanan step Items & Fee.
-function OrderSummaryCard({ itemCount, totalCost, feeAmount, estimatedTotal }) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Order Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                    <span className="text-vw-grey">Items</span>
-                    <span>{itemCount}</span>
-                </div>
-                <div className="flex justify-between">
-                    <span className="text-vw-grey">Items Subtotal</span>
-                    <span>{formatIDR(totalCost)}</span>
-                </div>
-                <div className="flex justify-between">
-                    <span className="text-vw-grey">Inspection Fee</span>
-                    <span>{formatIDR(feeAmount)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-semibold text-gray-900">
-                    <span>Estimated Total</span>
-                    <span>{formatIDR(estimatedTotal)}</span>
-                </div>
-                <p className="text-xs text-vw-grey">
-                    Before tax. VAT and final per-item price are locked once the customer
-                    approves each item.
-                </p>
-            </CardContent>
-        </Card>
-    );
-}
-
 // Navigasi Back/Next/Submit — dipakai di bawah konten (sekali di bawah tiap
 // step), supaya SA selalu scroll ke bawah dulu untuk lanjut/submit dan tidak
 // ada resiko klik ganda kena tombol yang berubah jadi Submit di posisi yang
@@ -637,6 +604,98 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const [vehicleMode, setVehicleMode] = useState('existing');
     const [draft, setDraft] = useState(emptyItemDraft(groups?.[0]));
 
+    // --- Add New Customer / Add New Vehicle modal state ---
+    // "New" di sini bukan lagi mode toggle yang setara dengan "Existing" —
+    // sekarang hanya fallback lewat modal kalau data tidak ketemu di
+    // dropdown. customerMode/vehicleMode tetap dipakai sebagai sumber
+    // kebenaran (existing vs new) untuk validasi & transform payload di
+    // atas, cuma cara mengisinya yang berubah.
+    const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
+    const [customerDraft, setCustomerDraft] = useState({ name: '', phone: '', email: '' });
+    const [vehicleDialogOpen, setVehicleDialogOpen] = useState(false);
+    const [vehicleDraft, setVehicleDraft] = useState({
+        plate_number: '',
+        brand: '',
+        vin: '',
+        model: '',
+    });
+
+    function openCustomerDialog() {
+        setCustomerDraft(customerMode === 'new' ? data.new_customer : { name: '', phone: '', email: '' });
+        setCustomerDialogOpen(true);
+    }
+    function saveCustomerDialog() {
+        setData('new_customer', customerDraft);
+        setCustomerMode('new');
+        setCustomerDialogOpen(false);
+    }
+    function useExistingCustomerInstead() {
+        setCustomerMode('existing');
+        setData('customer_id', '');
+    }
+    const isCustomerDraftComplete =
+        customerDraft.name.trim().length > 0 && customerDraft.phone.trim().length > 0;
+
+    function openVehicleDialog() {
+        setVehicleDraft(
+            vehicleMode === 'new'
+                ? data.new_vehicle
+                : { plate_number: '', brand: '', vin: '', model: '' }
+        );
+        setVehicleDialogOpen(true);
+    }
+    function saveVehicleDialog() {
+        setData('new_vehicle', vehicleDraft);
+        setVehicleMode('new');
+        setVehicleDialogOpen(false);
+    }
+    function useExistingVehicleInstead() {
+        setVehicleMode('existing');
+        setData('vehicle_id', '');
+    }
+    const isVehicleDraftComplete =
+        vehicleDraft.plate_number.trim().length > 0 &&
+        vehicleDraft.brand.trim().length > 0 &&
+        vehicleDraft.vin.trim().length > 0 &&
+        vehicleDraft.model.trim().length > 0;
+
+    // --- Inspection Items: grup aktif (Tabs) di panel step "Items & Fee" ---
+    const [activeGroup, setActiveGroup] = useState(null);
+
+    // --- Inspection Fee: inline state (bukan modal) ---
+    // `feeSaved` sengaja dipisah dari (feeAmount > 0) supaya "fee 0 yang
+    // memang sudah di-Save" beda dari "belum pernah diisi sama sekali".
+    // Selama `feeEditing` true, angka yang diketik SA disimpan di
+    // `feeInputValue` dulu (bukan langsung ke `data.inspection_fee`) —
+    // jadi kalau di-Cancel, tampilan otomatis balik ke kondisi sebelumnya
+    // (idle atau saved) tanpa perlu melacak dari tombol mana input dibuka.
+    const [feeSaved, setFeeSaved] = useState(false);
+    const [feeEditing, setFeeEditing] = useState(false);
+    const [feeInputValue, setFeeInputValue] = useState('');
+    const [feeInputNote, setFeeInputNote] = useState('');
+
+    function openFeeInput() {
+        setFeeInputValue(feeSaved ? String(data.inspection_fee ?? '') : '');
+        setFeeInputNote(feeSaved ? data.inspection_fee_note ?? '' : '');
+        setFeeEditing(true);
+    }
+    function cancelFeeInput() {
+        setFeeEditing(false);
+        setFeeInputValue('');
+        setFeeInputNote('');
+    }
+    function saveFeeInput() {
+        setData('inspection_fee', feeInputValue);
+        setData('inspection_fee_note', feeInputNote);
+        setFeeSaved(true);
+        setFeeEditing(false);
+    }
+    function removeSavedFee() {
+        setData('inspection_fee', '');
+        setData('inspection_fee_note', '');
+        setFeeSaved(false);
+    }
+
     // Error durasi video (frontend-only, terpisah dari `errors` Inertia yang
     // datang dari backend) + status lagi ngecek durasi (disable submit sebentar
     // supaya tidak submit sebelum hasil cek durasi selesai dibaca).
@@ -664,7 +723,24 @@ export default function Create({ customers, vehicles, technicians, brands, group
     // set inspection_fee jadi 0 + isi inspection_fee_note dengan teks
     // default (SA masih bisa edit teksnya sebelum submit).
     const [feeIncludedChecked, setFeeIncludedChecked] = useState(false);
-    const FEE_INCLUDED_NOTE_TEXT = 'Fee sudah termasuk di harga part & labour.';
+    const FEE_INCLUDED_NOTE_TEXT = 'Fee already included in item price.';
+
+    // Toggle checkbox "Fee already included in item price". Ditulis sebagai
+    // satu fungsi (bukan inline di onCheckedChange) supaya tombol "Cancel"
+    // di sebelah pesan "included" bisa panggil aksi yang sama persis dengan
+    // uncheck manual — dua-duanya harus reset state fee dengan bersih,
+    // bukan cuma menyembunyikan tampilannya (ini yang jadi sumber bug lama:
+    // uncheck tidak pernah membersihkan inspection_fee_note).
+    function toggleFeeIncluded(checked) {
+        setFeeIncludedChecked(checked);
+        if (checked) {
+            setData('inspection_fee', '0');
+            setData('inspection_fee_note', FEE_INCLUDED_NOTE_TEXT);
+        } else {
+            setData('inspection_fee', '');
+            setData('inspection_fee_note', '');
+        }
+    }
 
     const { data, setData, post, processing, errors, clearErrors, transform } = useForm({
         work_order_number: '',
@@ -768,6 +844,20 @@ export default function Create({ customers, vehicles, technicians, brands, group
         return map;
     }, [data.inspection_items]);
 
+    // Pastikan activeGroup selalu valid: default ke grup pertama, atau
+    // pindah ke grup pertama yang tersisa kalau grup aktif sekarang sudah
+    // tidak punya item lagi (misalnya item terakhir di grup itu dihapus).
+    useEffect(() => {
+        const groupKeys = Object.keys(itemsByGroup);
+        if (groupKeys.length === 0) {
+            if (activeGroup !== null) setActiveGroup(null);
+            return;
+        }
+        if (!activeGroup || !groupKeys.includes(activeGroup)) {
+            setActiveGroup(groupKeys[0]);
+        }
+    }, [itemsByGroup, activeGroup]);
+
     const totalCost = data.inspection_items.reduce(
         (sum, item) => sum + itemSubtotal(item),
         0
@@ -786,7 +876,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     return { message: 'Please fill in the Work Order Number.' };
                 }
                 if (customerMode === 'existing' && !data.customer_id) {
-                    return { message: 'Please select a customer, or switch to "New" to add one.' };
+                    return { message: 'Please select a customer, or use "Add New Customer" below.' };
                 }
                 if (
                     customerMode === 'new' &&
@@ -795,7 +885,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     return { message: 'Please fill in the new customer\'s name and phone number.' };
                 }
                 if (vehicleMode === 'existing' && !data.vehicle_id) {
-                    return { message: 'Please select a vehicle, or switch to "New" to add one.' };
+                    return { message: 'Please select a vehicle, or use "Add New Vehicle" below.' };
                 }
                 if (vehicleMode === 'new') {
                     const { plate_number, brand, vin, model } = data.new_vehicle;
@@ -822,6 +912,19 @@ export default function Create({ customers, vehicles, technicians, brands, group
                             itemIndex: i,
                         };
                     }
+                }
+                // Fee wajib "diputuskan" sebelum lanjut — bukan sekadar boleh
+                // kosong. SA harus memilih salah satu: checklist "already
+                // included", atau isi & Save angka fee-nya.
+                if (feeEditing) {
+                    return {
+                        message: 'Please Save or Cancel the inspection fee you\'re entering before continuing.',
+                    };
+                }
+                if (!feeIncludedChecked && !feeSaved) {
+                    return {
+                        message: 'Please add an inspection fee, or check "Fee already included in item price".',
+                    };
                 }
                 return null;
             }
@@ -965,732 +1068,686 @@ export default function Create({ customers, vehicles, technicians, brands, group
         <AdminLayout title="New Service Order">
             <Head title="New Service Order" />
 
-            <Stepper
-                steps={STEPS}
-                currentStep={currentStep}
-                maxVisitedStep={maxVisitedStep}
-                onStepClick={goToStep}
-            />
+            {/* Sticky progress nav: nempel di bawah header admin (top-14, karena
+                header AdminLayout tingginya h-14) saat discroll. -mx/px negatif
+                dipakai supaya background putihnya full-bleed sampai tepi layar
+                (menutupi konten yang lewat di bawahnya), tapi ISI stepper-nya
+                sendiri tetap dibatasi max-w-2xl + center, senada dengan lebar
+                form di bawah — bukan melebar penuh. */}
+            <div className="sticky top-14 z-10 -mx-4 border-b border-vw-grey/10 bg-white px-4 sm:-mx-6 sm:px-6">
+                <div className="mx-auto max-w-2xl py-3">
+                    <Stepper
+                        steps={STEPS}
+                        currentStep={currentStep}
+                        maxVisitedStep={maxVisitedStep}
+                        onStepClick={goToStep}
+                    />
+                </div>
+            </div>
 
             {stepBlockMessage && (
-                <p className="mb-4 text-sm text-urgent">{stepBlockMessage}</p>
+                <p className="mx-auto mt-4 max-w-2xl px-4 text-sm text-urgent sm:px-0">
+                    {stepBlockMessage}
+                </p>
             )}
 
+            <div className="mt-4">
+
             <form id="service-order-form" onSubmit={handleFormSubmit}>
-                <div className="space-y-6">
+                <div className="space-y-4">
                     {currentStepId === 'details' && (
-                        <>
-                            {/* Work Order Number ditaruh sebagai strip ringkas di atas,
-                                bukan card penuh — cuma 1 field, tidak perlu makan
-                                seluruh lebar card seperti sebelumnya. */}
-                            <Card>
-                                <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end sm:justify-between">
-                                    <div className="w-full max-w-sm space-y-1.5">
+                        <div className="mx-auto max-w-2xl space-y-5 px-4 sm:px-0">
+                            {/* Tidak ada Card/CardTitle sama sekali di sini — label tiap
+                                field sudah cukup jadi pembeda ("Select Customer", "Select
+                                Vehicle", dst). Antar kelompok field dipisah <Separator />
+                                (garis rambut tipis), bukan box, supaya tetap gampang
+                                dipindai tanpa makan padding & tinggi seperti Card. Lebar
+                                tiap field juga dibatasi sesuai kebutuhan isinya (max-w-*),
+                                tidak otomatis ikut lebar penuh container 2xl ini. */}
+
+                            {/* Work Order Number */}
+                            <div className="max-w-xs space-y-1.5">
+                                <Label>
+                                    Work Order Number
+                                    <RequiredMark />
+                                </Label>
+                                <Input
+                                    value={data.work_order_number}
+                                    onChange={(e) =>
+                                        setData('work_order_number', e.target.value)
+                                    }
+                                    placeholder="e.g. WO-2026-0001"
+                                    className="h-9"
+                                />
+                                {errors.work_order_number && (
+                                    <p className="text-xs text-urgent">
+                                        {errors.work_order_number}
+                                    </p>
+                                )}
+                            </div>
+
+                            <Separator />
+
+                            {/* Customer */}
+                            <div className="space-y-3">
+                                {customerMode === 'existing' ? (
+                                    <>
+                                        <div className="max-w-sm space-y-1.5">
+                                            <Label>
+                                                Select Customer
+                                                <RequiredMark />
+                                            </Label>
+                                            <EntityCombobox
+                                                items={customers}
+                                                value={data.customer_id}
+                                                onSelect={(id) => setData('customer_id', id)}
+                                                placeholder="Search customer..."
+                                                getLabel={(c) => c.name}
+                                                getSubLabel={(c) => c.phone}
+                                            />
+                                            {errors.customer_id && (
+                                                <p className="text-sm text-urgent">
+                                                    {errors.customer_id}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex max-w-sm items-center justify-between gap-3">
+                                            <p className="text-xs text-vw-grey">
+                                                Can't find them in the list?
+                                            </p>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={openCustomerDialog}
+                                            >
+                                                <Plus className="mr-1 h-3.5 w-3.5" /> Add New
+                                                Customer
+                                            </Button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex max-w-sm items-start justify-between gap-3 rounded-md border border-vw-grey/20 bg-vw-grey-light/40 px-3 py-2.5">
+                                        <div className="min-w-0 space-y-0.5 text-sm">
+                                            <p className="truncate font-medium text-gray-900">
+                                                {data.new_customer.name || 'Untitled customer'}
+                                            </p>
+                                            <p className="truncate text-vw-grey">
+                                                {data.new_customer.phone}
+                                            </p>
+                                            <p className="text-xs text-vw-grey">
+                                                New customer — will be created with this order.
+                                            </p>
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-1 pt-0.5">
+                                            <IconActionButton
+                                                icon={Pencil}
+                                                label="Edit new customer"
+                                                onClick={openCustomerDialog}
+                                            />
+                                            <IconActionButton
+                                                icon={X}
+                                                label="Use an existing customer instead"
+                                                tone="danger"
+                                                onClick={useExistingCustomerInstead}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {errors['new_customer.name'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_customer.name']}
+                                    </p>
+                                )}
+                                {errors['new_customer.phone'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_customer.phone']}
+                                    </p>
+                                )}
+                            </div>
+
+                            <Separator />
+
+                            {/* Vehicle */}
+                            <div className="space-y-3">
+                                {vehicleMode === 'existing' ? (
+                                    <>
+                                        <div className="max-w-sm space-y-1.5">
+                                            <Label>
+                                                Select Vehicle
+                                                <RequiredMark />
+                                            </Label>
+                                            {customerMode === 'new' ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    New customers don't have any vehicles yet —
+                                                    add one below.
+                                                </p>
+                                            ) : !data.customer_id ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    Select a customer first to see their vehicles.
+                                                </p>
+                                            ) : filteredVehicles.length === 0 ? (
+                                                <p className="text-sm text-vw-grey">
+                                                    This customer has no vehicles yet — add one
+                                                    below.
+                                                </p>
+                                            ) : (
+                                                <EntityCombobox
+                                                    items={filteredVehicles}
+                                                    value={data.vehicle_id}
+                                                    onSelect={(id) => setData('vehicle_id', id)}
+                                                    placeholder="Search plate number..."
+                                                    getLabel={(v) => v.plate_number}
+                                                    getSubLabel={(v) => `${v.brand} ${v.model}`}
+                                                />
+                                            )}
+                                            {errors.vehicle_id && (
+                                                <p className="text-sm text-urgent">
+                                                    {errors.vehicle_id}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex max-w-sm items-center justify-between gap-3">
+                                            <p className="text-xs text-vw-grey">
+                                                Can't find it in the list?
+                                            </p>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={openVehicleDialog}
+                                            >
+                                                <Plus className="mr-1 h-3.5 w-3.5" /> Add New
+                                                Vehicle
+                                            </Button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex max-w-sm items-start justify-between gap-3 rounded-md border border-vw-grey/20 bg-vw-grey-light/40 px-3 py-2.5">
+                                        <div className="min-w-0 space-y-0.5 text-sm">
+                                            <p className="truncate font-medium text-gray-900">
+                                                {data.new_vehicle.plate_number || 'Untitled vehicle'}
+                                            </p>
+                                            <p className="truncate text-vw-grey">
+                                                {[data.new_vehicle.brand, data.new_vehicle.model]
+                                                    .filter(Boolean)
+                                                    .join(' ')}
+                                            </p>
+                                            <p className="text-xs text-vw-grey">
+                                                New vehicle — will be created with this order.
+                                            </p>
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-1 pt-0.5">
+                                            <IconActionButton
+                                                icon={Pencil}
+                                                label="Edit new vehicle"
+                                                onClick={openVehicleDialog}
+                                            />
+                                            <IconActionButton
+                                                icon={X}
+                                                label="Use an existing vehicle instead"
+                                                tone="danger"
+                                                onClick={useExistingVehicleInstead}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {errors['new_vehicle.plate_number'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_vehicle.plate_number']}
+                                    </p>
+                                )}
+                                {errors['new_vehicle.brand'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_vehicle.brand']}
+                                    </p>
+                                )}
+                                {errors['new_vehicle.vin'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_vehicle.vin']}
+                                    </p>
+                                )}
+                                {errors['new_vehicle.model'] && (
+                                    <p className="text-sm text-urgent">
+                                        {errors['new_vehicle.model']}
+                                    </p>
+                                )}
+                            </div>
+
+                            <Separator />
+
+                            {/* Customer Complaint — Textarea dibiarkan lebih lebar (max-w-xl)
+                                karena butuh ruang baca multi-baris, beda dari field pendek
+                                di atas. */}
+                            <div className="max-w-xl space-y-1.5">
+                                <Label>
+                                    Customer Complaint
+                                    <RequiredMark />
+                                </Label>
+                                <Textarea
+                                    value={data.customer_complaint}
+                                    onChange={(e) =>
+                                        setData('customer_complaint', e.target.value)
+                                    }
+                                    placeholder="What did the customer report/complain about their vehicle?"
+                                    rows={4}
+                                />
+                                {errors.customer_complaint && (
+                                    <p className="text-sm text-urgent">
+                                        {errors.customer_complaint}
+                                    </p>
+                                )}
+                                <p className="text-xs text-vw-grey">
+                                    Still editable on the order page until it reaches Quality
+                                    Control.
+                                </p>
+                            </div>
+
+                            <Separator />
+
+                            {/* Chief Technician + Personal Message */}
+                            <div className="max-w-xs space-y-1.5">
+                                <Label>
+                                    Chief Technician
+                                    <RequiredMark />
+                                </Label>
+                                <Select
+                                    value={data.technician_id ? String(data.technician_id) : ''}
+                                    onValueChange={(value) => setData('technician_id', value)}
+                                >
+                                    <SelectTrigger className="h-9">
+                                        <SelectValue placeholder="Select chief technician" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {technicians.map((tech) => (
+                                            <SelectItem key={tech.id} value={String(tech.id)}>
+                                                {tech.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="max-w-xl space-y-1.5">
+                                <Label>
+                                    Personal Message to Customer
+                                    <RequiredMark />
+                                </Label>
+                                <Textarea
+                                    value={data.personal_message}
+                                    onChange={(e) =>
+                                        setData('personal_message', e.target.value)
+                                    }
+                                    placeholder="e.g. Selamat pagi Bapak/Ibu, saya adalah kepala teknisi Anda hari ini..."
+                                    rows={3}
+                                />
+                            </div>
+
+                            <Separator />
+
+                            {/* Video */}
+                            <div className="space-y-3">
+                                <div className="max-w-sm space-y-3">
+                                    {data.video.file && (
+                                        <div className="flex items-center justify-between gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light/40 px-3 py-2">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <FileVideo className="h-4 w-4 shrink-0 text-vw-grey" />
+                                                <span className="truncate text-sm text-gray-900">
+                                                    {data.video.file.name}
+                                                </span>
+                                            </div>
+                                            <IconActionButton
+                                                icon={X}
+                                                label="Remove video"
+                                                tone="danger"
+                                                onClick={() => {
+                                                    updateVideo('file', null);
+                                                    setVideoDurationError(null);
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1.5">
                                         <Label>
-                                            Work Order Number
+                                            {data.video.file
+                                                ? 'Replace video file (max 2 minutes)'
+                                                : 'Video File (max 2 minutes)'}
                                             <RequiredMark />
                                         </Label>
                                         <Input
-                                            value={data.work_order_number}
-                                            onChange={(e) =>
-                                                setData('work_order_number', e.target.value)
-                                            }
-                                            placeholder="e.g. WO-2026-0001"
-                                        />
-                                        {errors.work_order_number && (
-                                            <p className="text-sm text-urgent">
-                                                {errors.work_order_number}
-                                            </p>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
+                                            type="file"
+                                            accept="video/mp4,video/quicktime,video/webm"
+                                            onChange={async (e) => {
+                                                const file = e.target.files[0];
+                                                setVideoDurationError(null);
 
-                            {/* Customer & Vehicle berdampingan — keduanya "siapa & apa"
-                                dari order ini, ukurannya sepadan jadi wajar disandingkan. */}
-                            <div className="grid gap-6 lg:grid-cols-2">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>
-                                            Customer
-                                            <RequiredMark />
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4">
-                                        <RadioGroup
-                                            value={customerMode}
-                                            onValueChange={setCustomerMode}
-                                            className="grid grid-cols-2 gap-2"
-                                        >
-                                            <Label
-                                                htmlFor="customer-mode-existing"
-                                                className={cn(
-                                                    'flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                                    customerMode === 'existing'
-                                                        ? 'border-vw-blue bg-vw-blue text-white'
-                                                        : 'border-vw-grey/30 text-gray-700 hover:bg-vw-grey-light/40'
-                                                )}
-                                            >
-                                                <RadioGroupItem
-                                                    value="existing"
-                                                    id="customer-mode-existing"
-                                                    className="sr-only"
-                                                />
-                                                Existing
-                                            </Label>
-                                            <Label
-                                                htmlFor="customer-mode-new"
-                                                className={cn(
-                                                    'flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                                    customerMode === 'new'
-                                                        ? 'border-vw-blue bg-vw-blue text-white'
-                                                        : 'border-vw-grey/30 text-gray-700 hover:bg-vw-grey-light/40'
-                                                )}
-                                            >
-                                                <RadioGroupItem
-                                                    value="new"
-                                                    id="customer-mode-new"
-                                                    className="sr-only"
-                                                />
-                                                <Plus className="h-4 w-4" /> New
-                                            </Label>
-                                        </RadioGroup>
-
-                                        {customerMode === 'existing' ? (
-                                            <div className="space-y-1.5">
-                                                <Label>
-                                                    Select Customer
-                                                    <RequiredMark />
-                                                </Label>
-                                                <EntityCombobox
-                                                    items={customers}
-                                                    value={data.customer_id}
-                                                    onSelect={(id) => setData('customer_id', id)}
-                                                    placeholder="Search customer..."
-                                                    getLabel={(c) => c.name}
-                                                    getSubLabel={(c) => c.phone}
-                                                />
-                                                {errors.customer_id && (
-                                                    <p className="text-sm text-urgent">
-                                                        {errors.customer_id}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        Name
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Input
-                                                        value={data.new_customer.name}
-                                                        onChange={(e) =>
-                                                            setData('new_customer', {
-                                                                ...data.new_customer,
-                                                                name: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                    {errors['new_customer.name'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_customer.name']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        Phone
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Input
-                                                        value={data.new_customer.phone}
-                                                        onChange={(e) =>
-                                                            setData('new_customer', {
-                                                                ...data.new_customer,
-                                                                phone: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                    {errors['new_customer.phone'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_customer.phone']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>Email (optional)</Label>
-                                                    <Input
-                                                        type="email"
-                                                        value={data.new_customer.email}
-                                                        onChange={(e) =>
-                                                            setData('new_customer', {
-                                                                ...data.new_customer,
-                                                                email: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>
-                                            Vehicle
-                                            <RequiredMark />
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4">
-                                        <RadioGroup
-                                            value={vehicleMode}
-                                            onValueChange={setVehicleMode}
-                                            className="grid grid-cols-2 gap-2"
-                                        >
-                                            <Label
-                                                htmlFor="vehicle-mode-existing"
-                                                className={cn(
-                                                    'flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                                    vehicleMode === 'existing'
-                                                        ? 'border-vw-blue bg-vw-blue text-white'
-                                                        : 'border-vw-grey/30 text-gray-700 hover:bg-vw-grey-light/40'
-                                                )}
-                                            >
-                                                <RadioGroupItem
-                                                    value="existing"
-                                                    id="vehicle-mode-existing"
-                                                    className="sr-only"
-                                                />
-                                                Existing
-                                            </Label>
-                                            <Label
-                                                htmlFor="vehicle-mode-new"
-                                                className={cn(
-                                                    'flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                                    vehicleMode === 'new'
-                                                        ? 'border-vw-blue bg-vw-blue text-white'
-                                                        : 'border-vw-grey/30 text-gray-700 hover:bg-vw-grey-light/40'
-                                                )}
-                                            >
-                                                <RadioGroupItem
-                                                    value="new"
-                                                    id="vehicle-mode-new"
-                                                    className="sr-only"
-                                                />
-                                                <Plus className="h-4 w-4" /> New
-                                            </Label>
-                                        </RadioGroup>
-
-                                        {vehicleMode === 'existing' ? (
-                                            <div className="space-y-1.5">
-                                                <Label>
-                                                    Select Vehicle
-                                                    <RequiredMark />
-                                                </Label>
-                                                {customerMode === 'new' ? (
-                                                    <p className="text-sm text-vw-grey">
-                                                        New customers don't have any vehicles yet — add
-                                                        one below.
-                                                    </p>
-                                                ) : !data.customer_id ? (
-                                                    <p className="text-sm text-vw-grey">
-                                                        Select a customer first to see their vehicles.
-                                                    </p>
-                                                ) : filteredVehicles.length === 0 ? (
-                                                    <p className="text-sm text-vw-grey">
-                                                        This customer has no vehicles yet — add one
-                                                        below.
-                                                    </p>
-                                                ) : (
-                                                    <EntityCombobox
-                                                        items={filteredVehicles}
-                                                        value={data.vehicle_id}
-                                                        onSelect={(id) => setData('vehicle_id', id)}
-                                                        placeholder="Search plate number..."
-                                                        getLabel={(v) => v.plate_number}
-                                                        getSubLabel={(v) => `${v.brand} ${v.model}`}
-                                                    />
-                                                )}
-                                                {errors.vehicle_id && (
-                                                    <p className="text-sm text-urgent">
-                                                        {errors.vehicle_id}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        Plate Number
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Input
-                                                        value={data.new_vehicle.plate_number}
-                                                        onChange={(e) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                plate_number: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                    {errors['new_vehicle.plate_number'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_vehicle.plate_number']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        Brand
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Select
-                                                        value={data.new_vehicle.brand}
-                                                        onValueChange={(value) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                brand: value,
-                                                            })
-                                                        }
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Brand" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {brands.map((brand) => (
-                                                                <SelectItem key={brand} value={brand}>
-                                                                    {brand}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    {errors['new_vehicle.brand'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_vehicle.brand']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        VIN/Chasis Number
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Input
-                                                        value={data.new_vehicle.vin}
-                                                        maxLength={17}
-                                                        onChange={(e) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                vin: e.target.value.toUpperCase(),
-                                                            })
-                                                        }
-                                                        placeholder="17-character VIN/Chasis Number"
-                                                    />
-                                                    {errors['new_vehicle.vin'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_vehicle.vin']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label>
-                                                        Model
-                                                        <RequiredMark />
-                                                    </Label>
-                                                    <Input
-                                                        value={data.new_vehicle.model}
-                                                        onChange={(e) =>
-                                                            setData('new_vehicle', {
-                                                                ...data.new_vehicle,
-                                                                model: e.target.value,
-                                                            })
-                                                        }
-                                                    />
-                                                    {errors['new_vehicle.model'] && (
-                                                        <p className="text-sm text-urgent">
-                                                            {errors['new_vehicle.model']}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </div>
-
-                            {/* Customer Complaint & Assignment berdampingan */}
-                            <div className="grid gap-6 lg:grid-cols-2">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Customer Complaint</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-1.5">
-                                        <Label>
-                                            Customer Complaint
-                                            <RequiredMark />
-                                        </Label>
-                                        <Textarea
-                                            value={data.customer_complaint}
-                                            onChange={(e) =>
-                                                setData('customer_complaint', e.target.value)
-                                            }
-                                            placeholder="What did the customer report/complain about their vehicle?"
-                                            rows={5}
-                                        />
-                                        {errors.customer_complaint && (
-                                            <p className="text-sm text-urgent">
-                                                {errors.customer_complaint}
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-vw-grey">
-                                            Still editable on the order page until it reaches Quality
-                                            Control.
-                                        </p>
-                                    </CardContent>
-                                </Card>
-
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Assignment & Message</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4">
-                                        <div className="space-y-1.5">
-                                            <Label>
-                                                Chief Technician
-                                                <RequiredMark />
-                                            </Label>
-                                            <Select
-                                                value={data.technician_id ? String(data.technician_id) : ''}
-                                                onValueChange={(value) => setData('technician_id', value)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select chief technician" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {technicians.map((tech) => (
-                                                        <SelectItem key={tech.id} value={String(tech.id)}>
-                                                            {tech.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label>
-                                                Personal Message to Customer
-                                                <RequiredMark />
-                                            </Label>
-                                            <Textarea
-                                                value={data.personal_message}
-                                                onChange={(e) =>
-                                                    setData('personal_message', e.target.value)
+                                                if (!file) {
+                                                    updateVideo('file', null);
+                                                    return;
                                                 }
-                                                placeholder="A short message shown alongside the video..."
-                                                rows={3}
-                                            />
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </div>
 
-                            {/* Video tetap full-width sendirian */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>
-                                        Video
-                                        <RequiredMark />
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                                    <div className="space-y-3">
-                                        {data.video.file && (
-                                            <div className="flex items-center justify-between gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light/40 px-3 py-2">
-                                                <div className="flex min-w-0 items-center gap-2">
-                                                    <FileVideo className="h-4 w-4 shrink-0 text-vw-grey" />
-                                                    <span className="truncate text-sm text-gray-900">
-                                                        {data.video.file.name}
-                                                    </span>
-                                                </div>
-                                                <IconActionButton
-                                                    icon={X}
-                                                    label="Remove video"
-                                                    tone="danger"
-                                                    onClick={() => {
-                                                        updateVideo('file', null);
-                                                        setVideoDurationError(null);
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
-
-                                        <div className="space-y-1.5">
-                                            <Label>
-                                                {data.video.file
-                                                    ? 'Replace video file (max 2 minutes)'
-                                                    : 'Video File (max 2 minutes)'}
-                                                <RequiredMark />
-                                            </Label>
-                                            <Input
-                                                type="file"
-                                                accept="video/mp4,video/quicktime,video/webm"
-                                                onChange={async (e) => {
-                                                    const file = e.target.files[0];
-                                                    setVideoDurationError(null);
-
-                                                    if (!file) {
-                                                        updateVideo('file', null);
-                                                        return;
-                                                    }
-
-                                                    setCheckingVideoDuration(true);
-                                                    try {
-                                                        const duration = await readVideoDurationSeconds(
-                                                            file
-                                                        );
-                                                        if (duration > MAX_VIDEO_DURATION_SECONDS) {
-                                                            setVideoDurationError(
-                                                                `Video is ${Math.round(
-                                                                    duration
-                                                                )}s long — maximum allowed is ${MAX_VIDEO_DURATION_SECONDS}s (2 minutes).`
-                                                            );
-                                                            updateVideo('file', null);
-                                                            e.target.value = '';
-                                                        } else {
-                                                            updateVideo('file', file);
-                                                        }
-                                                    } catch {
+                                                setCheckingVideoDuration(true);
+                                                try {
+                                                    const duration = await readVideoDurationSeconds(
+                                                        file
+                                                    );
+                                                    if (duration > MAX_VIDEO_DURATION_SECONDS) {
                                                         setVideoDurationError(
-                                                            'Could not read this video file. Please try a different file.'
+                                                            `Video is ${Math.round(
+                                                                duration
+                                                            )}s long — maximum allowed is ${MAX_VIDEO_DURATION_SECONDS}s (2 minutes).`
                                                         );
                                                         updateVideo('file', null);
                                                         e.target.value = '';
-                                                    } finally {
-                                                        setCheckingVideoDuration(false);
+                                                    } else {
+                                                        updateVideo('file', file);
                                                     }
-                                                }}
-                                            />
-                                            {checkingVideoDuration && (
-                                                <p className="text-xs text-vw-grey">
-                                                    Checking video duration...
-                                                </p>
-                                            )}
-                                            {videoDurationError && (
-                                                <p className="text-sm text-urgent">
-                                                    {videoDurationError}
-                                                </p>
-                                            )}
-                                            {errors['videos.0.file'] && (
-                                                <p className="text-sm text-urgent">
-                                                    {errors['videos.0.file']}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <Alert>
-                                        <Info className="h-4 w-4" />
-                                        <AlertTitle className="text-sm">Only one video here</AlertTitle>
-                                        <AlertDescription className="text-xs">
-                                            Any additional videos will be sent directly to the
-                                            customer's WhatsApp instead of being attached to this
-                                            report.
-                                        </AlertDescription>
-                                    </Alert>
-                                </CardContent>
-                            </Card>
-                        </>
-                    )}
-
-                    {currentStepId === 'items_fee' && (
-                        <div className="grid gap-6 lg:grid-cols-3 lg:items-stretch">
-                            <div className="lg:col-span-2">
-                                <Card className="flex h-full flex-col">
-                                    <CardHeader className="flex flex-row items-center justify-between">
-                                        <CardTitle>Inspection Items</CardTitle>
-                                        <Button type="button" size="sm" onClick={openAddItem}>
-                                            <Plus className="mr-1 h-4 w-4" /> Add Item
-                                        </Button>
-                                    </CardHeader>
-                                    <CardContent className="flex-1 space-y-4">
-                                        {errors.inspection_items && (
-                                            <p className="text-sm text-urgent">
-                                                {errors.inspection_items}
-                                            </p>
-                                        )}
-
-                                        {data.inspection_items.length === 0 ? (
-                                            <div className="rounded-md border border-dashed border-vw-grey/40 py-10 text-center">
-                                                <p className="text-sm text-vw-grey">
-                                                    No items added yet.
-                                                </p>
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="mt-3"
-                                                    onClick={openAddItem}
-                                                >
-                                                    <Plus className="mr-1 h-4 w-4" /> Add your first item
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <Tabs
-                                                defaultValue={Object.keys(itemsByGroup)[0]}
-                                                className="flex flex-1 flex-col"
-                                            >
-                                                <TabsList className="w-full justify-start overflow-x-auto">
-                                                    {Object.keys(itemsByGroup).map((group) => (
-                                                        <TabsTrigger key={group} value={group}>
-                                                            {formatGroupLabel(group)}
-                                                            <Badge variant="secondary" className="ml-1.5">
-                                                                {itemsByGroup[group].length}
-                                                            </Badge>
-                                                        </TabsTrigger>
-                                                    ))}
-                                                </TabsList>
-                                                {Object.entries(itemsByGroup).map(([group, entries]) => {
-                                                    const subtotal = entries.reduce(
-                                                        (sum, { item }) => sum + itemSubtotal(item),
-                                                        0
+                                                } catch {
+                                                    setVideoDurationError(
+                                                        'Could not read this video file. Please try a different file.'
                                                     );
-                                                    return (
-                                                        <TabsContent
-                                                            key={group}
-                                                            value={group}
-                                                            className="mt-3 flex-1 space-y-3"
-                                                        >
-                                                            <div className="max-h-96 overflow-y-auto rounded-md border border-vw-grey/20">
-                                                                <Table>
-                                                                    <TableHeader>
-                                                                        <TableRow>
-                                                                            <TableHead>Item</TableHead>
-                                                                            <TableHead>Labour</TableHead>
-                                                                            <TableHead>Part</TableHead>
-                                                                            <TableHead>Discounts</TableHead>
-                                                                            <TableHead className="text-right">
-                                                                                Subtotal
-                                                                            </TableHead>
-                                                                            <TableHead className="w-16" />
-                                                                        </TableRow>
-                                                                    </TableHeader>
-                                                                    <TableBody>
-                                                                        {entries.map(({ item, index }) => (
-                                                                            <ItemTableRow
-                                                                                key={index}
-                                                                                item={item}
-                                                                                incomplete={!isItemComplete(item)}
-                                                                                onEdit={() => openEditItem(index)}
-                                                                                onDelete={() =>
-                                                                                    openDeleteItem(index)
-                                                                                }
-                                                                            />
-                                                                        ))}
-                                                                    </TableBody>
-                                                                </Table>
-                                                            </div>
-                                                            <div className="flex justify-end text-sm">
-                                                                <span className="text-vw-grey">
-                                                                    {formatGroupLabel(group)} subtotal:&nbsp;
-                                                                </span>
-                                                                <span className="font-semibold text-gray-900">
-                                                                    {formatIDR(subtotal)}
-                                                                </span>
-                                                            </div>
-                                                        </TabsContent>
-                                                    );
-                                                })}
-                                            </Tabs>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </div>
-
-                            <div className="flex flex-col gap-6">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Inspection Fee</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4">
-                                        <div className="space-y-1.5">
-                                            <Label>
-                                                Fee Amount
-                                                <RequiredMark />
-                                            </Label>
-                                            <CurrencyInput
-                                                value={data.inspection_fee}
-                                                onChange={(v) => setData('inspection_fee', v)}
-                                                placeholder="0"
-                                                disabled={feeIncludedChecked}
-                                            />
-                                            <p className="text-xs text-vw-grey">
-                                                If there is no fee, type 0.
-                                            </p>
-                                            {errors.inspection_fee && (
-                                                <p className="text-sm text-urgent">
-                                                    {errors.inspection_fee}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="flex items-start gap-2">
-                                            <Checkbox
-                                                id="inspection_fee_included"
-                                                checked={feeIncludedChecked}
-                                                onCheckedChange={(checked) => {
-                                                    const isChecked = checked === true;
-                                                    setFeeIncludedChecked(isChecked);
-                                                    // Centang → paksa fee ke 0 & isi note
-                                                    // default (masih bisa diedit manual),
-                                                    // biar SA nggak bingung kenapa 0 padahal
-                                                    // belum diketik apa-apa.
-                                                    if (isChecked) {
-                                                        setData('inspection_fee', '0');
-                                                        if (!data.inspection_fee_note) {
-                                                            setData(
-                                                                'inspection_fee_note',
-                                                                FEE_INCLUDED_NOTE_TEXT
-                                                            );
-                                                        }
-                                                    }
-                                                }}
-                                            />
-                                            <Label
-                                                htmlFor="inspection_fee_included"
-                                                className="text-xs font-normal leading-snug text-vw-grey"
-                                            >
-                                                Fee sudah termasuk di harga part & labour (fee
-                                                di-set Rp 0)
-                                            </Label>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label>Fee Note (optional, reason for this fee)</Label>
-                                            <Textarea
-                                                value={data.inspection_fee_note}
-                                                onChange={(e) =>
-                                                    setData('inspection_fee_note', e.target.value)
+                                                    updateVideo('file', null);
+                                                    e.target.value = '';
+                                                } finally {
+                                                    setCheckingVideoDuration(false);
                                                 }
-                                                rows={3}
-                                            />
-                                        </div>
-                                    </CardContent>
-                                </Card>
+                                            }}
+                                        />
+                                        {checkingVideoDuration && (
+                                            <p className="text-xs text-vw-grey">
+                                                Checking video duration...
+                                            </p>
+                                        )}
+                                        {videoDurationError && (
+                                            <p className="text-sm text-urgent">
+                                                {videoDurationError}
+                                            </p>
+                                        )}
+                                        {errors['videos.0.file'] && (
+                                            <p className="text-sm text-urgent">
+                                                {errors['videos.0.file']}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
 
-                                <OrderSummaryCard
-                                    itemCount={data.inspection_items.length}
-                                    totalCost={totalCost}
-                                    feeAmount={feeAmount}
-                                    estimatedTotal={estimatedTotal}
-                                />
+                                <p className="flex max-w-sm items-start gap-1.5 text-xs text-vw-grey">
+                                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                    Only one video here — additional videos go directly to the
+                                    customer's WhatsApp instead of being attached to this report.
+                                </p>
                             </div>
                         </div>
                     )}
 
+
+                    {currentStepId === 'items_fee' && (
+                        <div className="mx-auto max-w-2xl px-4 sm:px-0">
+                            {/* Panel dengan header & footer "shrink-0" (selalu kelihatan),
+                                body di tengah "flex-1 overflow-y-auto" (scroll internal
+                                kalau item kepanjangan) — bukan sticky ke viewport, tapi
+                                sticky ke panel-nya sendiri, mirip layout keranjang/checkout.
+                                Grup ditampilkan lewat Tabs di header, jadi body yang
+                                scroll cuma isi grup yang lagi aktif. */}
+                            <div className="flex h-[70vh] flex-col overflow-hidden rounded-lg border border-vw-grey/15 bg-white">
+                                {/* Header (sticky) */}
+                                <div className="shrink-0 space-y-3 border-b border-vw-grey/10 px-4 py-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-900">
+                                                Inspection Items
+                                            </p>
+                                            <p className="text-xs text-vw-grey">
+                                                {data.inspection_items.length} item
+                                                {data.inspection_items.length !== 1 && 's'}
+                                            </p>
+                                        </div>
+                                        <Button type="button" size="sm" onClick={openAddItem}>
+                                            <Plus className="mr-1 h-3.5 w-3.5" /> Add Item
+                                        </Button>
+                                    </div>
+
+                                    {errors.inspection_items && (
+                                        <p className="text-sm text-urgent">
+                                            {errors.inspection_items}
+                                        </p>
+                                    )}
+
+                                    {data.inspection_items.length > 0 && activeGroup && (
+                                        <Tabs value={activeGroup} onValueChange={setActiveGroup}>
+                                            <TabsList className="w-full justify-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                {Object.keys(itemsByGroup).map((group) => (
+                                                    <TabsTrigger key={group} value={group}>
+                                                        {formatGroupLabel(group)}
+                                                        <Badge
+                                                            variant="secondary"
+                                                            className="ml-1.5"
+                                                        >
+                                                            {itemsByGroup[group].length}
+                                                        </Badge>
+                                                    </TabsTrigger>
+                                                ))}
+                                            </TabsList>
+                                        </Tabs>
+                                    )}
+                                </div>
+
+                                {/* Body (scrollable) — struk-style list, hanya grup aktif */}
+                                <div className="flex-1 overflow-y-auto px-4 py-3">
+                                    {data.inspection_items.length === 0 ? (
+                                        <div className="rounded-md border border-dashed border-vw-grey/40 py-10 text-center">
+                                            <p className="text-sm text-vw-grey">
+                                                No items added yet.
+                                            </p>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="mt-3"
+                                                onClick={openAddItem}
+                                            >
+                                                <Plus className="mr-1 h-4 w-4" /> Add your first
+                                                item
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {(itemsByGroup[activeGroup] ?? []).map(
+                                                ({ item, index }) => (
+                                                    <ItemReceiptRow
+                                                        key={index}
+                                                        item={item}
+                                                        incomplete={!isItemComplete(item)}
+                                                        onEdit={() => openEditItem(index)}
+                                                        onDelete={() => openDeleteItem(index)}
+                                                    />
+                                                )
+                                            )}
+                                            {/* Subtotal grup yang lagi aktif — dulu ada di
+                                                versi Table, sempat hilang waktu redesign.
+                                                Beda dari "Items Subtotal" di footer (itu
+                                                total SEMUA grup); ini cuma grup yang lagi
+                                                dibuka di tab ini. */}
+                                            <div className="flex justify-between border-t border-dashed border-vw-grey/25 px-1 pt-2 text-xs">
+                                                <span className="text-vw-grey">
+                                                    {formatGroupLabel(activeGroup)} subtotal
+                                                </span>
+                                                <span className="font-semibold text-gray-900">
+                                                    {formatIDR(
+                                                        (itemsByGroup[activeGroup] ?? []).reduce(
+                                                            (sum, { item }) =>
+                                                                sum + itemSubtotal(item),
+                                                            0
+                                                        )
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Footer (sticky) — Inspection Fee + Order Summary */}
+                                <div className="shrink-0 space-y-3 border-t border-vw-grey/10 bg-vw-grey-light/20 px-4 py-3">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-3">
+                                            {feeEditing ? (
+                                                <div className="min-w-0 flex-1 space-y-2">
+                                                    <CurrencyInput
+                                                        value={feeInputValue}
+                                                        onChange={setFeeInputValue}
+                                                        placeholder="0"
+                                                    />
+                                                    <Textarea
+                                                        value={feeInputNote}
+                                                        onChange={(e) =>
+                                                            setFeeInputNote(e.target.value)
+                                                        }
+                                                        placeholder="Fee note (optional, reason for this fee)"
+                                                        rows={2}
+                                                        className="text-sm"
+                                                    />
+                                                </div>
+                                            ) : feeIncludedChecked ? (
+                                                <p className="text-xs text-vw-grey">
+                                                    Fee included in item price (Rp 0).
+                                                </p>
+                                            ) : feeSaved ? (
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900">
+                                                        {formatIDR(feeAmount)}
+                                                    </p>
+                                                    <p className="truncate text-xs text-vw-grey">
+                                                        Inspection Fee
+                                                        {data.inspection_fee_note
+                                                            ? ` — ${data.inspection_fee_note}`
+                                                            : ''}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={openFeeInput}
+                                                >
+                                                    <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                                                    Inspection Fee
+                                                </Button>
+                                            )}
+
+                                            <div className="flex shrink-0 items-center gap-1">
+                                                {feeEditing ? (
+                                                    <>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            onClick={saveFeeInput}
+                                                            disabled={feeInputValue.trim() === ''}
+                                                        >
+                                                            Save
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={cancelFeeInput}
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </>
+                                                ) : feeIncludedChecked ? (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => toggleFeeIncluded(false)}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                ) : feeSaved ? (
+                                                    <>
+                                                        <IconActionButton
+                                                            icon={Pencil}
+                                                            label="Edit inspection fee"
+                                                            onClick={openFeeInput}
+                                                        />
+                                                        <IconActionButton
+                                                            icon={Trash2}
+                                                            label="Remove inspection fee"
+                                                            tone="danger"
+                                                            onClick={removeSavedFee}
+                                                        />
+                                                    </>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                        {errors.inspection_fee && (
+                                            <p className="text-sm text-urgent">
+                                                {errors.inspection_fee}
+                                            </p>
+                                        )}
+                                        {!feeEditing && !feeIncludedChecked && !feeSaved && (
+                                            <div className="flex items-center gap-2">
+                                                <Checkbox
+                                                    id="inspection_fee_included"
+                                                    checked={feeIncludedChecked}
+                                                    onCheckedChange={(checked) =>
+                                                        toggleFeeIncluded(checked === true)
+                                                    }
+                                                />
+                                                <Label
+                                                    htmlFor="inspection_fee_included"
+                                                    className="text-xs font-normal leading-snug text-vw-grey"
+                                                >
+                                                    Fee already included in item price
+                                                </Label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <Separator />
+
+                                    <div className="space-y-1 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-vw-grey">
+                                                Items Subtotal
+                                            </span>
+                                            <span>{formatIDR(totalCost)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-vw-grey">
+                                                Inspection Fee
+                                            </span>
+                                            <span>{formatIDR(feeAmount)}</span>
+                                        </div>
+                                        <div className="flex justify-between border-t border-vw-grey/15 pt-1 font-semibold text-gray-900">
+                                            <span>Estimated Total</span>
+                                            <span>{formatIDR(estimatedTotal)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+
                     {currentStepId === 'review' && (
-                        <div className="grid gap-6 lg:grid-cols-2">
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Order Details</CardTitle>
+                        <div className="mx-auto max-w-2xl space-y-5 px-4 sm:px-0">
+                            {/* Sama seperti step 1 & 2: tidak ada Card, cuma <Separator />
+                                (hairline) antar bagian. Judul tiap bagian dikecilkan jadi
+                                eyebrow label (uppercase, abu-abu, text-xs) — bukan CardTitle
+                                besar — supaya halaman ini kerasa seperti ringkasan/struk,
+                                bukan kumpulan card terpisah. */}
+
+                            {/* Order Details */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                        Order Details
+                                    </p>
                                     <Button
                                         type="button"
                                         variant="ghost"
@@ -1699,8 +1756,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     >
                                         <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                                     </Button>
-                                </CardHeader>
-                                <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                                </div>
+                                <div className="grid gap-3 text-sm sm:grid-cols-2">
                                     <div>
                                         <p className="text-vw-grey">Work Order Number</p>
                                         <p className="font-medium text-gray-900">
@@ -1802,12 +1859,17 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                             <p className="text-gray-900">{data.customer_complaint}</p>
                                         </div>
                                     )}
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
 
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Assignment & Video</CardTitle>
+                            <Separator />
+
+                            {/* Assignment & Video */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                        Assignment & Video
+                                    </p>
                                     <Button
                                         type="button"
                                         variant="ghost"
@@ -1816,8 +1878,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     >
                                         <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                                     </Button>
-                                </CardHeader>
-                                <CardContent className="space-y-2 text-sm">
+                                </div>
+                                <div className="grid gap-3 text-sm sm:grid-cols-2">
                                     <div>
                                         <p className="text-vw-grey">Chief Technician</p>
                                         <p className="font-medium text-gray-900">
@@ -1834,18 +1896,23 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                 : 'No video attached'}
                                         </p>
                                     </div>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
 
-                            <Card className="lg:col-span-2">
-                                <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>
+                            <Separator />
+
+                            {/* Items & Fee — struktur visualnya sengaja disamakan dengan
+                                panel di step 2 (header + tabs grup + body item + footer
+                                fee & summary), tapi ini versi read-only: tidak ada tombol
+                                Add/Edit/Delete/checkbox sama sekali. Tabs grup tetap bisa
+                                diklik karena itu cuma navigasi lihat-lihat, bukan mengubah
+                                data. Kalau SA memang mau mengubah sesuatu, harus lewat
+                                tombol "Edit" di header ini balik ke step 2. */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
                                         Items & Fee
-                                        <Badge variant="secondary" className="ml-2">
-                                            {data.inspection_items.length} item
-                                            {data.inspection_items.length !== 1 && 's'}
-                                        </Badge>
-                                    </CardTitle>
+                                    </p>
                                     <Button
                                         type="button"
                                         variant="ghost"
@@ -1854,28 +1921,69 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     >
                                         <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                                     </Button>
-                                </CardHeader>
-                                <CardContent className="grid gap-6 lg:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        {data.inspection_items.length === 0 ? (
-                                            <p className="text-sm text-vw-grey">No items added.</p>
-                                        ) : (
-                                            data.inspection_items.map((item, index) => (
-                                                <div
-                                                    key={index}
-                                                    className="flex items-center justify-between text-sm"
-                                                >
-                                                    <span className="text-gray-900">
-                                                        {item.name || 'Untitled item'}
-                                                    </span>
-                                                    <span className="text-vw-grey">
-                                                        {formatIDR(itemSubtotal(item))}
-                                                    </span>
-                                                </div>
-                                            ))
+                                </div>
+
+                                <div className="flex flex-col overflow-hidden rounded-lg border border-vw-grey/15 bg-white">
+                                    <div className="shrink-0 space-y-3 border-b border-vw-grey/10 px-4 py-3">
+                                        <p className="text-xs text-vw-grey">
+                                            {data.inspection_items.length} item
+                                            {data.inspection_items.length !== 1 && 's'}
+                                        </p>
+
+                                        {data.inspection_items.length > 0 && activeGroup && (
+                                            <Tabs value={activeGroup} onValueChange={setActiveGroup}>
+                                                <TabsList className="w-full justify-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                    {Object.keys(itemsByGroup).map((group) => (
+                                                        <TabsTrigger key={group} value={group}>
+                                                            {formatGroupLabel(group)}
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className="ml-1.5"
+                                                            >
+                                                                {itemsByGroup[group].length}
+                                                            </Badge>
+                                                        </TabsTrigger>
+                                                    ))}
+                                                </TabsList>
+                                            </Tabs>
                                         )}
                                     </div>
-                                    <div className="space-y-2 border-t border-vw-grey/10 pt-4 text-sm lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+
+                                    <div className="px-4 py-3">
+                                        {data.inspection_items.length === 0 ? (
+                                            <p className="py-6 text-center text-sm text-vw-grey">
+                                                No items added.
+                                            </p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {(itemsByGroup[activeGroup] ?? []).map(
+                                                    ({ item, index }) => (
+                                                        <ItemReceiptRow
+                                                            key={index}
+                                                            item={item}
+                                                            readOnly
+                                                        />
+                                                    )
+                                                )}
+                                                <div className="flex justify-between border-t border-dashed border-vw-grey/25 px-1 pt-2 text-xs">
+                                                    <span className="text-vw-grey">
+                                                        {formatGroupLabel(activeGroup)} subtotal
+                                                    </span>
+                                                    <span className="font-semibold text-gray-900">
+                                                        {formatIDR(
+                                                            (itemsByGroup[activeGroup] ?? []).reduce(
+                                                                (sum, { item }) =>
+                                                                    sum + itemSubtotal(item),
+                                                                0
+                                                            )
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="shrink-0 space-y-2 border-t border-vw-grey/10 bg-vw-grey-light/20 px-4 py-3 text-sm">
                                         <div className="flex justify-between">
                                             <span className="text-vw-grey">Items Subtotal</span>
                                             <span>{formatIDR(totalCost)}</span>
@@ -1897,8 +2005,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                             <span>{formatIDR(estimatedTotal)}</span>
                                         </div>
                                     </div>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1918,6 +2026,178 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     submitDisabled={processing || checkingVideoDuration || !!videoDurationError}
                 />
             </form>
+            </div>
+
+            {/* Dialog Add/Edit New Customer — fallback kalau customer tidak
+                ketemu di dropdown Select Customer. */}
+            <Dialog
+                open={customerDialogOpen}
+                onOpenChange={(open) => !open && setCustomerDialogOpen(false)}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Add New Customer</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        <div className="space-y-1.5">
+                            <Label>
+                                Name
+                                <RequiredMark />
+                            </Label>
+                            <Input
+                                value={customerDraft.name}
+                                onChange={(e) =>
+                                    setCustomerDraft((d) => ({ ...d, name: e.target.value }))
+                                }
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>
+                                Phone
+                                <RequiredMark />
+                            </Label>
+                            <Input
+                                value={customerDraft.phone}
+                                onChange={(e) =>
+                                    setCustomerDraft((d) => ({ ...d, phone: e.target.value }))
+                                }
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Email (optional)</Label>
+                            <Input
+                                type="email"
+                                value={customerDraft.email}
+                                onChange={(e) =>
+                                    setCustomerDraft((d) => ({ ...d, email: e.target.value }))
+                                }
+                            />
+                        </div>
+                    </div>
+                    <p className="text-xs text-vw-grey">
+                        Name and phone number are required. This customer will be created together
+                        with this order.
+                    </p>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setCustomerDialogOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={saveCustomerDialog}
+                            disabled={!isCustomerDraftComplete}
+                        >
+                            Add Customer
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Dialog Add/Edit New Vehicle — fallback kalau vehicle tidak
+                ketemu di dropdown Select Vehicle. */}
+            <Dialog
+                open={vehicleDialogOpen}
+                onOpenChange={(open) => !open && setVehicleDialogOpen(false)}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Add New Vehicle</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        <div className="space-y-1.5">
+                            <Label>
+                                Plate Number
+                                <RequiredMark />
+                            </Label>
+                            <Input
+                                value={vehicleDraft.plate_number}
+                                onChange={(e) =>
+                                    setVehicleDraft((d) => ({
+                                        ...d,
+                                        plate_number: e.target.value,
+                                    }))
+                                }
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>
+                                Brand
+                                <RequiredMark />
+                            </Label>
+                            <Select
+                                value={vehicleDraft.brand}
+                                onValueChange={(value) =>
+                                    setVehicleDraft((d) => ({ ...d, brand: value }))
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Brand" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {brands.map((brand) => (
+                                        <SelectItem key={brand} value={brand}>
+                                            {brand}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>
+                                VIN/Chasis Number
+                                <RequiredMark />
+                            </Label>
+                            <Input
+                                value={vehicleDraft.vin}
+                                maxLength={17}
+                                onChange={(e) =>
+                                    setVehicleDraft((d) => ({
+                                        ...d,
+                                        vin: e.target.value.toUpperCase(),
+                                    }))
+                                }
+                                placeholder="17-character VIN/Chasis Number"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>
+                                Model
+                                <RequiredMark />
+                            </Label>
+                            <Input
+                                value={vehicleDraft.model}
+                                onChange={(e) =>
+                                    setVehicleDraft((d) => ({ ...d, model: e.target.value }))
+                                }
+                            />
+                        </div>
+                    </div>
+                    <p className="text-xs text-vw-grey">
+                        All fields are required. This vehicle will be created together with this
+                        order.
+                    </p>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setVehicleDialogOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={saveVehicleDialog}
+                            disabled={!isVehicleDraftComplete}
+                        >
+                            Add Vehicle
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Dialog Add Item */}
             <Dialog open={addItemOpen} onOpenChange={(open) => !open && closeAddItem()}>

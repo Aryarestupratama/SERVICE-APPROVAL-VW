@@ -1,4 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
+import { motion } from 'framer-motion';
 import {
     LayoutDashboard,
     ClipboardList,
@@ -65,24 +66,35 @@ function initials(name) {
         .toUpperCase();
 }
 
-function NavGroup({ items }) {
+function NavGroup({ items, layoutId }) {
     return (
         <SidebarMenu>
-            {items.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                        asChild
-                        isActive={route().current(item.routeName)}
-                        tooltip={item.label}
-                        className="relative data-[active=true]:before:absolute data-[active=true]:before:left-0 data-[active=true]:before:top-1 data-[active=true]:before:bottom-1 data-[active=true]:before:w-[3px] data-[active=true]:before:rounded-r-full data-[active=true]:before:bg-vw-light-blue data-[active=true]:before:content-['']"
-                    >
-                        <Link href={item.href}>
-                            <item.icon />
-                            <span>{item.label}</span>
-                        </Link>
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
-            ))}
+            {items.map((item) => {
+                const isActive = route().current(item.routeName);
+
+                return (
+                    <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                            asChild
+                            isActive={isActive}
+                            tooltip={item.label}
+                            className="relative"
+                        >
+                            <Link href={item.href}>
+                                {isActive && (
+                                    <motion.div
+                                        layoutId={layoutId}
+                                        className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-full bg-vw-light-blue"
+                                        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                                    />
+                                )}
+                                <item.icon />
+                                <span>{item.label}</span>
+                            </Link>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                );
+            })}
         </SidebarMenu>
     );
 }
@@ -132,17 +144,17 @@ export default function AdminLayout({ children, title, headerActions }) {
 
                 <SidebarContent>
                     <SidebarGroup>
-                        <NavGroup items={MAIN_NAV_ITEMS} />
+                        <NavGroup items={MAIN_NAV_ITEMS} layoutId="active-nav-indicator" />
                     </SidebarGroup>
 
                     <SidebarGroup>
                         <SidebarGroupLabel>Master Data</SidebarGroupLabel>
-                        <NavGroup items={masterDataItems} />
+                        <NavGroup items={masterDataItems} layoutId="active-nav-indicator" />
                     </SidebarGroup>
 
                     {isAdmin && (
                         <SidebarGroup>
-                            <NavGroup items={SETTINGS_ADMIN_ONLY_ITEMS} />
+                            <NavGroup items={SETTINGS_ADMIN_ONLY_ITEMS} layoutId="active-nav-indicator" />
                         </SidebarGroup>
                     )}
                 </SidebarContent>
