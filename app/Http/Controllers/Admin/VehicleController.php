@@ -16,27 +16,38 @@ class VehicleController extends Controller
 {
     public function index(Request $request)
     {
+        $sortMap = ['plate_number' => ['plate_number'], 'brand_model' => ['brand', 'model'], 'vin' => ['vin']];
+        $sortCols = $sortMap[$request->string('sort_by')->toString()] ?? null;
+        $sortDir = $request->string('sort_dir')->toString() === 'desc' ? 'desc' : 'asc';
+
         $vehicles = Vehicle::query()
             ->with(['customer', 'customers'])
             ->when($request->search, fn ($q, $search) =>
-                $q->where('plate_number', 'like', "%{$search}%")
+                // Dibungkus grup supaya filter brand tidak ikut ter-OR.
+                $q->where(fn ($w) => $w
+                    ->where('plate_number', 'like', "%{$search}%")
                     ->orWhere('model', 'like', "%{$search}%")
                     ->orWhere('vin', 'like', "%{$search}%")
                     ->orWhereHas('customers', fn ($q2) =>
                         $q2->where('name', 'like', "%{$search}%")
-                    )
+                    ))
             )
             ->when($request->brand, fn ($q, $brand) =>
                 $q->where('brand', $brand)
             )
-            ->latest()
+            ->when($sortCols, function ($q) use ($sortCols, $sortDir) {
+                foreach ($sortCols as $col) {
+                    $q->orderBy($col, $sortDir);
+                }
+                $q->orderBy('id');
+            }, fn ($q) => $q->latest())
             ->paginate(20)
             ->withQueryString();
 
         return Inertia::render('Admin/Vehicles/Index', [
             'vehicles' => $vehicles,
             'search' => $request->search,
-            'filters' => $request->only(['brand']),
+            'filters' => $request->only(['brand', 'sort_by', 'sort_dir']),
             'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
             'brands' => Vehicle::BRANDS,
         ]);
@@ -110,6 +121,10 @@ class VehicleController extends Controller
      */
     private function validateVehicle(Request $request, ?Vehicle $vehicle = null): array
     {
+        if ($request->filled('plate_number')) {
+            $request->merge(['plate_number' => strtoupper(preg_replace('/\s+/', '', (string) $request->input('plate_number')))]);
+        }
+
         return $request->validate([
             'plate_number' => ['required', 'string', 'max:20'],
             'brand' => ['required', Rule::in(Vehicle::BRANDS)],

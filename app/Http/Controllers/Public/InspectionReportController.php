@@ -21,7 +21,19 @@ class InspectionReportController extends Controller
             ->firstOrFail();
 
         if ($serviceOrder->isInspectionLinkExpired()) {
-            return Inertia::render('Public/LinkExpired');
+            // Hanya data minimum untuk tombol "Request a new link" di LinkExpired.jsx.
+            $settings = Setting::current();
+
+            return Inertia::render('Public/LinkExpired', [
+                'settings' => [
+                    'workshop_name' => $settings->workshop_name,
+                    'booking_whatsapp_phone' => $settings->booking_whatsapp_phone,
+                ],
+                'serviceAdvisor' => $serviceOrder->serviceAdvisor ? [
+                    'name' => $serviceOrder->serviceAdvisor->name,
+                    'phone' => $serviceOrder->serviceAdvisor->phone,
+                ] : null,
+            ]);
         }
 
         $settings = Setting::current();

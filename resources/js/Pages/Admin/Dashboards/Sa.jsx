@@ -6,12 +6,6 @@ import { Button } from '@/Components/ui/button';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/Components/ui/tooltip';
 import { Info } from 'lucide-react';
 
 function formatCurrency(value) {
@@ -23,7 +17,14 @@ function formatCurrency(value) {
 }
 
 function formatPercent(value) {
-    return value === null || value === undefined ? '—' : `${value}%`;
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+    return `${Number(value).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`;
+}
+
+const formatNumber = (value) => Number(value ?? 0).toLocaleString('id-ID');
+
+function NumCell({ children }) {
+    return <div className="text-right tabular-nums">{children}</div>;
 }
 
 // Header kolom + icon Info + Tooltip penjelas — dipakai bareng oleh kolom
@@ -31,15 +32,13 @@ function formatPercent(value) {
 // angka ini gabungan part + labour, sudah dikurangi diskon). Sama pola
 // dengan SummaryLabelWithTooltip di Admin/Dashboards/Part.jsx.
 function ColumnHeaderWithTooltip({ label, tooltip }) {
+    // Header ini berada di dalam <button> sort (DataTableColumnHeader), jadi tidak boleh ada
+    // tombol lagi di dalamnya: pakai title (hover) + teks sr-only untuk pembaca layar.
     return (
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1" title={tooltip}>
             {label}
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-64">{tooltip}</TooltipContent>
-            </Tooltip>
+            <Info className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            <span className="sr-only">{tooltip}</span>
         </span>
     );
 }
@@ -129,42 +128,67 @@ export default function Sa({ saStats, summary, filters }) {
                 meta: { label: 'Service Advisor' },
                 cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
             },
-            { accessorKey: 'order_count', header: 'Orders', meta: { label: 'Orders' } },
+            {
+                accessorKey: 'order_count',
+                header: 'Orders',
+                meta: { label: 'Orders', align: 'right' },
+                cell: ({ row }) => <NumCell>{formatNumber(row.original.order_count)}</NumCell>,
+            },
             {
                 accessorKey: 'revenue_approved',
                 header: () => (
                     <ColumnHeaderWithTooltip
                         label="Revenue Approved"
-                        tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied."
+                        tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied, including VAT."
                     />
                 ),
-                meta: { label: 'Revenue Approved' },
-                cell: ({ row }) => formatCurrency(row.original.revenue_approved),
+                meta: { label: 'Revenue Approved', align: 'right' },
+                cell: ({ row }) => <NumCell>{formatCurrency(row.original.revenue_approved)}</NumCell>,
             },
             {
                 accessorKey: 'revenue_rejected',
                 header: () => (
                     <ColumnHeaderWithTooltip
                         label="Revenue Rejected"
-                        tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied."
+                        tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied, including VAT."
                     />
                 ),
-                meta: { label: 'Revenue Rejected' },
-                cell: ({ row }) => formatCurrency(row.original.revenue_rejected),
+                meta: { label: 'Revenue Rejected', align: 'right' },
+                cell: ({ row }) => <NumCell>{formatCurrency(row.original.revenue_rejected)}</NumCell>,
             },
-            { accessorKey: 'approved_count', header: 'Approved', meta: { label: 'Approved' } },
-            { accessorKey: 'rejected_count', header: 'Rejected', meta: { label: 'Rejected' } },
+            {
+                accessorKey: 'approved_count',
+                header: 'Approved',
+                meta: { label: 'Approved', align: 'right' },
+                cell: ({ row }) => <NumCell>{formatNumber(row.original.approved_count)}</NumCell>,
+            },
+            {
+                accessorKey: 'rejected_count',
+                header: 'Rejected',
+                meta: { label: 'Rejected', align: 'right' },
+                cell: ({ row }) => <NumCell>{formatNumber(row.original.rejected_count)}</NumCell>,
+            },
             {
                 accessorKey: 'approve_rate',
-                header: 'Approve Rate',
-                meta: { label: 'Approve Rate' },
-                cell: ({ row }) => formatPercent(row.original.approve_rate),
+                header: () => <ColumnHeaderWithTooltip label="Approve Rate" tooltip="Approved items ÷ (approved + rejected items). Items still pending are not counted. The number in brackets is how many items were decided." />,
+                meta: { label: 'Approve Rate', align: 'right' },
+                cell: ({ row }) => (
+                    <NumCell>
+                        {formatPercent(row.original.approve_rate)}
+                        <span className="ml-1 text-xs text-muted-foreground">({row.original.decided_count ?? 0})</span>
+                    </NumCell>
+                ),
             },
             {
                 accessorKey: 'reject_rate',
-                header: 'Reject Rate',
-                meta: { label: 'Reject Rate' },
-                cell: ({ row }) => formatPercent(row.original.reject_rate),
+                header: () => <ColumnHeaderWithTooltip label="Reject Rate" tooltip="Rejected items ÷ (approved + rejected items). Items still pending are not counted. The number in brackets is how many items were decided." />,
+                meta: { label: 'Reject Rate', align: 'right' },
+                cell: ({ row }) => (
+                    <NumCell>
+                        {formatPercent(row.original.reject_rate)}
+                        <span className="ml-1 text-xs text-muted-foreground">({row.original.decided_count ?? 0})</span>
+                    </NumCell>
+                ),
             },
             {
                 id: 'actions',
@@ -172,10 +196,8 @@ export default function Sa({ saStats, summary, filters }) {
                 enableSorting: false,
                 enableHiding: false,
                 meta: { label: 'Actions' },
-                // Reuse Admin/ServiceOrders/Index.jsx yang sudah ada (search,
-                // sort, pagination, filter) lewat query filter service_advisor_id
-                // — bukan bikin halaman detail SA baru. Catatan: ServiceOrderController::index()
-                // perlu ditambah `->when($request->service_advisor_id, ...)`.
+                // Reuse Admin/ServiceOrders/Index.jsx lewat query filter service_advisor_id
+                // (didukung ServiceOrderController::index dan dibawa terus oleh Index.jsx).
                 cell: ({ row }) => (
                     <Button asChild variant="outline" size="sm">
                         <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id })}>
@@ -194,8 +216,7 @@ export default function Sa({ saStats, summary, filters }) {
         <AdminLayout title="Dashboard - Service Advisor">
 
             <Head title="Dashboard SA" />
-            <TooltipProvider delayDuration={200}>
-                <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
@@ -233,7 +254,7 @@ export default function Sa({ saStats, summary, filters }) {
                         </CardContent>
                     </Card>
                 </div>
-            </TooltipProvider>
+            
 
             <DataTable
                 table={table}
@@ -246,6 +267,7 @@ export default function Sa({ saStats, summary, filters }) {
                         values={activeFilters}
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
+                        table={table}
                     />
                 }
             />

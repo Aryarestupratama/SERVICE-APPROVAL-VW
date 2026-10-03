@@ -1,10 +1,12 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles, MapPin, Globe, CalendarCheck, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Droplets, Upload, ChevronRight, ChevronDown, ArrowDown } from 'lucide-react';
+import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles, MapPin, Globe, CalendarCheck, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Droplets, Upload, ChevronRight, ChevronDown, ArrowDown, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
 import { Progress } from '@/Components/ui/progress';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/Components/ui/accordion';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/Components/ui/sheet';
 import { usePollLastActivity } from '@/hooks/usePollLastActivity';
 
@@ -12,17 +14,26 @@ import { usePollLastActivity } from '@/hooks/usePollLastActivity';
 // membuka dokumen, supaya bundle halaman report tetap ringan.
 const DocumentViewer = lazy(() => import('@/Components/DocumentViewer'));
 
+// Backend publik kadang menolak lewat back()->with('error') (302, jadi masuk onSuccess).
+// Helper ini menampilkan pesannya dan memberi tahu pemanggil agar tidak lanjut.
+function flashFailed(page) {
+    const message = page?.props?.flash?.error;
+    if (!message) return false;
+    toast.error(message);
+    return true;
+}
+
 function StatusStamp({ status }) {
     const config = {
         pending: { label: 'Waiting', Icon: Clock, cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
         approved: { label: 'Approved', Icon: Check, cls: 'bg-approved/10 text-approved ring-approved/25' },
-        rejected: { label: 'Rejected', Icon: X, cls: 'bg-vw-grey/10 text-vw-grey ring-vw-grey/25' },
+        rejected: { label: 'Rejected', Icon: X, cls: 'bg-gray-100 text-gray-700 ring-gray-300' },
     }[status] ?? { label: status, Icon: Clock, cls: 'bg-vw-grey/10 text-vw-grey ring-vw-grey/25' };
     const { label, Icon, cls } = config;
 
     return (
         <span
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${cls}`}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset ${cls}`}
         >
             <Icon className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
             {label}
@@ -51,7 +62,14 @@ const STATUS_STEPS = [
 // CHANGED: estimation form sekarang tetap tampil saat quality_control juga,
 // selaras dengan $showEstimationViewer di InspectionReportController::show().
 const ESTIMATION_VISIBLE_STATUSES = ['work_in_progress', 'quality_control'];
-const DECIDABLE_STATUSES = ['appointment', 'work_in_progress'];
+// Harus sama dengan guard backend (InspectionReportController::submitDecisions): hanya work_in_progress.
+const DECIDABLE_STATUSES = ['work_in_progress'];
+
+// wa.me butuh format internasional tanpa 0/+ di depan: 0812… → 62812…
+const toWaDigits = (raw) => {
+    const d = String(raw ?? '').replace(/\D/g, '');
+    return d.startsWith('0') ? `62${d.slice(1)}` : d;
+};
 // Invoice baru terlihat oleh customer mulai status invoice_preparation —
 // meskipun admin sudah bisa mulai upload invoice dari quality_control (lihat
 // Admin/ServiceOrders/Show.jsx), customer belum perlu melihatnya sampai
@@ -189,7 +207,7 @@ function PendingNotice({ title, text }) {
             </span>
             <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-800">{title}</p>
-                <p className="text-xs text-vw-grey">{text}</p>
+                <p className="text-xs text-gray-600">{text}</p>
             </div>
         </div>
     );
@@ -201,7 +219,7 @@ function PendingNotice({ title, text }) {
 // Threshold ~85 karakter dipakai sebagai perkiraan kasar 2 baris di lebar kartu
 // mobile — kalau deskripsi lebih pendek dari itu, tombol toggle disembunyikan
 // karena clamp 2 baris nyaris pasti tidak akan memotong apa pun.
-const DESCRIPTION_CLAMP_THRESHOLD = 85;
+const DESCRIPTION_CLAMP_THRESHOLD = 110;
 
 function ItemDescription({ text }) {
     const [expanded, setExpanded] = useState(false);
@@ -211,10 +229,10 @@ function ItemDescription({ text }) {
     return (
         <div className="mt-0.5">
             <p
-                className="text-xs leading-snug text-vw-grey"
+                className="text-sm leading-snug text-gray-600"
                 style={
                     isLong && !expanded
-                        ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                        ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
                         : undefined
                 }
             >
@@ -224,7 +242,7 @@ function ItemDescription({ text }) {
                 <button
                     type="button"
                     onClick={() => setExpanded((v) => !v)}
-                    className="mt-0.5 inline-flex items-center gap-0.5 text-[11px] font-semibold text-vw-blue"
+                    className="mt-0.5 inline-flex min-h-[36px] items-center gap-0.5 text-xs font-semibold text-vw-blue"
                 >
                     {expanded ? 'Show less' : 'Read more'}
                     <ChevronDown
@@ -241,7 +259,7 @@ function ItemDescription({ text }) {
 // sekarang). Dibuat lebih tipis dari versi sebelumnya (padding, ukuran teks,
 // dan tombol dikecilkan) supaya daftar terasa lebih ringkas meski tetap mudah
 // di-tap di mobile.
-function InspectionItemCard({ item, canDecide, itemRef, onDecision }) {
+function InspectionItemCard({ item, canDecide, itemRef, onDecision, onUndoLocal }) {
     const discount = itemDiscountAmount(item);
 
     return (
@@ -272,22 +290,24 @@ function InspectionItemCard({ item, canDecide, itemRef, onDecision }) {
                     </div>
 
                     {canDecide && (
-                        <div className="grid w-full grid-cols-2 gap-1.5 sm:w-auto">
+                        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
                             <button
                                 type="button"
-                                onClick={() => onDecision(item.id, 'approved')}
-                                className="inline-flex min-h-[38px] items-center justify-center gap-1 rounded-md bg-approved px-4 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-95"
+                                aria-pressed={item.status === 'approved'}
+                                onClick={() => (item.status === 'approved' ? onUndoLocal(item) : onDecision(item.id, 'approved'))}
+                                className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-4 text-sm font-semibold transition active:scale-95 ${item.status === 'approved' ? 'bg-approved text-white shadow-sm ring-2 ring-approved/30' : 'border border-approved/60 bg-white text-approved hover:bg-approved/10'}`}
                             >
                                 <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
-                                Approve
+                                {item.status === 'approved' ? 'Approved · Undo' : 'Approve'}
                             </button>
                             <button
                                 type="button"
-                                onClick={() => onDecision(item.id, 'rejected')}
-                                className="inline-flex min-h-[38px] items-center justify-center gap-1 rounded-md border border-vw-grey/40 bg-white px-4 text-xs font-semibold text-vw-grey transition hover:bg-vw-grey hover:text-white active:scale-95"
+                                aria-pressed={item.status === 'rejected'}
+                                onClick={() => (item.status === 'rejected' ? onUndoLocal(item) : onDecision(item.id, 'rejected'))}
+                                className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-4 text-sm font-semibold transition active:scale-95 ${item.status === 'rejected' ? 'bg-gray-700 text-white shadow-sm ring-2 ring-gray-700/30' : 'border border-gray-400 bg-white text-gray-700 hover:bg-gray-100'}`}
                             >
                                 <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
-                                Reject
+                                {item.status === 'rejected' ? 'Rejected · Undo' : 'Reject'}
                             </button>
                         </div>
                     )}
@@ -305,28 +325,28 @@ function DecidedItemRow({ item, canCancel, onCancel }) {
     const isApproved = item.status === 'approved';
 
     return (
-        <li className="flex items-center gap-2.5 rounded-lg border border-vw-grey/10 bg-vw-grey-light/40 px-3 py-2">
+        <li className="flex items-center gap-2.5 rounded-lg border border-vw-grey/10 bg-vw-grey-light/40 px-3 py-0.5">
             <span
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-approved text-white' : 'bg-vw-grey/20 text-vw-grey'}`}
             >
                 {isApproved ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <X className="h-3.5 w-3.5" strokeWidth={3} />}
             </span>
-            <span className={`min-w-0 flex-1 truncate text-sm font-medium ${isApproved ? 'text-gray-800' : 'text-vw-grey line-through decoration-1'}`}>
+            <span className={`min-w-0 flex-1 truncate text-sm font-medium ${isApproved ? 'text-gray-800' : 'text-gray-600 line-through decoration-1'}`}>
                 {item.name}
             </span>
             {isApproved ? (
                 <Rupiah value={itemDisplayPrice(item)} className="shrink-0 text-sm font-semibold text-gray-900" />
             ) : (
-                <span className="shrink-0 text-xs font-medium text-vw-grey">Rejected</span>
+                <span className="shrink-0 text-xs font-medium text-gray-600">Rejected</span>
             )}
             {canCancel && (
                 <button
                     type="button"
                     onClick={() => onCancel(item)}
-                    className="ml-1 flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-vw-grey transition hover:bg-vw-blue/5 hover:text-vw-blue"
+                    className="ml-1 flex min-h-[44px] shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-semibold text-gray-600 transition hover:bg-vw-blue/5 hover:text-vw-blue"
                 >
                     <Undo2 className="h-3 w-3" aria-hidden="true" />
-                    Cancel
+                    Change
                 </button>
             )}
         </li>
@@ -393,6 +413,7 @@ export default function InspectionReport({
     // Ref tiap kartu item pending (dipakai chip "Jump to next") + cursor untuk
     // menyiklus urutan lompat kalau tombolnya ditekan berkali-kali.
     const pendingItemRefs = useRef({});
+    const itemsSectionRef = useRef(null);
     const [jumpCursor, setJumpCursor] = useState(0);
 
     // Kriteria #5: cuma ada 1 video sekarang, tidak ada lagi tab/pilihan part.
@@ -406,7 +427,9 @@ export default function InspectionReport({
     // Tanpa grouping: item yang masih menunggu keputusan selalu ditaruh di atas,
     // item yang sudah diputuskan menyusul di bawah dalam bentuk baris ringkas —
     // supaya yang tampil di layar selalu yang perlu diputuskan sekarang dulu.
-    const orderedItems = [...pendingItems, ...decidedItemsList];
+    const serverStatusById = new Map(initialItems.map((i) => [i.id, i.status]));
+    const isServerPending = (i) => (serverStatusById.get(i.id) ?? i.status) === 'pending';
+    const orderedItems = [...items].sort((a, b) => Number(!isServerPending(a)) - Number(!isServerPending(b)));
 
     // Chip "Jump to next" — pengganti chip lompat-per-grup (grouping sengaja
     // tidak dipakai). Menyiklus ke item pending berikutnya tiap kali ditekan.
@@ -457,7 +480,28 @@ export default function InspectionReport({
         intervalMs: 4000,
     });
 
+    // Controller menolak lewat abort(409/410/422): bukan error validasi, jadi onError
+    // tidak terpanggil dan Inertia akan menampilkan modal HTML error. Tangkap di sini.
+    useEffect(() => {
+        const messages = {
+            410: 'This link has expired. Please contact the workshop for a new one.',
+            409: 'This report has changed and can no longer be updated this way. We refreshed it for you.',
+            422: 'Some items changed while you were deciding. We refreshed the list, please check and try again.',
+            429: 'Too many attempts. Please wait a minute and try again.',
+        };
+        return router.on('invalid', (event) => {
+            const status = event.detail.response?.status;
+            if (!messages[status]) return;
+            event.preventDefault();
+            toast.error(messages[status]);
+            if (status === 409 || status === 422) {
+                router.reload({ only: ['order', 'items', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'] });
+            }
+        });
+    }, []);
+
     const vatPercent = Number(settings.ppn_percent ?? 0);
+    const inspectionFee = Number(order.inspection_fee ?? 0);
 
     // CHANGED: item 'rejected' tetap dikecualikan (sudah benar sebelumnya).
     // Yang baru: item yang sudah locked (final_price_snapshot terisi) tetap
@@ -541,16 +585,24 @@ export default function InspectionReport({
             { item_id: targetId },
             {
                 preserveScroll: true,
-                onSuccess: () => {
+                onSuccess: (page) => {
+                    if (flashFailed(page)) { setUndoTarget(null); return; }
                     // Update lokal juga: kalau customer punya keputusan lain yang belum
                     // disubmit, effect sinkronisasi dari server sengaja tidak menimpa items.
                     setItems((prev) =>
                         prev.map((i) => (i.id === targetId ? { ...i, status: 'pending', final_price_snapshot: null } : i))
                     );
                     setUndoTarget(null);
+                    toast.success('Decision updated.');
                 },
-                onError: () => setUndoTarget(null),
-                onFinish: () => setUndoing(false),
+                onError: () => {
+                    setUndoTarget(null);
+                    toast.error("Couldn't update your decision. Please try again.");
+                },
+                onFinish: () => {
+                    setUndoing(false);
+                    setUndoTarget(null);
+                },
             }
         );
     };
@@ -562,8 +614,10 @@ export default function InspectionReport({
             route('public.report.decide', token),
             { decisions: decidedThisRound.map((item) => ({ id: item.id, status: item.status })) },
             {
-                onSuccess: () => {
+                onSuccess: (page) => {
+                    if (flashFailed(page)) { setShowModal(false); return; }
                     setShowModal(false);
+                    toast.success('Your decisions have been sent.');
                     // Bersihkan localDecisions untuk item yang barusan disubmit — kalau
                     // tidak dibersihkan, entri lama ini bisa memicu bug yang sama lagi
                     // kalau item ini di-reopen admin di kemudian hari (lihat catatan
@@ -574,27 +628,45 @@ export default function InspectionReport({
                         return next;
                     });
                 },
-                onError: () => setShowModal(false),
-                onFinish: () => setSubmitting(false),
+                onError: () => {
+                    setShowModal(false);
+                    toast.error("Your decisions weren't sent. Check your connection and try again.");
+                },
+                onFinish: () => {
+                    setSubmitting(false);
+                    setShowModal(false);
+                },
             }
         );
     };
 
-    const waHref = serviceAdvisor.phone ? `https://wa.me/${serviceAdvisor.phone.replace(/\D/g, '')}` : null;
+    const waHref = serviceAdvisor.phone ? `https://wa.me/${toWaDigits(serviceAdvisor.phone)}` : null;
     const bookingWaHref = settings.booking_whatsapp_phone
-        ? `https://wa.me/${settings.booking_whatsapp_phone.replace(/\D/g, '')}`
+        ? `https://wa.me/${toWaDigits(settings.booking_whatsapp_phone)}`
         : null;
 
     const showEstimationSection = ESTIMATION_VISIBLE_STATUSES.includes(order.status);
     const showInvoiceSection = INVOICE_VISIBLE_STATUSES.includes(order.status);
     const isPricingFinal = FINAL_PRICING_STATUSES.includes(order.status);
     const showPaymentSection = order.status === 'invoice_preparation';
+    // Di tahap invoice, tugas customer = bayar. Invoice + Payment naik ke atas,
+    // daftar item menciut jadi accordion. Status lain: urutan tidak berubah.
+    const isInvoiceStage = order.status === 'invoice_preparation';
     const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
 
     const BANK_ACCOUNTS = [
-        { bank: 'Bank Mandiri IDR', account: 'PT Wahana Wirawan — No. A/C 1240012993409' },
-        { bank: 'Bank Central Asia IDR', account: 'PT Wahana Wirawan — No. A/C 7160263789' },
+        { bank: 'Bank Mandiri IDR', holder: 'PT Wahana Wirawan', number: '1240012993409' },
+        { bank: 'Bank Central Asia IDR', holder: 'PT Wahana Wirawan', number: '7160263789' },
     ];
+
+    const handleCopy = async (text, label) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success(`${label} copied.`);
+        } catch {
+            toast.error("Couldn't copy. Please select the number manually.");
+        }
+    };
 
     const handleReceiptUpload = (e) => {
         e.preventDefault();
@@ -605,7 +677,12 @@ export default function InspectionReport({
             { receipt: receiptFile },
             {
                 forceFormData: true,
-                onSuccess: () => setReceiptFile(null),
+                onSuccess: (page) => {
+                    if (flashFailed(page)) return;
+                    setReceiptFile(null);
+                    toast.success('Receipt uploaded.');
+                },
+                onError: (errors) => toast.error(errors?.receipt ?? 'Upload failed. Check your connection and try again.'),
                 onFinish: () => setUploadingReceipt(false),
             }
         );
@@ -619,6 +696,161 @@ export default function InspectionReport({
     const CurrentStepIcon = currentStep?.icon;
     const isCancelled = order.status === 'all_rejected_cancelled';
     const progressValue = currentStepIndex >= 0 ? ((currentStepIndex + 1) / STATUS_STEPS.length) * 100 : 0;
+
+    const invoiceBlock = showInvoiceSection && (
+                        <>
+                            <Separator className="my-8" />
+                            <section>
+                                <SectionTitle>Invoice Form</SectionTitle>
+                                <div className="mt-3">
+                                    {invoice ? (
+                                        <DocumentCard
+                                            onOpen={setViewerDoc}
+                                            href={`/storage/${invoice.file_path}`}
+                                            title="View Invoice"
+                                            subtitle={order.invoice_number ? `No. ${order.invoice_number} · PDF` : 'PDF · Tap to view'}
+                                        />
+                                    ) : (
+                                        <PendingNotice
+                                            title="Invoice is being prepared"
+                                            text="It will appear here automatically once it's ready."
+                                        />
+                                    )}
+                                </div>
+                            </section>
+                        </>
+                    );
+    const paymentBlock = showPaymentSection && (
+                        <>
+                            <Separator className="my-8" />
+                            <section>
+                                <SectionTitle>Payment</SectionTitle>
+                                <p className="mt-3 text-sm text-gray-700">Transfer to one of the accounts below, then upload your receipt.</p>
+                                <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-vw-blue/20 bg-vw-blue/[0.06] px-4 py-3">
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Amount due</p>
+                                        <Rupiah value={grandTotal + inspectionFee} className="block text-xl font-bold text-vw-blue" />
+                                        {inspectionFee > 0 && (
+                                            <p className="mt-1 text-xs text-gray-600">
+                                                Includes inspection fee <Rupiah value={inspectionFee} />.
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-gray-600">Please follow the amount stated on your invoice.</p>
+                                    </div>
+                                    <button
+                                            type="button"
+                                            onClick={() => handleCopy(String(Math.round(grandTotal + inspectionFee)), 'Amount')}
+                                            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md border border-vw-blue/30 bg-white px-3 text-xs font-semibold text-vw-blue hover:bg-vw-blue/5"
+                                        >
+                                            <Copy className="h-4 w-4" aria-hidden="true" />
+                                            Copy
+                                        </button>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                    {BANK_ACCOUNTS.map((acc) => (
+                                        <div key={acc.bank} className="flex items-center justify-between gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm">
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-gray-900">{acc.bank}</p>
+                                                <p className="text-xs text-gray-600">{acc.holder}</p>
+                                                <p className="mt-0.5 font-mono text-base font-semibold tracking-wide text-gray-900">{acc.number}</p>
+                                            </div>
+                                            <button
+                                            type="button"
+                                            onClick={() => handleCopy(acc.number, 'Account number')}
+                                            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md border border-vw-blue/30 bg-white px-3 text-xs font-semibold text-vw-blue hover:bg-vw-blue/5"
+                                        >
+                                            <Copy className="h-4 w-4" aria-hidden="true" />
+                                            Copy
+                                        </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(order.invoice_number || order.bill_to) && (
+                                    <div className="mt-3 space-y-1 text-sm text-gray-700">
+                                        {order.invoice_number && <p>Invoice Number: {order.invoice_number}</p>}
+                                        {order.bill_to && <p>Bill To: {order.bill_to}</p>}
+                                    </div>
+                                )}
+                                <div className="mt-5">
+                                    <p className="text-sm font-semibold text-gray-900">Payment receipt</p>
+                                    {customerPaymentReceipt ? (
+                                        <div className="mt-2 space-y-2.5">
+                                            <div className="flex items-center gap-2 rounded-lg bg-approved/10 px-3 py-2 text-sm font-medium text-approved">
+                                                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                                <span>
+                                                    Receipt uploaded
+                                                    {formatDateTime(customerPaymentReceipt.uploaded_at)
+                                                        ? ` · ${formatDateTime(customerPaymentReceipt.uploaded_at)}`
+                                                        : ''}
+                                                </span>
+                                            </div>
+                                            <DocumentCard
+                                                onOpen={setViewerDoc}
+                                                href={`/storage/${customerPaymentReceipt.file_path}`}
+                                                title="View your receipt"
+                                                subtitle="Tap to view"
+                                            />
+                                            <p className="text-xs text-vw-grey">
+                                                Uploaded the wrong file? Choose a new one below to replace it.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="mt-1 text-sm text-vw-grey">
+                                            Upload your proof of transfer once the payment is done.
+                                        </p>
+                                    )}
+                                    <form
+                                        onSubmit={handleReceiptUpload}
+                                        className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+                                    >
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.jpg,.jpeg,.png"
+                                            className="w-full min-w-0 text-xs text-vw-grey file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-vw-blue/10 file:px-3 file:py-2.5 file:text-xs file:font-semibold file:text-vw-blue hover:file:bg-vw-blue/15 sm:flex-1"
+                                            onChange={(e) => setReceiptFile(e.target.files[0])}
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={uploadingReceipt || !receiptFile}
+                                            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-vw-blue px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto"
+                                        >
+                                            {uploadingReceipt ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                                <Upload className="h-4 w-4" aria-hidden="true" />
+                                            )}
+                                            {uploadingReceipt ? 'Uploading...' : customerPaymentReceipt ? 'Replace' : 'Upload'}
+                                        </button>
+                                    </form>
+                                </div>
+                            </section>
+                        </>
+                    );
+    const itemsList = (
+        <ul className="mt-4 space-y-2.5">
+                            {orderedItems.map((item) =>
+                                isServerPending(item) ? (
+                                    <InspectionItemCard
+                                        key={item.id}
+                                        item={item}
+                                        canDecide={canDecide}
+                                        onDecision={handleDecision}
+                                        onUndoLocal={handleCancelDecision}
+                                        itemRef={(el) => {
+                                            if (el) pendingItemRefs.current[item.id] = el;
+                                        }}
+                                    />
+                                ) : (
+                                    <DecidedItemRow
+                                        key={item.id}
+                                        item={item}
+                                        canCancel={canDecide && (localDecisionIds.has(item.id) || canUndoSubmitted)}
+                                        onCancel={handleCancelDecision}
+                                    />
+                                )
+                            )}
+                        </ul>
+    );
 
     return (
         <PublicLayout>
@@ -641,12 +873,30 @@ export default function InspectionReport({
                     </div>
                 </header>
 
+                {canDecide && pendingItems.length > 0 && (
+                    <div className="mx-auto mt-3 max-w-3xl px-4 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
+                        <button
+                            type="button"
+                            onClick={() => itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            className="flex min-h-[48px] w-full items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left text-sm font-semibold text-amber-900"
+                        >
+                            <span>
+                                {pendingItems.length} {pendingItems.length === 1 ? 'item is' : 'items are'} waiting for your decision
+                            </span>
+                            <span className="inline-flex shrink-0 items-center gap-1 text-xs">
+                                Review
+                                <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                        </button>
+                    </div>
+                )}
+
                 {/* Hero image — kriteria #2 & #3: gambar dari upload Settings, ganti-ganti tanpa sentuh kode.
                     Kriteria #13: tidak ada lagi "Report No." di sini.
                     Mobile: aspect ratio dipertinggi (4/3) supaya judul+subtitle tidak sempit,
                     balik ke wide 16/7 mulai breakpoint sm ke atas. */}
                 <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden px-4 sm:rounded-lg sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-md sm:aspect-[16/7] sm:rounded-lg">
+                    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-md sm:aspect-[16/7] sm:rounded-lg">
                         {settings.hero_image_path ? (
                             <img
                                 src={`/storage/${settings.hero_image_path}`}
@@ -701,7 +951,7 @@ export default function InspectionReport({
 
                                 {/* Segmented bar: tahap yang sudah lewat & tahap sekarang terisi putih,
                                     sisanya redup. Tidak ada label per-tahap supaya tetap fokus. */}
-                                <div className="mt-5 flex gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={STATUS_STEPS.length} aria-valuenow={currentStepIndex + 1}>
+                                <div className="mt-5 flex gap-1.5" role="progressbar" aria-label="Service progress" aria-valuemin={1} aria-valuemax={STATUS_STEPS.length} aria-valuenow={currentStepIndex + 1}>
                                     {STATUS_STEPS.map((step, idx) => (
                                         <div
                                             key={step.key}
@@ -731,6 +981,13 @@ export default function InspectionReport({
                         </div>
                     </div>
 
+                    {isInvoiceStage && (
+                        <div className="mt-8 [&>*:first-child]:hidden">
+                            {invoiceBlock}
+                            {paymentBlock}
+                        </div>
+                    )}
+
                     {/* Video — kriteria #5: 1 slot saja, tidak ada tab pilihan part. */}
                     <section className="mt-8">
                         <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Inspection Video</h2>
@@ -747,7 +1004,7 @@ export default function InspectionReport({
                                     />
                                 </div>
                             ) : (
-                                <video src={video.video_url} controls className="mt-3 aspect-video w-full rounded-md bg-black" />
+                                <video src={video.video_url} controls playsInline preload="metadata" className="mt-3 aspect-video w-full rounded-md bg-black" />
                             )
                         ) : (
                             <p className="mt-3 text-sm text-vw-grey">No video available yet.</p>
@@ -829,7 +1086,7 @@ export default function InspectionReport({
                         diputuskan menciut jadi 1 baris (DecidedItemRow), chip "Jump to next"
                         membantu lompat antar item pending, dan ada sticky bottom bar (progress
                         + total + tombol Submit) supaya customer tidak perlu scroll ke bawah. */}
-                    <section>
+                    <section ref={itemsSectionRef} className="scroll-mt-20">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Inspection Items</h2>
                             <span
@@ -870,28 +1127,18 @@ export default function InspectionReport({
                             </button>
                         )}
 
-                        <ul className="mt-4 space-y-2.5">
-                            {orderedItems.map((item) =>
-                                item.status === 'pending' ? (
-                                    <InspectionItemCard
-                                        key={item.id}
-                                        item={item}
-                                        canDecide={canDecide}
-                                        onDecision={handleDecision}
-                                        itemRef={(el) => {
-                                            if (el) pendingItemRefs.current[item.id] = el;
-                                        }}
-                                    />
-                                ) : (
-                                    <DecidedItemRow
-                                        key={item.id}
-                                        item={item}
-                                        canCancel={canDecide && (localDecisionIds.has(item.id) || canUndoSubmitted)}
-                                        onCancel={handleCancelDecision}
-                                    />
-                                )
-                            )}
-                        </ul>
+                        {isInvoiceStage ? (
+                            <Accordion type="single" collapsible className="mt-4">
+                                <AccordionItem value="items" className="rounded-lg border border-vw-grey/15 px-4">
+                                    <AccordionTrigger className="min-h-[48px] text-sm font-semibold text-gray-900">
+                                        Inspection items ({items.length})
+                                    </AccordionTrigger>
+                                    <AccordionContent>{itemsList}</AccordionContent>
+                                </AccordionItem>
+                            </Accordion>
+                        ) : (
+                            itemsList
+                        )}
 
                         {/* Ringkasan harga + total diskon */}
                         <div className="mt-8 overflow-hidden rounded-xl border border-vw-grey/15 bg-white shadow-lg">
@@ -941,6 +1188,25 @@ export default function InspectionReport({
                                 </span>
                                 <Rupiah value={grandTotal} className="text-2xl font-bold text-vw-blue" />
                             </div>
+
+                            {inspectionFee > 0 && (
+                                <>
+<div className="flex items-start justify-between gap-3 border-t border-vw-grey/15 px-5 py-3 text-sm">
+                                    <div className="min-w-0">
+                                        <p className="font-medium text-gray-800">Inspection fee</p>
+                                        {order.inspection_fee_note && (
+                                            <p className="text-xs text-gray-600">{order.inspection_fee_note}</p>
+                                        )}
+                                        <p className="text-xs text-gray-600">Not included in the item total above.</p>
+                                    </div>
+                                    <Rupiah value={inspectionFee} className="shrink-0 font-semibold text-gray-900" />
+                                </div>
+                                    <div className="flex items-center justify-between gap-3 border-t border-vw-grey/15 bg-vw-blue/[0.06] px-5 py-4">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-vw-blue">Total with inspection fee</span>
+                                        <Rupiah value={grandTotal + inspectionFee} className="text-xl font-bold text-vw-blue" />
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {!isPricingFinal && (
@@ -986,104 +1252,9 @@ export default function InspectionReport({
                         </>
                     )}
 
-                    {showInvoiceSection && (
-                        <>
-                            <Separator className="my-8" />
-                            <section>
-                                <SectionTitle>Invoice Form</SectionTitle>
-                                <div className="mt-3">
-                                    {invoice ? (
-                                        <DocumentCard
-                                            onOpen={setViewerDoc}
-                                            href={`/storage/${invoice.file_path}`}
-                                            title="View Invoice"
-                                            subtitle={order.invoice_number ? `No. ${order.invoice_number} · PDF` : 'PDF · Tap to view'}
-                                        />
-                                    ) : (
-                                        <PendingNotice
-                                            title="Invoice is being prepared"
-                                            text="It will appear here automatically once it's ready."
-                                        />
-                                    )}
-                                </div>
-                            </section>
-                        </>
-                    )}
+                    {!isInvoiceStage && invoiceBlock}
 
-                    {showPaymentSection && (
-                        <>
-                            <Separator className="my-8" />
-                            <section>
-                                <SectionTitle>Payment</SectionTitle>
-                                <div className="mt-3 space-y-2">
-                                    {BANK_ACCOUNTS.map((acc) => (
-                                        <div key={acc.bank} className="rounded-md border border-vw-grey/15 px-4 py-3 text-sm">
-                                            <p className="font-semibold text-gray-900">{acc.bank}</p>
-                                            <p className="text-vw-grey">{acc.account}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                                {(order.invoice_number || order.bill_to) && (
-                                    <div className="mt-3 space-y-1 text-sm text-gray-700">
-                                        {order.invoice_number && <p>Invoice Number: {order.invoice_number}</p>}
-                                        {order.bill_to && <p>Bill To: {order.bill_to}</p>}
-                                    </div>
-                                )}
-                                <div className="mt-5">
-                                    <p className="text-sm font-semibold text-gray-900">Payment receipt</p>
-                                    {customerPaymentReceipt ? (
-                                        <div className="mt-2 space-y-2.5">
-                                            <div className="flex items-center gap-2 rounded-lg bg-approved/10 px-3 py-2 text-sm font-medium text-approved">
-                                                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                                                <span>
-                                                    Receipt uploaded
-                                                    {formatDateTime(customerPaymentReceipt.uploaded_at)
-                                                        ? ` · ${formatDateTime(customerPaymentReceipt.uploaded_at)}`
-                                                        : ''}
-                                                </span>
-                                            </div>
-                                            <DocumentCard
-                                                onOpen={setViewerDoc}
-                                                href={`/storage/${customerPaymentReceipt.file_path}`}
-                                                title="View your receipt"
-                                                subtitle="Tap to view"
-                                            />
-                                            <p className="text-xs text-vw-grey">
-                                                Uploaded the wrong file? Choose a new one below to replace it.
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <p className="mt-1 text-sm text-vw-grey">
-                                            Upload your proof of transfer once the payment is done.
-                                        </p>
-                                    )}
-                                    <form
-                                        onSubmit={handleReceiptUpload}
-                                        className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
-                                    >
-                                        <input
-                                            type="file"
-                                            accept=".pdf,.jpg,.jpeg,.png"
-                                            className="w-full min-w-0 text-xs text-vw-grey file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-vw-blue/10 file:px-3 file:py-2.5 file:text-xs file:font-semibold file:text-vw-blue hover:file:bg-vw-blue/15 sm:flex-1"
-                                            onChange={(e) => setReceiptFile(e.target.files[0])}
-                                        />
-                                        <button
-                                            type="submit"
-                                            disabled={uploadingReceipt || !receiptFile}
-                                            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-vw-blue px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto"
-                                        >
-                                            {uploadingReceipt ? (
-                                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                                <Upload className="h-4 w-4" aria-hidden="true" />
-                                            )}
-                                            {uploadingReceipt ? 'Uploading...' : customerPaymentReceipt ? 'Replace' : 'Upload'}
-                                        </button>
-                                    </form>
-                                </div>
-                            </section>
-                        </>
-                    )}
+                    {!isInvoiceStage && paymentBlock}
 
                     {showThankYouSection && (
                         <>
@@ -1100,7 +1271,7 @@ export default function InspectionReport({
                                 </div>
                                 <div className="mt-4 space-y-2">
                                     {settings.era_phone && (
-                                        <div className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700">
+                                        <a href={`tel:${settings.era_phone.replace(/[^\d+]/g, '')}`} className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 min-h-[44px]">
                                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                                 <Phone className="h-4 w-4" />
                                             </span>
@@ -1108,7 +1279,7 @@ export default function InspectionReport({
                                                 <span className="block font-medium text-gray-900">Emergency Road Assist (ERA)</span>
                                                 <span className="font-mono text-xs text-vw-grey">{settings.era_phone}</span>
                                             </span>
-                                        </div>
+                                        </a>
                                     )}
                                     {bookingWaHref && (
                                         <a
@@ -1151,7 +1322,7 @@ export default function InspectionReport({
                                     <span className="inline-block rounded-sm bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
                                         Ready for Pickup
                                     </span>
-                                    <p className="mt-1.5 text-sm font-semibold text-gray-900">Waiting on your response</p>
+                                    <p className="mt-1.5 text-sm font-semibold text-gray-900">Pay, then upload your receipt</p>
                                     <p className="mt-0.5 text-xs text-vw-grey">Have questions? Reach out to your service advisor.</p>
                                 </div>
                                 <a
@@ -1199,9 +1370,9 @@ export default function InspectionReport({
                                         className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
                                     >
                                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                            <Phone className="h-4 w-4" />
+                                            <MessageCircle className="h-4 w-4" />
                                         </span>
-                                        <span className="truncate font-mono">{serviceAdvisor.phone}</span>
+                                        <span className="truncate">WhatsApp <span className="font-mono">{serviceAdvisor.phone}</span></span>
                                     </a>
                                 )}
                                 <a
@@ -1211,7 +1382,7 @@ export default function InspectionReport({
                                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
                                         <Mail className="h-4 w-4" />
                                     </span>
-                                    <span className="min-w-0 truncate font-mono">{serviceAdvisor.email}</span>
+                                    <span className="min-w-0 break-all font-mono text-xs">{serviceAdvisor.email}</span>
                                 </a>
                             </div>
                         </div>
@@ -1233,6 +1404,7 @@ export default function InspectionReport({
                                     height="180"
                                     style={{ border: 0 }}
                                     allowFullScreen=""
+                                    title="Workshop location map"
                                     loading="lazy"
                                     referrerPolicy="strict-origin-when-cross-origin"
                                     className="mt-3 w-full rounded-md border border-vw-grey/15"
@@ -1294,10 +1466,10 @@ export default function InspectionReport({
                             <p className="truncate text-xs font-semibold text-gray-800">
                                 {decidedItemsList.length} of {items.length} decided
                             </p>
-                            <Rupiah
-                                value={grandTotal}
-                                className="block text-sm font-bold text-vw-blue"
-                            />
+                            <p className="text-xs text-gray-600">
+                                Estimated items total{" "}
+                                <Rupiah value={grandTotal} className="text-sm font-bold text-vw-blue" />
+                            </p>
                         </div>
                         <button
                             type="button"
@@ -1383,24 +1555,30 @@ export default function InspectionReport({
 
                     {decidedApprovedItems.length > 0 && (
                         <div className="mt-4 space-y-2 rounded-xl bg-vw-grey-light/70 p-4 text-sm text-vw-grey">
+                            {decidedDiscount > 0 && (
+                                <>
+                                    <div className="flex items-center justify-between">
+                                        <span>Price before discount</span>
+                                        <Rupiah value={decidedListTotal} className="text-gray-700" />
+                                    </div>
+                                    <div className="flex items-center justify-between font-medium text-approved">
+                                        <span>Discount</span>
+                                        <span className="whitespace-nowrap">
+                                            −<Rupiah value={decidedDiscount} />
+                                        </span>
+                                    </div>
+                                </>
+                            )}
                             <div className="flex items-center justify-between">
                                 <span>Subtotal</span>
                                 <Rupiah value={decidedApprovedSubtotal} className="text-gray-700" />
                             </div>
-                            {decidedDiscount > 0 && (
-                                <div className="flex items-center justify-between font-medium text-approved">
-                                    <span>Discount</span>
-                                    <span className="whitespace-nowrap">
-                                        −<Rupiah value={decidedDiscount} />
-                                    </span>
-                                </div>
-                            )}
                             <div className="flex items-center justify-between">
                                 <span>VAT ({vatPercent}%)</span>
                                 <Rupiah value={decidedApprovedTotal - decidedApprovedSubtotal} className="text-gray-700" />
                             </div>
                             <div className="flex items-center justify-between border-t border-vw-grey/20 pt-3">
-                                <span className="text-xs font-bold uppercase tracking-wider">Total</span>
+                                <span className="text-xs font-bold uppercase tracking-wider">Total (this submission)</span>
                                 <Rupiah value={decidedApprovedTotal} className="text-2xl font-bold text-vw-blue" />
                             </div>
                         </div>
@@ -1413,7 +1591,7 @@ export default function InspectionReport({
                                 disabled={submitting}
                                 className="min-h-[48px] flex-1 rounded-xl border border-vw-grey/30 bg-white text-sm font-semibold text-vw-grey transition hover:bg-vw-grey-light disabled:opacity-50"
                             >
-                                Cancel
+                                Back
                             </button>
                         </SheetClose>
                         <button
@@ -1442,7 +1620,7 @@ export default function InspectionReport({
                                 <Undo2 className="h-5 w-5" aria-hidden="true" />
                             </span>
                             <div className="min-w-0">
-                                <SheetTitle>Cancel your decision?</SheetTitle>
+                                <SheetTitle>Change your decision?</SheetTitle>
                                 <SheetDescription>
                                     This item goes back to waiting for your approval. You can approve or reject it again afterwards.
                                 </SheetDescription>
@@ -1480,7 +1658,7 @@ export default function InspectionReport({
                             className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-xl bg-vw-blue text-sm font-semibold text-white shadow-lg shadow-vw-blue/25 transition hover:bg-vw-blue/90 disabled:opacity-50"
                         >
                             {undoing && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                            {undoing ? 'Cancelling...' : 'Yes, cancel decision'}
+                            {undoing ? 'Updating...' : 'Yes, change it'}
                         </button>
                     </SheetFooter>
                 </SheetContent>

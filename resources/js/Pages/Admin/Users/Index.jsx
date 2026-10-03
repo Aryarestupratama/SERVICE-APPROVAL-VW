@@ -97,6 +97,9 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
         }
     }, [open, user]);
 
+    const { auth } = usePage().props;
+    const isSelf = Boolean(isEdit && user?.id === auth.user.id);
+
     const handlePhotoChange = (e) => {
         const file = e.target.files?.[0] ?? null;
         setData('photo', file);
@@ -157,7 +160,7 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
 
             <div className="space-y-1.5">
                 <Label htmlFor="role">Role</Label>
-                <Select value={data.role} onValueChange={(v) => setData('role', v)}>
+                <Select value={data.role} onValueChange={(v) => setData('role', v)} disabled={isSelf}>
                     <SelectTrigger id="role">
                         <SelectValue />
                     </SelectTrigger>
@@ -168,6 +171,7 @@ function UserFormDialog({ open, onOpenChange, user, onSuccess }) {
                     </SelectContent>
                 </Select>
                 {errors.role && <p className="text-sm text-urgent">{errors.role}</p>}
+                {isSelf && <p className="text-xs text-gray-600">You cannot change your own role.</p>}
                 {data.role === 'chief_technician' && (
                     <p className="text-xs text-vw-grey">
                         Chief technicians don't log in — this account is only used for
@@ -274,7 +278,12 @@ function DeleteConfirmDialog({ open, onOpenChange, user }) {
     const handleDelete = () => {
         destroy(route('admin.users.destroy', user.id), {
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error('Failed to delete staff account', { description: page.props.flash.error });
+                    onOpenChange(false);
+                    return;
+                }
                 onOpenChange(false);
                 toast.success('Staff account deleted', {
                     description: `${user?.name} has been removed.`,
@@ -363,13 +372,16 @@ const filterDefs = [
         key: 'role',
         label: 'Role',
         type: 'select',
-        options: Object.keys(ROLE_LABEL),
+        options: Object.entries(ROLE_LABEL).map(([value, label]) => ({ value, label })),
     },
 ];
 
 export default function Index({ users, search, filters }) {
     const { auth } = usePage().props;
     const [searchTerm, setSearchTerm] = useState(search ?? '');
+    const [sorting, setSorting] = useState(() =>
+        filters?.sort_by ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }] : []
+    );
     const [activeFilters, setActiveFilters] = useState(() => ({
         role: filters?.role ?? '',
     }));
@@ -410,6 +422,8 @@ export default function Index({ users, search, filters }) {
             const nextParams = {
                 search: searchTerm || undefined,
                 role: activeFilters.role || undefined,
+                sort_by: sorting[0]?.id || undefined,
+                sort_dir: sorting[0] ? (sorting[0].desc ? 'desc' : 'asc') : undefined,
             };
 
             router.get(route('admin.users.index'), nextParams, {
@@ -418,7 +432,7 @@ export default function Index({ users, search, filters }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters]);
+    }, [searchTerm, activeFilters, sorting]);
 
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
@@ -475,11 +489,11 @@ export default function Index({ users, search, filters }) {
                 enableSorting: false,
                 enableHiding: false,
                 cell: ({ row }) => (
-                    <div className="space-x-3 whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         <button
                             type="button"
                             onClick={() => openEditForm(row.original)}
-                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-vw-light-blue hover:underline"
                         >
                             Edit
                         </button>
@@ -487,7 +501,7 @@ export default function Index({ users, search, filters }) {
                             <button
                                 type="button"
                                 onClick={() => setDeletingUser(row.original)}
-                                className="text-sm font-medium text-urgent hover:underline"
+                                className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-urgent hover:underline"
                             >
                                 Delete
                             </button>
@@ -499,19 +513,25 @@ export default function Index({ users, search, filters }) {
         [auth.user.id]
     );
 
-    const table = useDataTable({ data: users.data, columns });
+    const table = useDataTable({
+        data: users.data,
+        columns,
+        manualSorting: true,
+        sorting,
+        onSortingChange: setSorting,
+    });
 
     return (
-        <AdminLayout
-            title="Staff Accounts"
-            headerActions={<Button onClick={openAddForm}>Add Staff Account</Button>}
-        >
+        <AdminLayout title="Staff Accounts">
             <Head title="Staff Accounts" />
             <DataTable
                 table={table}
                 links={users.links}
                 emptyMessage="No staff accounts found."
                 isLoading={isLoading}
+                isFiltered={Boolean(searchTerm || activeFilters.role)}
+                paginationMeta={{ from: users.from, to: users.to, total: users.total }}
+                onRowClick={openEditForm}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
@@ -526,8 +546,10 @@ export default function Index({ users, search, filters }) {
                         values={activeFilters}
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
+                        table={table}
                     />
                 }
+                primaryAction={<Button onClick={openAddForm}>Add Staff Account</Button>}
             />
 
             <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />

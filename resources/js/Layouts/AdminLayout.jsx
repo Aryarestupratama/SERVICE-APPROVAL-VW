@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { motion } from 'framer-motion';
+import { motion, MotionConfig } from 'framer-motion';
 import {
     LayoutDashboard,
     ClipboardList,
@@ -29,18 +29,22 @@ import {
     SidebarInset,
 } from '@/Components/ui/sidebar';
 
+// Chief technician tidak punya akses ke halaman-halaman ini (route-nya role:admin,service_advisor),
+// jadi menunya juga tidak ditampilkan — bukan link yang berujung 403.
+const MANAGER_ROLES = ['admin', 'service_advisor'];
+
 const MAIN_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard', icon: LayoutDashboard },
-    { label: 'SA Performance', href: route('admin.dashboards.sa-performance'), routeName: 'admin.dashboards.sa-performance', icon: TrendingUp },
-    { label: 'Part Performance', href: route('admin.dashboards.part-performance'), routeName: 'admin.dashboards.part-performance', icon: Wrench },
-    { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*', icon: ClipboardList },
+    { label: 'SA Performance', href: route('admin.dashboards.sa-performance'), routeName: 'admin.dashboards.sa-performance', icon: TrendingUp, roles: MANAGER_ROLES },
+    { label: 'Part Performance', href: route('admin.dashboards.part-performance'), routeName: 'admin.dashboards.part-performance', icon: Wrench, roles: MANAGER_ROLES },
+    { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*', icon: ClipboardList, roles: MANAGER_ROLES },
 ];
 
 const MASTER_DATA_ITEMS = [
-    { label: 'Customers', href: route('admin.customers.index'), routeName: 'admin.customers.*', icon: Users },
-    { label: 'Vehicles', href: route('admin.vehicles.index'), routeName: 'admin.vehicles.*', icon: Car },
-    { label: 'Vehicle Customer', href: route('admin.vehicle-customers.index'), routeName: 'admin.vehicle-customers.*', icon: Link2 },
-    { label: 'Import Data', href: route('admin.vehicle-customer-import.create'), routeName: 'admin.vehicle-customer-import.*', icon: Upload },
+    { label: 'Customers', href: route('admin.customers.index'), routeName: 'admin.customers.*', icon: Users, roles: MANAGER_ROLES },
+    { label: 'Vehicles', href: route('admin.vehicles.index'), routeName: 'admin.vehicles.*', icon: Car, roles: MANAGER_ROLES },
+    { label: 'Vehicle Customer', href: route('admin.vehicle-customers.index'), routeName: 'admin.vehicle-customers.*', icon: Link2, roles: MANAGER_ROLES },
+    { label: 'Import Data', href: route('admin.vehicle-customer-import.create'), routeName: 'admin.vehicle-customer-import.*', icon: Upload, roles: MANAGER_ROLES },
 ];
 
 const MASTER_DATA_ADMIN_ONLY_ITEMS = [
@@ -80,7 +84,7 @@ function NavGroup({ items, layoutId }) {
                             tooltip={item.label}
                             className="relative"
                         >
-                            <Link href={item.href}>
+                            <Link href={item.href} aria-current={isActive ? 'page' : undefined}>
                                 {isActive && (
                                     <motion.div
                                         layoutId={layoutId}
@@ -103,12 +107,23 @@ export default function AdminLayout({ children, title, headerActions }) {
     const { auth } = usePage().props;
     const isAdmin = auth.user.role === 'admin';
 
-    const masterDataItems = isAdmin
-        ? [...MASTER_DATA_ITEMS, ...MASTER_DATA_ADMIN_ONLY_ITEMS]
-        : MASTER_DATA_ITEMS;
+    const role = auth.user.role;
+    const visible = (items) => items.filter((item) => !item.roles || item.roles.includes(role));
+
+    const mainItems = visible(MAIN_NAV_ITEMS);
+    const masterDataItems = visible(
+        isAdmin ? [...MASTER_DATA_ITEMS, ...MASTER_DATA_ADMIN_ONLY_ITEMS] : MASTER_DATA_ITEMS
+    );
 
     return (
+        <MotionConfig reducedMotion="user">
         <SidebarProvider>
+            <a
+                href="#main-content"
+                className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:shadow"
+            >
+                Skip to content
+            </a>
             <Sidebar collapsible="icon">
                 <SidebarHeader>
                     <Link
@@ -144,13 +159,15 @@ export default function AdminLayout({ children, title, headerActions }) {
 
                 <SidebarContent>
                     <SidebarGroup>
-                        <NavGroup items={MAIN_NAV_ITEMS} layoutId="active-nav-indicator" />
+                        <NavGroup items={mainItems} layoutId="active-nav-indicator" />
                     </SidebarGroup>
 
-                    <SidebarGroup>
+                    {masterDataItems.length > 0 && (
+                        <SidebarGroup>
                         <SidebarGroupLabel>Master Data</SidebarGroupLabel>
                         <NavGroup items={masterDataItems} layoutId="active-nav-indicator" />
                     </SidebarGroup>
+                    )}
 
                     {isAdmin && (
                         <SidebarGroup>
@@ -180,7 +197,8 @@ export default function AdminLayout({ children, title, headerActions }) {
                             as="button"
                             type="button"
                             title="Log out"
-                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
+                            aria-label="Log out"
+                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
                         >
                             <LogOut className="h-4 w-4" />
                         </Link>
@@ -192,7 +210,7 @@ export default function AdminLayout({ children, title, headerActions }) {
                 <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-vw-grey/15 bg-white px-3 sm:h-14 sm:gap-3 sm:px-6">
                     <SidebarTrigger className="shrink-0" />
                     {title && (
-                        <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-foreground sm:flex-initial">
+                        <h1 className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground sm:flex-initial">
                             {title}
                         </h1>
                     )}
@@ -203,8 +221,9 @@ export default function AdminLayout({ children, title, headerActions }) {
                     )}
                 </header>
 
-                <div className="p-4 sm:p-6">{children}</div>
+                <div id="main-content" tabIndex={-1} className="p-4 outline-none sm:p-6">{children}</div>
             </SidebarInset>
         </SidebarProvider>
+        </MotionConfig>
     );
 }

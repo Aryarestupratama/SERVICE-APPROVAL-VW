@@ -15,7 +15,13 @@ class DashboardSaController extends Controller
     {
         [$from, $to] = $this->resolveDateRange($request);
 
-        $serviceAdvisors = User::where('role', 'service_advisor')->get();
+        // Termasuk akun lain yang memegang order (mis. admin yang membuat order otomatis menjadi SA-nya),
+        // supaya total di dashboard sama dengan jumlah order sebenarnya.
+        $serviceAdvisors = User::where('role', 'service_advisor')->orWhereHas('serviceOrders')->get();
+
+        // Item approved memakai final_price_snapshot (SUDAH termasuk PPN); rejected juga harus
+        // termasuk PPN supaya revenue approved & rejected sebanding.
+        $vat = 1 + ((float) \App\Models\Setting::current()->ppn_percent) / 100;
 
         // Kontribusi rupiah 1 item — Part + Labour, masing-masing dikurangi
         // diskonnya sendiri. Sama definisinya dengan itemContribution() di
@@ -23,11 +29,11 @@ class DashboardSaController extends Controller
         // (JS), dan sudah dipakai juga di DashboardPartController — lihat
         // PROJECT-RULES bagian 1. Dipakai untuk item rejected (tidak pernah
         // punya final_price_snapshot karena tidak pernah di-lock).
-        $contribution = function (InspectionItem $item) {
+        $contribution = function (InspectionItem $item) use ($vat) {
             $itemPrice = (float) $item->cost_item * (1 - ((float) ($item->discount_item_percent ?? 0)) / 100);
             $labourPrice = (float) $item->cost_labour * (1 - ((float) ($item->discount_labour_percent ?? 0)) / 100);
 
-            return $itemPrice + $labourPrice;
+            return ($itemPrice + $labourPrice) * $vat;
         };
 
         $stats = $serviceAdvisors->map(function (User $sa) use ($from, $to, $contribution) {
@@ -86,6 +92,7 @@ class DashboardSaController extends Controller
                 'revenue_rejected' => (float) $revenueRejected,
                 'approved_count' => $approvedItems->count(),
                 'rejected_count' => $rejectedItems->count(),
+                'decided_count' => $decidedCount,
                 'approve_rate' => $decidedCount > 0 ? round($approvedItems->count() / $decidedCount * 100, 1) : null,
                 'reject_rate' => $decidedCount > 0 ? round($rejectedItems->count() / $decidedCount * 100, 1) : null,
             ];
@@ -115,8 +122,9 @@ class DashboardSaController extends Controller
         $mode = $request->input('period_mode', 'preset');
 
         if ($mode === 'range') {
-            $from = $request->input('period_from') ? Carbon::parse($request->input('period_from')) : null;
-            $to = $request->input('period_to') ? Carbon::parse($request->input('period_to')) : null;
+            $parse = fn ($value) => $value ? rescue(fn () => Carbon::parse($value), null, false) : null;
+            $from = $parse($request->input('period_from'));
+            $to = $parse($request->input('period_to'));
             return [$from, $to];
         }
 

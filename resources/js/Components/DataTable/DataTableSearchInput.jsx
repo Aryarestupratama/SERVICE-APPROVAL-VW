@@ -29,16 +29,16 @@ export function DataTableSearchInput({
                 onChange={onChange}
                 placeholder={placeholder}
                 aria-label={placeholder}
-                className={hasValue ? 'pl-8 pr-8' : 'pl-8'}
+                className={hasValue ? 'pl-8 pr-10' : 'pl-8'}
             />
             {hasValue && (
                 <button
                     type="button"
                     onClick={clear}
                     aria-label="Clear search"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-vw-grey hover:text-foreground"
+                    className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-vw-grey hover:text-foreground"
                 >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                 </button>
             )}
         </div>

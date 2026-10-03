@@ -26,15 +26,18 @@ Route::get('/report/{token}', [InspectionReportController::class, 'show'])
     ->name('public.inspection-report');
 
 Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionReportController::class, 'submitDecisions'])
+    ->middleware('throttle:30,1')
     ->name('public.report.decide');
 
 // Customer membatalkan keputusan approve/reject yang sudah disubmit (item balik
 // ke pending). Hanya boleh selama order masih work_in_progress — dijaga di
 // controller, bukan cuma disembunyikan di frontend.
 Route::post('/report/{token}/undo-decision', [InspectionReportController::class, 'undoDecision'])
+    ->middleware('throttle:30,1')
     ->name('public.report.undo-decision');
 
 Route::post('report/{token}/payment-receipt', [InspectionReportController::class, 'uploadPaymentReceipt'])
+    ->middleware('throttle:10,1')
     ->name('public.report.upload-payment-receipt');
 
 // Endpoint ringan untuk polling + change-detection (PROJECT-RULES.md bagian
@@ -51,6 +54,24 @@ Route::middleware(['auth', 'verified'])
     ->group(function () {
 
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+        // Endpoint ringan untuk polling + change-detection section "In
+        // Progress" di Dashboard (pola sama seperti
+        // service-orders.last-activity / public.report.last-activity) —
+        // throttle terpisah karena dipanggil tiap beberapa detik per tab
+        // dashboard yang terbuka.
+        Route::get('dashboard/in-progress-activity',
+            [DashboardController::class, 'inProgressActivity'])
+            ->middleware('throttle:120,1')
+            ->name('dashboard.in-progress-activity');
+
+        // Data lengkap In Progress, dipanggil frontend hanya saat
+        // in-progress-activity di atas menunjukkan ada perubahan — bukan
+        // dipoll langsung tiap interval.
+        Route::get('dashboard/in-progress-feed',
+            [DashboardController::class, 'inProgressFeed'])
+            ->middleware('throttle:120,1')
+            ->name('dashboard.in-progress-feed');
 
         Route::middleware('role:admin,service_advisor')->group(function () {
             Route::get('dashboards/sa-performance', [DashboardSaController::class, 'index'])
@@ -124,6 +145,15 @@ Route::middleware(['auth', 'verified'])
             // update-customer-complaint di atas.
             Route::patch('service-orders/{serviceOrder}/inspection-fee', [ServiceOrderController::class, 'updateInspectionFee'])
                 ->name('service-orders.update-inspection-fee');
+
+            // Upload/replace video untuk WO yang SUDAH ADA — tidak digate
+            // status (lihat komentar di ServiceOrderController::uploadVideo()).
+            // Dipakai untuk mengisi video yang belum pernah diinput maupun
+            // memperbaiki video lama yang rusak/hilang (kasus migrasi
+            // http->https, lihat PROJECT-RULES.md).
+            Route::post('service-orders/{serviceOrder}/video',
+                [ServiceOrderController::class, 'uploadVideo'])
+                ->name('service-orders.upload-video');
 
             Route::post('service-orders/{serviceOrder}/estimation-document',
                 [ServiceOrderController::class, 'uploadEstimationDocument'])

@@ -113,7 +113,11 @@ function AssignDialog({ open, onOpenChange, vehicles, customers }) {
         e.preventDefault();
         post(route('admin.vehicle-customers.store'), {
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error('Failed to link customer', { description: page.props.flash.error });
+                    return;
+                }
                 reset();
                 onOpenChange(false);
                 toast.success('Customer linked', {
@@ -226,7 +230,12 @@ function UnassignConfirmDialog({ open, onOpenChange, pivot }) {
     const handleUnassign = () => {
         destroy(route('admin.vehicle-customers.destroy', pivot.id), {
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error('Failed to unassign', { description: page.props.flash.error });
+                    onOpenChange(false);
+                    return;
+                }
                 onOpenChange(false);
                 toast.success('Customer unassigned');
             },
@@ -305,11 +314,19 @@ function UnassignConfirmDialog({ open, onOpenChange, pivot }) {
     );
 }
 
-const ROLE_OPTIONS = ['Primary', 'PIC'];
+// value = nilai yang dikirim ke server (huruf kecil, sama dengan yang dikembalikan di `filters`).
+const ROLE_OPTIONS = [
+    { value: 'primary', label: 'Primary' },
+    { value: 'pic', label: 'PIC' },
+];
 
 export default function Index({ pivots, search, filters, vehicles, customers }) {
     const [searchTerm, setSearchTerm] = useState(search ?? '');
     const [activeFilters, setActiveFilters] = useState(() => ({ role: filters?.role ?? '' }));
+    const [sorting, setSorting] = useState(() =>
+        filters?.sort_by ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }] : []
+    );
+    const [settingPrimary, setSettingPrimary] = useState(null);
     const [assignOpen, setAssignOpen] = useState(false);
     const [unassigning, setUnassigning] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -348,19 +365,28 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
                 route('admin.vehicle-customers.index'),
                 {
                     search: searchTerm || undefined,
-                    role: activeFilters.role ? activeFilters.role.toLowerCase() : undefined,
+                    role: activeFilters.role || undefined,
+                    sort_by: sorting[0]?.id || undefined,
+                    sort_dir: sorting[0] ? (sorting[0].desc ? 'desc' : 'asc') : undefined,
                 },
                 { preserveState: true, replace: true }
             );
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters]);
+    }, [searchTerm, activeFilters, sorting]);
 
     const handleSetPrimary = (pivot) => {
         router.patch(route('admin.vehicle-customers.set-primary', pivot.id), {}, {
             preserveScroll: true,
-            onSuccess: () => toast.success('Primary customer updated'),
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error(page.props.flash.error);
+                    return;
+                }
+                toast.success('Primary customer updated');
+            },
             onError: () => toast.error('Failed to update primary customer'),
+            onFinish: () => setSettingPrimary(null),
         });
     };
 
@@ -405,12 +431,12 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
             enableSorting: false,
             enableHiding: false,
             cell: ({ row }) => (
-                <div className="space-x-3 whitespace-nowrap text-right">
+                <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                     {!row.original.is_primary && (
                         <button
                             type="button"
-                            onClick={() => handleSetPrimary(row.original)}
-                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                            onClick={() => setSettingPrimary(row.original)}
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-vw-light-blue hover:underline"
                         >
                             Set as Primary
                         </button>
@@ -418,7 +444,7 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
                     <button
                         type="button"
                         onClick={() => setUnassigning(row.original)}
-                        className="text-sm font-medium text-urgent hover:underline"
+                        className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-urgent hover:underline"
                     >
                         Unassign
                     </button>
@@ -427,19 +453,24 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
         },
     ], []);
 
-    const table = useDataTable({ data: pivots.data, columns });
+    const table = useDataTable({
+        data: pivots.data,
+        columns,
+        manualSorting: true,
+        sorting,
+        onSortingChange: setSorting,
+    });
 
     return (
-        <AdminLayout
-            title="Vehicle Customer"
-            headerActions={<Button onClick={() => setAssignOpen(true)}>Link Customer</Button>}
-        >
+        <AdminLayout title="Vehicle Customer">
             <Head title="Vehicle Customer" />
             <DataTable
                 table={table}
                 links={pivots.links}
                 emptyMessage="No customer-vehicle links found."
                 isLoading={isLoading}
+                isFiltered={Boolean(searchTerm || activeFilters.role)}
+                paginationMeta={{ from: pivots.from, to: pivots.to, total: pivots.total }}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
@@ -454,6 +485,7 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
                         values={activeFilters}
                         onChange={(key, value) => setActiveFilters((c) => ({ ...c, [key]: value }))}
                         onClear={() => setActiveFilters({ role: '' })}
+                        table={table}
                     />
                 }
                 primaryAction={<Button onClick={() => setAssignOpen(true)}>Link Customer</Button>}
@@ -471,6 +503,23 @@ export default function Index({ pivots, search, filters, vehicles, customers }) 
                 onOpenChange={(v) => !v && setUnassigning(null)}
                 pivot={unassigning}
             />
+
+            <AlertDialog open={Boolean(settingPrimary)} onOpenChange={(v) => !v && setSettingPrimary(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Set as primary customer?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            <strong>{settingPrimary?.customer?.name}</strong> will become the primary customer of{' '}
+                            <strong>{settingPrimary?.vehicle?.plate_number}</strong>. Service orders for this vehicle,
+                            including past ones, will then show this customer.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleSetPrimary(settingPrimary)}>Set as Primary</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

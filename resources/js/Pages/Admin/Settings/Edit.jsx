@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm, Head } from '@inertiajs/react';
+import { useForm, Head, router } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -9,6 +9,16 @@ import { Textarea } from '@/Components/ui/textarea';
 import { Badge } from '@/Components/ui/badge';
 import { Separator } from '@/Components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/Components/ui/alert';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/Components/ui/alert-dialog';
 import {
     Card,
     CardContent,
@@ -19,8 +29,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { ImageIcon, Info, Save } from 'lucide-react';
 
+// wa.me butuh format internasional tanpa 0/+ di depan: 0812… → 62812…
+const toWaDigits = (raw) => {
+    const d = String(raw ?? '').replace(/\D/g, '');
+    return d.startsWith('0') ? `62${d.slice(1)}` : d;
+};
+
 export default function Edit({ settings }) {
-    const { data, setData, post, processing, errors, isDirty } = useForm({
+    const { data, setData, post, processing, errors, isDirty, setDefaults } = useForm({
         workshop_name: settings?.workshop_name ?? '',
         address: settings?.address ?? '',
         phone: settings?.phone ?? '',
@@ -38,6 +54,26 @@ export default function Edit({ settings }) {
 
     const [logoPreview, setLogoPreview] = useState(settings?.logo_path ?? null);
     const [heroPreview, setHeroPreview] = useState(settings?.hero_image_path ?? null);
+    const [confirmVat, setConfirmVat] = useState(false);
+    const vatChanged = Number(data.ppn_percent) !== Number(settings?.ppn_percent ?? 11);
+
+    // Peringatan sebelum keluar dengan perubahan yang belum disimpan.
+    useEffect(() => {
+        const onBeforeUnload = (e) => {
+            if (!isDirty || processing) return;
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        const offBefore = router.on('before', (event) => {
+            if (!isDirty || processing || event.detail.visit.method !== 'get') return;
+            if (!window.confirm('You have unsaved changes. Leave this page?')) event.preventDefault();
+        });
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            offBefore();
+        };
+    }, [isDirty, processing]);
 
     const handleFileChange = (field, setPreview) => (e) => {
         const file = e.target.files?.[0] ?? null;
@@ -45,14 +81,26 @@ export default function Edit({ settings }) {
         if (file) setPreview(URL.createObjectURL(file));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const submit = () => {
         post(route('admin.settings.update'), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => toast.success('Settings saved'),
+            onSuccess: () => {
+                setDefaults?.(); // nilai tersimpan jadi acuan baru, supaya penjaga "unsaved" tidak menyala lagi
+                toast.success('Settings saved');
+            },
             onError: () => toast.error('Failed to save — check the form for errors'),
         });
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        // Tarif PPN berdampak ke seluruh sistem: minta konfirmasi dulu.
+        if (vatChanged) {
+            setConfirmVat(true);
+            return;
+        }
+        submit();
     };
 
     // Field mana yang errornya ada di tab mana — dipakai buat kasih titik merah
@@ -76,7 +124,11 @@ export default function Edit({ settings }) {
             }
         >
             <Head title="Workshop Settings" />
-            <form id="settings-form" onSubmit={handleSubmit} className="max-w-3xl">
+            <form
+                id="settings-form"
+                onSubmit={handleSubmit}
+                className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8"
+            >
                 <Tabs defaultValue="general" className="space-y-6">
                     <TabsList>
                         <TabsTrigger value="general" className="gap-1.5">
@@ -103,7 +155,7 @@ export default function Edit({ settings }) {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="space-y-1.5">
+                                <div className="max-w-sm space-y-1.5">
                                     <Label htmlFor="workshop_name">Workshop Name</Label>
                                     <Input
                                         id="workshop_name"
@@ -115,7 +167,7 @@ export default function Edit({ settings }) {
                                     )}
                                 </div>
 
-                                <div className="space-y-1.5">
+                                <div className="max-w-xs space-y-1.5">
                                     <Label htmlFor="phone">Phone</Label>
                                     <Input
                                         id="phone"
@@ -218,11 +270,9 @@ export default function Edit({ settings }) {
                                 </div>
                                 <Alert className="mt-4">
                                     <Info className="h-4 w-4" />
-                                    <AlertTitle className="text-sm">Locked at approval time</AlertTitle>
+                                    <AlertTitle className="text-sm">Takes effect immediately</AlertTitle>
                                     <AlertDescription className="text-xs">
-                                        Applied when calculating the final price of approved inspection
-                                        items. Changing this does not affect items that are already
-                                        approved.
+                                        Estimated totals for items that are not yet approved change immediately for every order. Items that are already approved keep their locked final price, but the VAT and subtotal lines shown for them are re-split using the new rate.
                                     </AlertDescription>
                                 </Alert>
                             </CardContent>
@@ -261,8 +311,12 @@ export default function Edit({ settings }) {
                                             onChange={(e) =>
                                                 setData('booking_whatsapp_phone', e.target.value)
                                             }
+                                            onBlur={() => setData('booking_whatsapp_phone', toWaDigits(data.booking_whatsapp_phone))}
                                             placeholder="62812xxxxxxx"
                                         />
+                                        <p className="text-xs text-gray-600">
+                                            Used for the WhatsApp button. International format: starts with 62, no + or spaces.
+                                        </p>
                                         {errors.booking_whatsapp_phone && (
                                             <p className="text-sm text-urgent">
                                                 {errors.booking_whatsapp_phone}
@@ -394,6 +448,22 @@ export default function Edit({ settings }) {
                     </Button>
                 </div>
             </form>
+            <AlertDialog open={confirmVat} onOpenChange={setConfirmVat}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Change VAT rate?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            VAT will change from {settings?.ppn_percent ?? 11}% to {data.ppn_percent}%. Estimated totals
+                            for items that are not yet approved will change immediately in every order, and customers will
+                            see the new amounts. Approved items keep their locked final price.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={submit}>Save and change VAT</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

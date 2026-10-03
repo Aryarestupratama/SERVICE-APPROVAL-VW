@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useId } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm, Head } from '@inertiajs/react';
+import { useForm, Head, router } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -88,7 +88,7 @@ function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
                     onClick={onClick}
                     aria-label={label}
                     className={cn(
-                        'shrink-0 transition-colors',
+                        'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-vw-grey-light',
                         tone === 'danger'
                             ? 'text-vw-grey hover:text-urgent'
                             : 'text-vw-grey hover:text-vw-light-blue'
@@ -221,6 +221,7 @@ function formatIDR(value) {
 
 // Ubah 'related' -> 'Related', 'work_in_progress' -> 'Work In Progress', dst.
 function formatGroupLabel(group) {
+    if (!group || typeof group !== 'string') return '';
     return group
         .split('_')
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -245,6 +246,8 @@ function itemSubtotal(item) {
 // (PROJECT-RULES.md bagian 9.4). Ini validasi UX (cepat, di sisi client) —
 // backend tetap jadi sumber kebenaran validasi sebenarnya lewat getID3.
 const MAX_VIDEO_DURATION_SECONDS = 120;
+const DRAFT_KEY = 'service-order-create-draft';
+const normalizeName = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // Baca durasi video (detik) dari sebuah File lewat elemen <video> sementara.
 // Return Promise<number> — reject kalau metadata tidak bisa dibaca (file
@@ -324,15 +327,17 @@ function firstMissingItemField(item) {
 // Description, sisanya dianggap wajib oleh SA.
 function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
     const err = (field) => (errorPrefix ? errors?.[`${errorPrefix}.${field}`] : null);
+    const uid = useId();
+    const fid = (f) => `${uid}-${f}`;
 
     return (
         <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-                <Label>
+                <Label htmlFor={fid('name')}>
                     Item Name
                     <RequiredMark />
                 </Label>
-                <Input
+                <Input id={fid('name')}
                     value={item.name}
                     onChange={(e) => onChange('name', e.target.value)}
                     placeholder="e.g. Brake pad replacement"
@@ -341,8 +346,8 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-                <Label>Description (optional)</Label>
-                <Textarea
+                <Label htmlFor={fid('description')}>Description (optional)</Label>
+                <Textarea id={fid('description')}
                     value={item.description}
                     onChange={(e) => onChange('description', e.target.value)}
                     rows={2}
@@ -355,11 +360,11 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 dibaca karena harga & diskon yang saling terkait ada di baris
                 yang sama. */}
             <div className="space-y-1.5">
-                <Label>
+                <Label htmlFor={fid('cost_labour')}>
                     Labour Price
                     <RequiredMark />
                 </Label>
-                <CurrencyInput
+                <CurrencyInput id={fid('cost_labour')}
                     value={item.cost_labour}
                     onChange={(v) => onChange('cost_labour', v)}
                     placeholder="0"
@@ -367,8 +372,8 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 {err('cost_labour') && <p className="text-sm text-urgent">{err('cost_labour')}</p>}
             </div>
             <div className="space-y-1.5">
-                <Label>Labour Discount (%)</Label>
-                <Input
+                <Label htmlFor={fid('discount_labour')}>Labour Discount (%)</Label>
+                <Input id={fid('discount_labour')}
                     type="number"
                     min="0"
                     max="100"
@@ -382,11 +387,11 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
             </div>
 
             <div className="space-y-1.5">
-                <Label>
+                <Label htmlFor={fid('cost_item')}>
                     Part Price
                     <RequiredMark />
                 </Label>
-                <CurrencyInput
+                <CurrencyInput id={fid('cost_item')}
                     value={item.cost_item}
                     onChange={(v) => onChange('cost_item', v)}
                     placeholder="0"
@@ -394,8 +399,8 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
                 {err('cost_item') && <p className="text-sm text-urgent">{err('cost_item')}</p>}
             </div>
             <div className="space-y-1.5">
-                <Label>Part Discount (%)</Label>
-                <Input
+                <Label htmlFor={fid('discount_item')}>Part Discount (%)</Label>
+                <Input id={fid('discount_item')}
                     type="number"
                     min="0"
                     max="100"
@@ -409,9 +414,12 @@ function ItemFields({ item, groups, errors, errorPrefix, onChange }) {
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-                <Label>Group</Label>
+                <Label htmlFor={fid('group')}>
+                    Group
+                    <RequiredMark />
+                </Label>
                 <Select value={item.group} onValueChange={(v) => onChange('group', v)}>
-                    <SelectTrigger>
+                    <SelectTrigger id={fid('group')}>
                         <SelectValue placeholder="Select group" />
                     </SelectTrigger>
                     <SelectContent>
@@ -565,7 +573,7 @@ function Stepper({ steps, currentStep, maxVisitedStep, onStepClick }) {
 // step), supaya SA selalu scroll ke bawah dulu untuk lanjut/submit dan tidak
 // ada resiko klik ganda kena tombol yang berubah jadi Submit di posisi yang
 // sama seperti waktu masih ditaruh di atas.
-function StepNav({ currentStep, isLastStep, onBack, onNext, onSubmit, processing, submitDisabled }) {
+function StepNav({ currentStep, isLastStep, onBack, onNext, onSubmit, processing, progress, submitDisabled }) {
     return (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <Button
@@ -588,7 +596,7 @@ function StepNav({ currentStep, isLastStep, onBack, onNext, onSubmit, processing
                 // secara native/implisit. Satu-satunya cara order tersubmit adalah
                 // klik eksplisit tombol ini.
                 <Button type="button" onClick={onSubmit} disabled={submitDisabled}>
-                    {processing ? 'Creating...' : 'Create Service Order'}
+                    {processing ? (progress ? `Uploading ${progress.percentage}%` : 'Creating...') : 'Create Service Order'}
                 </Button>
             ) : (
                 <Button type="button" onClick={onNext}>
@@ -602,7 +610,7 @@ function StepNav({ currentStep, isLastStep, onBack, onNext, onSubmit, processing
 export default function Create({ customers, vehicles, technicians, brands, groups }) {
     const [customerMode, setCustomerMode] = useState('existing'); // 'existing' | 'new'
     const [vehicleMode, setVehicleMode] = useState('existing');
-    const [draft, setDraft] = useState(emptyItemDraft(groups?.[0]));
+    const [draft, setDraft] = useState(emptyItemDraft());
 
     // --- Add New Customer / Add New Vehicle modal state ---
     // "New" di sini bukan lagi mode toggle yang setara dengan "Existing" —
@@ -635,6 +643,10 @@ export default function Create({ customers, vehicles, technicians, brands, group
     }
     const isCustomerDraftComplete =
         customerDraft.name.trim().length > 0 && customerDraft.phone.trim().length > 0;
+    const similarCustomer =
+        normalizeName(customerDraft.name).length >= 3
+            ? customers.find((c) => normalizeName(c.name) === normalizeName(customerDraft.name))
+            : null;
 
     function openVehicleDialog() {
         setVehicleDraft(
@@ -656,7 +668,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
     const isVehicleDraftComplete =
         vehicleDraft.plate_number.trim().length > 0 &&
         vehicleDraft.brand.trim().length > 0 &&
-        vehicleDraft.vin.trim().length > 0 &&
+        vehicleDraft.vin.trim().length === 17 &&
         vehicleDraft.model.trim().length > 0;
 
     // --- Inspection Items: grup aktif (Tabs) di panel step "Items & Fee" ---
@@ -742,7 +754,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
         }
     }
 
-    const { data, setData, post, processing, errors, clearErrors, transform } = useForm({
+    const { data, setData, post, processing, progress, isDirty, errors, clearErrors, transform } = useForm({
         work_order_number: '',
         customer_id: '',
         new_customer: { name: '', phone: '', email: '' },
@@ -757,9 +769,79 @@ export default function Create({ customers, vehicles, technicians, brands, group
         video: { video_source: 'upload', video_url: '', file: null },
     });
 
+    const skipVehicleReset = useRef(false);
     useEffect(() => {
+        if (skipVehicleReset.current) {
+            skipVehicleReset.current = false;
+            return;
+        }
         setData('vehicle_id', '');
     }, [data.customer_id, customerMode]);
+
+    // --- Draft lokal + penjaga keluar halaman (data form hanya di memori) ---
+    const [pendingDraft, setPendingDraft] = useState(null);
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(DRAFT_KEY);
+            if (raw) setPendingDraft(JSON.parse(raw));
+        } catch { /* abaikan */ }
+    }, []);
+    useEffect(() => {
+        if (!isDirty) return undefined;
+        const t = setTimeout(() => {
+            try {
+                const { video, ...rest } = data; // File video tidak bisa disimpan
+                localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                    savedAt: Date.now(), data: rest, customerMode, vehicleMode,
+                    feeSaved, feeIncludedChecked, currentStep, maxVisitedStep,
+                }));
+            } catch { /* abaikan */ }
+        }, 600);
+        return () => clearTimeout(t);
+    }, [data, customerMode, vehicleMode, feeSaved, feeIncludedChecked, currentStep, maxVisitedStep, isDirty]);
+    function restoreDraft() {
+        if (!pendingDraft) return;
+        skipVehicleReset.current = true;
+        setData({ ...data, ...pendingDraft.data, video: data.video });
+        setCustomerMode(pendingDraft.customerMode ?? 'existing');
+        setVehicleMode(pendingDraft.vehicleMode ?? 'existing');
+        setFeeSaved(!!pendingDraft.feeSaved);
+        setFeeIncludedChecked(!!pendingDraft.feeIncludedChecked);
+        setMaxVisitedStep(pendingDraft.maxVisitedStep ?? 0);
+        setCurrentStep(pendingDraft.currentStep ?? 0);
+        setPendingDraft(null);
+    }
+    function discardDraft() {
+        try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ }
+        setPendingDraft(null);
+    }
+    useEffect(() => {
+        const onBeforeUnload = (e) => {
+            if (!isDirty || processing) return;
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        const offBefore = router.on('before', (event) => {
+            if (!isDirty || processing || event.detail.visit.method !== 'get') return;
+            if (!window.confirm('Leave this page? Your draft is saved on this device and can be restored.')) {
+                event.preventDefault();
+            }
+        });
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            offBefore();
+        };
+    }, [isDirty, processing]);
+    useEffect(() => router.on('invalid', (event) => {
+        const msg = {
+            413: 'The video is too large for the server. Try a shorter or smaller file.',
+            419: 'Your session expired. Reload the page and use Restore draft (attach the video again).',
+        }[event.detail.response?.status];
+        if (!msg) return;
+        event.preventDefault();
+        toast.error(msg);
+    }), []);
 
     const filteredVehicles =
         customerMode === 'existing' && data.customer_id
@@ -782,7 +864,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
     // --- Add item (Dialog) ---
     const openAddItem = () => {
-        setDraft(emptyItemDraft(groups?.[0]));
+        setDraft(emptyItemDraft(data.inspection_items[data.inspection_items.length - 1]?.group));
         setAddItemOpen(true);
     };
 
@@ -792,7 +874,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
         if (!isItemComplete(draft)) return;
         setData('inspection_items', [...data.inspection_items, draft]);
         toast.success('Item added', { description: draft.name });
-        setDraft(emptyItemDraft(groups?.[0]));
+        setDraft(emptyItemDraft(draft.group));
         closeAddItem();
     };
 
@@ -858,6 +940,15 @@ export default function Create({ customers, vehicles, technicians, brands, group
         }
     }, [itemsByGroup, activeGroup]);
 
+    // Grup yang dipakai saat render. useEffect di atas baru jalan SETELAH
+    // render, jadi di render pertama setelah item pertama ditambah,
+    // activeGroup masih null. Turunkan nilainya langsung di sini supaya
+    // render tidak pernah melihat null/grup yang sudah tidak ada.
+    const currentGroup =
+        activeGroup && itemsByGroup[activeGroup]
+            ? activeGroup
+            : Object.keys(itemsByGroup)[0] ?? null;
+
     const totalCost = data.inspection_items.reduce(
         (sum, item) => sum + itemSubtotal(item),
         0
@@ -892,6 +983,18 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     if (!plate_number.trim() || !brand.trim() || !vin.trim() || !model.trim()) {
                         return { message: 'Please fill in all new vehicle fields (plate number, brand, VIN, model).' };
                     }
+                }
+                if (!data.customer_complaint.trim()) {
+                    return { message: 'Please describe the customer complaint.' };
+                }
+                if (!data.technician_id) {
+                    return { message: 'Please select a chief technician.' };
+                }
+                if (!data.personal_message.trim()) {
+                    return { message: 'Please write a personal message to the customer.' };
+                }
+                if (!data.video.file) {
+                    return { message: 'Please attach the inspection video (max 2 minutes).' };
                 }
                 return null;
             }
@@ -993,6 +1096,9 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
         post(route('admin.service-orders.store'), {
             forceFormData: true, // wajib true karena ada kemungkinan file video
+            onSuccess: () => {
+                try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ }
+            },
             onError: (freshErrors) => {
                 handleSubmitErrors(freshErrors);
             },
@@ -1085,6 +1191,20 @@ export default function Create({ customers, vehicles, technicians, brands, group
                 </div>
             </div>
 
+            {pendingDraft && !isDirty && (
+                <div className="mx-auto mt-4 flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <span>
+                        You have an unsaved draft from{' '}
+                        {new Date(pendingDraft.savedAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.
+                        The video must be attached again.
+                    </span>
+                    <span className="flex gap-2">
+                        <Button type="button" size="sm" onClick={restoreDraft}>Restore draft</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={discardDraft}>Discard</Button>
+                    </span>
+                </div>
+            )}
+
             {stepBlockMessage && (
                 <p className="mx-auto mt-4 max-w-2xl px-4 text-sm text-urgent sm:px-0">
                     {stepBlockMessage}
@@ -1107,11 +1227,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
                             {/* Work Order Number */}
                             <div className="max-w-xs space-y-1.5">
-                                <Label>
+                                <Label htmlFor="work-order-number">
                                     Work Order Number
                                     <RequiredMark />
                                 </Label>
-                                <Input
+                                <Input id="work-order-number"
                                     value={data.work_order_number}
                                     onChange={(e) =>
                                         setData('work_order_number', e.target.value)
@@ -1322,11 +1442,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                 karena butuh ruang baca multi-baris, beda dari field pendek
                                 di atas. */}
                             <div className="max-w-xl space-y-1.5">
-                                <Label>
+                                <Label htmlFor="customer-complaint">
                                     Customer Complaint
                                     <RequiredMark />
                                 </Label>
-                                <Textarea
+                                <Textarea id="customer-complaint"
                                     value={data.customer_complaint}
                                     onChange={(e) =>
                                         setData('customer_complaint', e.target.value)
@@ -1349,7 +1469,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
                             {/* Chief Technician + Personal Message */}
                             <div className="max-w-xs space-y-1.5">
-                                <Label>
+                                <Label htmlFor="chief-technician">
                                     Chief Technician
                                     <RequiredMark />
                                 </Label>
@@ -1357,7 +1477,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     value={data.technician_id ? String(data.technician_id) : ''}
                                     onValueChange={(value) => setData('technician_id', value)}
                                 >
-                                    <SelectTrigger className="h-9">
+                                    <SelectTrigger id="chief-technician" className="h-9">
                                         <SelectValue placeholder="Select chief technician" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1368,14 +1488,15 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                {errors.technician_id && <p className="text-sm text-urgent">{errors.technician_id}</p>}
                             </div>
 
                             <div className="max-w-xl space-y-1.5">
-                                <Label>
+                                <Label htmlFor="personal-message">
                                     Personal Message to Customer
                                     <RequiredMark />
                                 </Label>
-                                <Textarea
+                                <Textarea id="personal-message"
                                     value={data.personal_message}
                                     onChange={(e) =>
                                         setData('personal_message', e.target.value)
@@ -1383,6 +1504,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     placeholder="e.g. Selamat pagi Bapak/Ibu, saya adalah kepala teknisi Anda hari ini..."
                                     rows={3}
                                 />
+                                {errors.personal_message && <p className="text-sm text-urgent">{errors.personal_message}</p>}
                             </div>
 
                             <Separator />
@@ -1516,8 +1638,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                         </p>
                                     )}
 
-                                    {data.inspection_items.length > 0 && activeGroup && (
-                                        <Tabs value={activeGroup} onValueChange={setActiveGroup}>
+                                    {data.inspection_items.length > 0 && currentGroup && (
+                                        <Tabs value={currentGroup} onValueChange={setActiveGroup}>
                                             <TabsList className="w-full justify-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                                 {Object.keys(itemsByGroup).map((group) => (
                                                     <TabsTrigger key={group} value={group}>
@@ -1555,7 +1677,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                            {(itemsByGroup[activeGroup] ?? []).map(
+                                            {(itemsByGroup[currentGroup] ?? []).map(
                                                 ({ item, index }) => (
                                                     <ItemReceiptRow
                                                         key={index}
@@ -1573,11 +1695,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                 dibuka di tab ini. */}
                                             <div className="flex justify-between border-t border-dashed border-vw-grey/25 px-1 pt-2 text-xs">
                                                 <span className="text-vw-grey">
-                                                    {formatGroupLabel(activeGroup)} subtotal
+                                                    {formatGroupLabel(currentGroup)} subtotal
                                                 </span>
                                                 <span className="font-semibold text-gray-900">
                                                     {formatIDR(
-                                                        (itemsByGroup[activeGroup] ?? []).reduce(
+                                                        (itemsByGroup[currentGroup] ?? []).reduce(
                                                             (sum, { item }) =>
                                                                 sum + itemSubtotal(item),
                                                             0
@@ -1713,7 +1835,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                     <div className="space-y-1 text-sm">
                                         <div className="flex justify-between">
                                             <span className="text-vw-grey">
-                                                Items Subtotal
+                                                Items Subtotal (before VAT)
                                             </span>
                                             <span>{formatIDR(totalCost)}</span>
                                         </div>
@@ -1724,7 +1846,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                             <span>{formatIDR(feeAmount)}</span>
                                         </div>
                                         <div className="flex justify-between border-t border-vw-grey/15 pt-1 font-semibold text-gray-900">
-                                            <span>Estimated Total</span>
+                                            <span>Estimated Total (before VAT)</span>
                                             <span>{formatIDR(estimatedTotal)}</span>
                                         </div>
                                     </div>
@@ -1896,6 +2018,10 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                 : 'No video attached'}
                                         </p>
                                     </div>
+                                    <div className="sm:col-span-2">
+                                        <p className="text-vw-grey">Personal Message to Customer</p>
+                                        <p className="whitespace-pre-line text-gray-900">{data.personal_message || '—'}</p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1930,8 +2056,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                             {data.inspection_items.length !== 1 && 's'}
                                         </p>
 
-                                        {data.inspection_items.length > 0 && activeGroup && (
-                                            <Tabs value={activeGroup} onValueChange={setActiveGroup}>
+                                        {data.inspection_items.length > 0 && currentGroup && (
+                                            <Tabs value={currentGroup} onValueChange={setActiveGroup}>
                                                 <TabsList className="w-full justify-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                                     {Object.keys(itemsByGroup).map((group) => (
                                                         <TabsTrigger key={group} value={group}>
@@ -1956,7 +2082,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                             </p>
                                         ) : (
                                             <div className="space-y-2">
-                                                {(itemsByGroup[activeGroup] ?? []).map(
+                                                {(itemsByGroup[currentGroup] ?? []).map(
                                                     ({ item, index }) => (
                                                         <ItemReceiptRow
                                                             key={index}
@@ -1967,11 +2093,11 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                                 )}
                                                 <div className="flex justify-between border-t border-dashed border-vw-grey/25 px-1 pt-2 text-xs">
                                                     <span className="text-vw-grey">
-                                                        {formatGroupLabel(activeGroup)} subtotal
+                                                        {formatGroupLabel(currentGroup)} subtotal
                                                     </span>
                                                     <span className="font-semibold text-gray-900">
                                                         {formatIDR(
-                                                            (itemsByGroup[activeGroup] ?? []).reduce(
+                                                            (itemsByGroup[currentGroup] ?? []).reduce(
                                                                 (sum, { item }) =>
                                                                     sum + itemSubtotal(item),
                                                                 0
@@ -1985,7 +2111,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
 
                                     <div className="shrink-0 space-y-2 border-t border-vw-grey/10 bg-vw-grey-light/20 px-4 py-3 text-sm">
                                         <div className="flex justify-between">
-                                            <span className="text-vw-grey">Items Subtotal</span>
+                                            <span className="text-vw-grey">Items Subtotal (before VAT)</span>
                                             <span>{formatIDR(totalCost)}</span>
                                         </div>
                                         <div className="flex justify-between">
@@ -2001,7 +2127,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                         )}
                                         <Separator />
                                         <div className="flex justify-between font-semibold text-gray-900">
-                                            <span>Estimated Total</span>
+                                            <span>Estimated Total (before VAT)</span>
                                             <span>{formatIDR(estimatedTotal)}</span>
                                         </div>
                                     </div>
@@ -2023,6 +2149,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     onNext={handleNext}
                     onSubmit={submitOrder}
                     processing={processing}
+                    progress={progress}
                     submitDisabled={processing || checkingVideoDuration || !!videoDurationError}
                 />
             </form>
@@ -2040,23 +2167,39 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     </DialogHeader>
                     <div className="space-y-3">
                         <div className="space-y-1.5">
-                            <Label>
+                            <Label htmlFor="new-customer-name">
                                 Name
                                 <RequiredMark />
                             </Label>
-                            <Input
+                            <Input id="new-customer-name"
                                 value={customerDraft.name}
                                 onChange={(e) =>
                                     setCustomerDraft((d) => ({ ...d, name: e.target.value }))
                                 }
                             />
                         </div>
+                        {similarCustomer && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                "{similarCustomer.name}" already exists.{' '}
+                                <button
+                                    type="button"
+                                    className="font-semibold underline"
+                                    onClick={() => {
+                                        setCustomerMode('existing');
+                                        setData('customer_id', similarCustomer.id);
+                                        setCustomerDialogOpen(false);
+                                    }}
+                                >
+                                    Use this customer
+                                </button>
+                            </div>
+                        )}
                         <div className="space-y-1.5">
-                            <Label>
+                            <Label htmlFor="new-customer-phone">
                                 Phone
                                 <RequiredMark />
                             </Label>
-                            <Input
+                            <Input id="new-customer-phone"
                                 value={customerDraft.phone}
                                 onChange={(e) =>
                                     setCustomerDraft((d) => ({ ...d, phone: e.target.value }))
@@ -2064,8 +2207,8 @@ export default function Create({ customers, vehicles, technicians, brands, group
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label>Email (optional)</Label>
-                            <Input
+                            <Label htmlFor="new-customer-email">Email (optional)</Label>
+                            <Input id="new-customer-email"
                                 type="email"
                                 value={customerDraft.email}
                                 onChange={(e) =>
@@ -2109,16 +2252,16 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     </DialogHeader>
                     <div className="space-y-3">
                         <div className="space-y-1.5">
-                            <Label>
+                            <Label htmlFor="new-vehicle-plate">
                                 Plate Number
                                 <RequiredMark />
                             </Label>
-                            <Input
+                            <Input id="new-vehicle-plate"
                                 value={vehicleDraft.plate_number}
                                 onChange={(e) =>
                                     setVehicleDraft((d) => ({
                                         ...d,
-                                        plate_number: e.target.value,
+                                        plate_number: e.target.value.toUpperCase().replace(/\s+/g, ''),
                                     }))
                                 }
                             />
@@ -2147,13 +2290,12 @@ export default function Create({ customers, vehicles, technicians, brands, group
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label>
+                            <Label htmlFor="new-vehicle-vin">
                                 VIN/Chasis Number
                                 <RequiredMark />
                             </Label>
-                            <Input
+                            <Input id="new-vehicle-vin"
                                 value={vehicleDraft.vin}
-                                maxLength={17}
                                 onChange={(e) =>
                                     setVehicleDraft((d) => ({
                                         ...d,
@@ -2162,13 +2304,18 @@ export default function Create({ customers, vehicles, technicians, brands, group
                                 }
                                 placeholder="17-character VIN/Chasis Number"
                             />
+                        {vehicleDraft.vin && vehicleDraft.vin.length !== 17 && (
+                            <p className="text-xs text-urgent">
+                                VIN must be exactly 17 characters (currently {vehicleDraft.vin.length}).
+                            </p>
+                        )}
                         </div>
                         <div className="space-y-1.5">
-                            <Label>
+                            <Label htmlFor="new-vehicle-model">
                                 Model
                                 <RequiredMark />
                             </Label>
-                            <Input
+                            <Input id="new-vehicle-model"
                                 value={vehicleDraft.model}
                                 onChange={(e) =>
                                     setVehicleDraft((d) => ({ ...d, model: e.target.value }))
@@ -2213,7 +2360,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                         onChange={updateDraft}
                     />
                     <p className="text-xs text-vw-grey">
-                        Item Name, Labour Price, and Part Price are required. Description is optional.
+                        Item Name, Labour Price, Part Price, and Group are required. Description is optional.
                     </p>
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={closeAddItem}>
@@ -2244,7 +2391,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                         />
                     )}
                     <p className="text-xs text-vw-grey">
-                        Item Name, Labour Price, and Part Price are required. Description is optional.
+                        Item Name, Labour Price, Part Price, and Group are required. Description is optional.
                     </p>
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={closeEditItem}>

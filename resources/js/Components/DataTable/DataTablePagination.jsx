@@ -9,15 +9,24 @@ import {
 } from '@/Components/ui/pagination';
 import { cn } from '@/lib/utils';
 
-export function DataTablePagination({ links }) {
-    if (!links || links.length <= 3) return null;
+// meta (opsional): { from, to, total } dari paginator Laravel — menampilkan "Showing 1–20 of 143".
+export function DataTablePagination({ links, meta }) {
+    const summary = meta ? (
+        <p className="text-sm text-vw-grey">
+            Showing {meta.from ?? 0}–{meta.to ?? 0} of {meta.total}
+        </p>
+    ) : null;
+
+    if (!links || links.length <= 3) return summary ? <div className="mt-4">{summary}</div> : null;
 
     const prev = links[0];
     const next = links[links.length - 1];
     const pages = links.slice(1, -1);
 
     return (
-        <Pagination className="mt-4 justify-start">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        {summary}
+        <Pagination className="mx-0 w-auto justify-end">
             <PaginationContent>
                 <PaginationItem>
                     <PaginationArrow link={prev} icon={ChevronLeft} label="Previous" />
@@ -40,6 +49,7 @@ export function DataTablePagination({ links }) {
                 </PaginationItem>
             </PaginationContent>
         </Pagination>
+        </div>
     );
 }
 
@@ -60,8 +70,8 @@ function PaginationNumber({ link }) {
     return (
         <Link
             href={link.url}
-            preserveScroll
             preserveState
+            aria-label={`Page ${link.label}`}
             aria-current={link.active ? 'page' : undefined}
             className={className}
         >
@@ -91,7 +101,7 @@ function PaginationArrow({ link, icon: Icon, label }) {
     }
 
     return (
-        <Link href={link.url} preserveScroll preserveState aria-label={`${label} page`} className={className}>
+        <Link href={link.url} preserveState aria-label={`${label} page`} className={className}>
             {content}
         </Link>
     );

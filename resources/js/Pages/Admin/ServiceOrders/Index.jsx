@@ -3,6 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Link, router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
+import { Input } from '@/Components/ui/input';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -53,6 +54,19 @@ function formatCurrency(value) {
     }).format(Number(value));
 }
 
+// Timezone Asia/Jakarta konsisten dengan konvensi project (lihat
+// PROJECT-RULES.md) — dipakai juga untuk kolom "Created At" ini supaya
+// tanggal yang tampil ke admin/SA tidak bergeser gara-gara timezone device.
+function formatDate(value) {
+    if (!value) return '—';
+    return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Jakarta',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    }).format(new Date(value));
+}
+
 // Dialog konfirmasi hapus — dipisah jadi komponen sendiri di file yang sama
 // (bukan file terpisah) karena state-nya (order mana yang mau dihapus) perlu
 // diangkat ke level Index, tidak bisa dikelola per-baris independen (row cell
@@ -60,6 +74,12 @@ function formatCurrency(value) {
 // pola "1 dialog dipakai ulang untuk semua baris").
 function DeleteServiceOrderDialog({ order, open, onOpenChange }) {
     const [isDeleting, setIsDeleting] = useState(false);
+    const [confirmText, setConfirmText] = useState('');
+    const expected = String(order?.work_order_number ?? order?.id ?? '');
+
+    useEffect(() => {
+        if (open) setConfirmText('');
+    }, [open]);
 
     const handleDelete = () => {
         setIsDeleting(true);
@@ -95,11 +115,23 @@ function DeleteServiceOrderDialog({ order, open, onOpenChange }) {
                         undone.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
+                <div className="space-y-1.5">
+                    <label htmlFor="confirm-delete-wo" className="text-sm text-foreground">
+                        Type <span className="font-semibold">{expected}</span> to confirm
+                    </label>
+                    <Input
+                        id="confirm-delete-wo"
+                        value={confirmText}
+                        onChange={(e) => setConfirmText(e.target.value)}
+                        placeholder={expected}
+                        autoComplete="off"
+                    />
+                </div>
                 <AlertDialogFooter>
                     <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                         onClick={handleDelete}
-                        disabled={isDeleting}
+                        disabled={isDeleting || confirmText.trim() !== expected}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
                         {isDeleting ? 'Deleting...' : 'Delete Permanently'}
@@ -118,8 +150,8 @@ function buildColumns({ isAdmin, onRequestDelete }) {
     return [
         {
             accessorKey: 'work_order_number',
-            header: 'Work Order Number',
-            meta: { label: 'Work Order Number' },
+            header: 'WO Number',
+            meta: { label: 'WO Number' },
             cell: ({ row }) => (
                 <span className="font-medium">{row.original.work_order_number}</span>
             ),
@@ -166,22 +198,30 @@ function buildColumns({ isAdmin, onRequestDelete }) {
         },
         {
             id: 'grand_total_estimate',
-            header: 'Grand Total',
-            meta: { label: 'Grand Total' },
+            header: 'Estimated Total',
+            meta: { label: 'Estimated Total', align: 'right' },
             accessorFn: (row) => Number(row.grand_total_estimate),
             cell: ({ row }) => (
-                <div className="text-right">{formatCurrency(row.original.grand_total_estimate)}</div>
+                <div className="text-right tabular-nums">{formatCurrency(row.original.grand_total_estimate)}</div>
             ),
         },
         {
             id: 'grand_total_approved',
-            header: 'Grand Total Approved',
-            meta: { label: 'Grand Total Approved' },
+            header: 'Confirmed Total',
+            meta: { label: 'Confirmed Total', align: 'right' },
             accessorFn: (row) => Number(row.grand_total_approved),
             cell: ({ row }) => (
-                <div className="text-right font-medium text-approved">
+                <div className="text-right font-medium tabular-nums text-approved">
                     {formatCurrency(row.original.grand_total_approved)}
                 </div>
+            ),
+        },
+        {
+            accessorKey: 'created_at',
+            header: 'Created At',
+            meta: { label: 'Created At' },
+            cell: ({ row }) => (
+                <span className="text-muted-foreground">{formatDate(row.original.created_at)}</span>
             ),
         },
         {
@@ -190,10 +230,10 @@ function buildColumns({ isAdmin, onRequestDelete }) {
             enableSorting: false,
             enableHiding: false,
             cell: ({ row }) => (
-                <div className="flex items-center justify-end gap-3">
+                <div className="flex items-center justify-end gap-2">
                     <Link
                         href={route('admin.service-orders.show', row.original.id)}
-                        className="text-sm font-medium text-vw-light-blue hover:underline"
+                        className="inline-flex min-h-[36px] items-center px-1 text-sm font-medium text-vw-light-blue hover:underline"
                     >
                         View
                     </Link>
@@ -206,7 +246,7 @@ function buildColumns({ isAdmin, onRequestDelete }) {
                         <button
                             type="button"
                             onClick={() => onRequestDelete(row.original)}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                             aria-label={`Delete WO ${row.original.work_order_number}`}
                         >
                             <Trash2 className="h-4 w-4" />
@@ -218,34 +258,24 @@ function buildColumns({ isAdmin, onRequestDelete }) {
     ];
 }
 
+// Filter Grand Total (estimate/approved, exact/range) DIHAPUS (2026-09-20) —
+// sebelumnya field 'grand_total_field' selalu default 'estimate' aktif terus
+// tanpa benar-benar dipakai user sebagai filter aktif. Sisa filter cuma
+// Status & Items Approval.
 const filterDefs = [
     {
         key: 'status',
         label: 'Status',
         type: 'select',
-        options: Object.keys(STATUS_LABEL),
+        options: Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
     },
     {
         key: 'items_approval_status',
         label: 'Items Approval',
         type: 'select',
-        options: Object.keys(ITEMS_APPROVAL_LABEL),
-    },
-    {
-        key: 'grand_total_field',
-        label: 'Grand Total Type',
-        type: 'select',
-        options: ['estimate', 'approved'],
-    },
-    {
-        key: 'grand_total',
-        label: 'Grand Total',
-        type: 'number',
-        placeholder: 'e.g. 500000',
+        options: Object.entries(ITEMS_APPROVAL_LABEL).map(([value, label]) => ({ value, label })),
     },
 ];
-
-const emptyGrandTotalFilter = { mode: 'exact', value: '', from: '', to: '' };
 
 export default function Index({ orders, search, filters }) {
     const { auth } = usePage().props;
@@ -255,17 +285,10 @@ export default function Index({ orders, search, filters }) {
     const [activeFilters, setActiveFilters] = useState(() => ({
         status: filters?.status ?? '',
         items_approval_status: filters?.items_approval_status ?? '',
-        grand_total_field: filters?.grand_total_field ?? 'estimate',
-        grand_total:
-            filters?.grand_total_from || filters?.grand_total_to
-                ? {
-                    mode: 'range',
-                    value: '',
-                    from: filters?.grand_total_from ?? '',
-                    to: filters?.grand_total_to ?? '',
-                }
-                : { mode: 'exact', value: filters?.grand_total_value ?? '', from: '', to: '' },
     }));
+
+    // Filter dari Dashboard SA (?service_advisor_id=…): dibawa terus di setiap request, bukan hilang saat user mengetik/mengurutkan.
+    const [saFilter, setSaFilter] = useState(filters?.service_advisor_id ?? '');
 
     const [sorting, setSorting] = useState(() =>
         filters?.sort_by
@@ -312,20 +335,13 @@ export default function Index({ orders, search, filters }) {
         }
 
         const timeout = setTimeout(() => {
-            const gt = activeFilters.grand_total ?? emptyGrandTotalFilter;
             const activeSort = sorting[0];
 
             const nextParams = {
                 search: searchTerm || undefined,
                 status: activeFilters.status || undefined,
                 items_approval_status: activeFilters.items_approval_status || undefined,
-                grand_total_field:
-                    activeFilters.grand_total_field !== 'estimate'
-                        ? activeFilters.grand_total_field
-                        : undefined,
-                grand_total_value: gt.mode === 'exact' ? (gt.value || undefined) : undefined,
-                grand_total_from: gt.mode === 'range' ? (gt.from || undefined) : undefined,
-                grand_total_to: gt.mode === 'range' ? (gt.to || undefined) : undefined,
+                service_advisor_id: saFilter || undefined,
                 sort_by: activeSort?.id || undefined,
                 sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
             };
@@ -336,7 +352,7 @@ export default function Index({ orders, search, filters }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters, sorting]);
+    }, [searchTerm, activeFilters, sorting, saFilter]);
 
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
@@ -346,26 +362,51 @@ export default function Index({ orders, search, filters }) {
         setActiveFilters({
             status: '',
             items_approval_status: '',
-            grand_total_field: 'estimate',
-            grand_total: emptyGrandTotalFilter,
         });
     };
 
     return (
-        <AdminLayout
-            title="Service Orders"
-            headerActions={
-                <Button asChild>
-                    <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
-                </Button>
-            }
-        >
+        <AdminLayout title="Service Orders">
             <Head title="Service Orders" />
+            {saFilter && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-vw-blue/20 bg-vw-blue/[0.06] px-3 py-2 text-sm">
+                    <span>
+                        Showing orders for service advisor{' '}
+                        <strong>{orders.data[0]?.service_advisor?.name ?? `#${saFilter}`}</strong>
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSaFilter('')}>
+                        Show all advisors
+                    </Button>
+                </div>
+            )}
+            <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
+                {[{ value: '', label: 'All' }, ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))].map((opt) => {
+                    const active = activeFilters.status === opt.value;
+                    return (
+                        <button
+                            key={opt.value || 'all'}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => handleFilterChange('status', opt.value)}
+                            className={`min-h-[36px] rounded-full border px-3 text-sm transition-colors ${
+                                active
+                                    ? 'border-vw-blue bg-vw-blue text-white'
+                                    : 'border-vw-grey/30 bg-white text-gray-700 hover:bg-vw-grey-light'
+                            }`}
+                        >
+                            {opt.label}
+                        </button>
+                    );
+                })}
+            </div>
             <DataTable
                 table={table}
                 links={orders.links}
                 emptyMessage="No service orders yet."
                 isLoading={isLoading}
+                isFiltered={Boolean(searchTerm || saFilter || activeFilters.status || activeFilters.items_approval_status)}
+                paginationMeta={{ from: orders.from, to: orders.to, total: orders.total }}
+                onRowClick={(order) => router.visit(route('admin.service-orders.show', order.id))}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
@@ -380,7 +421,13 @@ export default function Index({ orders, search, filters }) {
                         values={activeFilters}
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
+                        table={table}
                     />
+                }
+                primaryAction={
+                    <Button asChild>
+                        <Link href={route('admin.service-orders.create')}>Add Service Order</Link>
+                    </Button>
                 }
             />
 

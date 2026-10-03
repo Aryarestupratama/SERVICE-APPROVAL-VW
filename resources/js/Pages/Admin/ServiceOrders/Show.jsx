@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { useForm, router, usePage, Link, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -36,32 +36,18 @@ import {
     Tabs,
     TabsList,
     TabsTrigger,
-    TabsContent,
 } from '@/Components/ui/tabs';
-import {
-    Table,
-    TableHeader,
-    TableBody,
-    TableRow,
-    TableHead,
-    TableCell,
-} from '@/Components/ui/table';
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from '@/Components/ui/tooltip';
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from '@/Components/ui/accordion';
 import { Alert, AlertTitle, AlertDescription } from '@/Components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Separator } from '@/Components/ui/separator';
 import {
+    ChevronDown,
+    ArrowRight,
     ArrowLeft,
     Plus,
     Pencil,
@@ -70,7 +56,7 @@ import {
     Copy,
     Check,
     FileText,
-    RefreshCw,
+    PlayCircle,
     Eye,
     Info,
 } from 'lucide-react';
@@ -156,6 +142,11 @@ function formatCurrency(value) {
         currency: 'IDR',
         maximumFractionDigits: 0,
     }).format(Number(value ?? 0));
+}
+
+// Dipakai preview file: gambar tampil lewat <img>, sisanya (PDF) lewat <iframe>.
+function isImageFile(url) {
+    return /\.(jpe?g|png|gif|webp)$/i.test(url ?? '');
 }
 
 // Decided at cuma tanggal, tanpa jam (permintaan owner).
@@ -247,7 +238,7 @@ function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
                     onClick={onClick}
                     aria-label={label}
                     className={cn(
-                        'shrink-0 transition-colors',
+                        'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-vw-grey-light',
                         tone === 'danger'
                             ? 'text-vw-grey hover:text-urgent'
                             : tone === 'warning'
@@ -304,121 +295,170 @@ function CurrencyInput({ id, value, onChange, placeholder, disabled }) {
     );
 }
 
-// Field set item — dipakai bareng oleh Dialog Add & Edit item.
-function ItemFormFields({ data, errors, onChange }) {
+// Penanda field wajib diisi — sama seperti RequiredMark di Create.jsx.
+function RequiredMark() {
     return (
-        <div className="space-y-3">
-            <div className="space-y-1.5">
-                <Label>Item Name</Label>
-                <Input value={data.name} onChange={(e) => onChange('name', e.target.value)} />
+        <span className="ml-0.5 text-urgent" aria-hidden="true">
+            *
+        </span>
+    );
+}
+
+// Field wajib untuk sebuah item (semua kecuali description) — selaras dengan
+// REQUIRED_ITEM_FIELDS di Create.jsx. Dipakai untuk enable/disable tombol
+// Save di dialog Add & Edit.
+const REQUIRED_ITEM_FIELDS = ['name', 'cost_item', 'cost_labour', 'group'];
+
+function isItemComplete(item) {
+    return REQUIRED_ITEM_FIELDS.every((field) => {
+        const value = item?.[field];
+        return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+}
+
+// Field set item — dipakai bareng oleh Dialog Add & Edit, layout & urutannya
+// disamakan dengan ItemFields di Create.jsx (grid 2 kolom; Labour: harga +
+// diskon sebaris, lalu Part: harga + diskon sebaris; Group di paling bawah).
+function ItemFormFields({ data, errors, onChange, groups }) {
+    const uid = useId();
+    const fid = (f) => `${uid}-${f}`;
+    return (
+        <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor={fid('name')}>
+                    Item Name
+                    <RequiredMark />
+                </Label>
+                <Input id={fid('name')}
+                    value={data.name}
+                    onChange={(e) => onChange('name', e.target.value)}
+                    placeholder="e.g. Brake pad replacement"
+                />
                 {errors.name && <p className="text-sm text-urgent">{errors.name}</p>}
             </div>
-            <div className="space-y-1.5">
-                <Label>Description (optional)</Label>
-                <Textarea
+
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor={fid('description')}>Description (optional)</Label>
+                <Textarea id={fid('description')}
                     value={data.description}
                     onChange={(e) => onChange('description', e.target.value)}
                     rows={2}
                 />
             </div>
-            <div className="space-y-3 rounded-md border border-vw-grey/30 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
-                    Labour
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                        <Label>Labour Price</Label>
-                        <CurrencyInput
-                            value={data.cost_labour}
-                            onChange={(v) => onChange('cost_labour', v)}
-                            placeholder="0"
-                        />
-                        {errors.cost_labour && (
-                            <p className="text-sm text-urgent">{errors.cost_labour}</p>
-                        )}
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>Labour Discount (%)</Label>
-                        <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={data.discount_labour_percent}
-                            onChange={(e) => onChange('discount_labour_percent', e.target.value)}
-                        />
-                    </div>
-                </div>
+
+            <div className="space-y-1.5">
+                <Label htmlFor={fid('cost_labour')}>
+                    Labour Price
+                    <RequiredMark />
+                </Label>
+                <CurrencyInput id={fid('cost_labour')}
+                    value={data.cost_labour}
+                    onChange={(v) => onChange('cost_labour', v)}
+                    placeholder="0"
+                />
+                {errors.cost_labour && (
+                    <p className="text-sm text-urgent">{errors.cost_labour}</p>
+                )}
             </div>
-            <div className="space-y-3 rounded-md border border-vw-grey/30 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
-                    Part
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                        <Label>Part Price</Label>
-                        <CurrencyInput
-                            value={data.cost_item}
-                            onChange={(v) => onChange('cost_item', v)}
-                            placeholder="0"
-                        />
-                        {errors.cost_item && (
-                            <p className="text-sm text-urgent">{errors.cost_item}</p>
-                        )}
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label>Part Discount (%)</Label>
-                        <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={data.discount_item_percent}
-                            onChange={(e) => onChange('discount_item_percent', e.target.value)}
-                        />
-                    </div>
-                </div>
+            <div className="space-y-1.5">
+                <Label htmlFor={fid('discount_labour')}>Labour Discount (%)</Label>
+                <Input id={fid('discount_labour')}
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={data.discount_labour_percent}
+                    onChange={(e) => onChange('discount_labour_percent', e.target.value)}
+                    placeholder="0"
+                />
+                {errors.discount_labour_percent && (
+                    <p className="text-sm text-urgent">{errors.discount_labour_percent}</p>
+                )}
+            </div>
+
+            <div className="space-y-1.5">
+                <Label htmlFor={fid('cost_item')}>
+                    Part Price
+                    <RequiredMark />
+                </Label>
+                <CurrencyInput id={fid('cost_item')}
+                    value={data.cost_item}
+                    onChange={(v) => onChange('cost_item', v)}
+                    placeholder="0"
+                />
+                {errors.cost_item && <p className="text-sm text-urgent">{errors.cost_item}</p>}
+            </div>
+            <div className="space-y-1.5">
+                <Label htmlFor={fid('discount_item')}>Part Discount (%)</Label>
+                <Input id={fid('discount_item')}
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={data.discount_item_percent}
+                    onChange={(e) => onChange('discount_item_percent', e.target.value)}
+                    placeholder="0"
+                />
+                {errors.discount_item_percent && (
+                    <p className="text-sm text-urgent">{errors.discount_item_percent}</p>
+                )}
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+                <Label>
+                    Group
+                    <RequiredMark />
+                </Label>
+                <Select value={data.group} onValueChange={(v) => onChange('group', v)}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {groups.map((g) => (
+                            <SelectItem key={g} value={g}>
+                                {GROUP_LABEL[g] ?? g}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {errors.group && <p className="text-sm text-urgent">{errors.group}</p>}
             </div>
         </div>
     );
 }
 
-// Baris tabel item — 1 baris per item di dalam TabsContent tiap group.
-// Nama item bisa diklik untuk buka View Dialog (read-only, tersedia untuk
-// semua status termasuk approved). Actions cuma tampil sesuai status:
-// Edit/Delete untuk non-approved, Reopen khusus rejected.
-function ItemTableRow({ item, canEditItems, onView, onEdit, onDelete, onReopen }) {
+// Baris item bergaya "struk" — 1 kartu vertikal per item, sama seperti
+// ItemReceiptRow di Create.jsx (step 2), ditambah kolom yang hanya ada di
+// Show: badge status item + aksi View/Edit/Delete/Reopen. Nama item bisa
+// diklik untuk buka View Dialog (read-only, tersedia untuk semua status
+// termasuk approved). Edit/Delete untuk non-approved (Delete cuma pending),
+// Reopen khusus rejected.
+function ItemReceiptRow({ item, canEditItems, onView, onEdit, onDelete, onReopen }) {
+    const isLocked =
+        item.final_price_snapshot !== null && item.final_price_snapshot !== undefined;
+
     return (
-        <TableRow>
-            <TableCell>
-                <button
-                    type="button"
-                    onClick={onView}
-                    className="text-left font-medium text-gray-900 underline decoration-dotted underline-offset-2 hover:text-vw-light-blue"
-                >
-                    {item.name}
-                </button>
-            </TableCell>
-            <TableCell className="text-vw-grey">
-                {formatCurrency(item.cost_item)}
-                {Number(item.discount_item_percent) > 0 && (
-                    <span className="ml-1 text-xs">(-{item.discount_item_percent}%)</span>
-                )}
-            </TableCell>
-            <TableCell className="text-vw-grey">
-                {formatCurrency(item.cost_labour)}
-                {Number(item.discount_labour_percent) > 0 && (
-                    <span className="ml-1 text-xs">(-{item.discount_labour_percent}%)</span>
-                )}
-            </TableCell>
-            <TableCell className="text-right font-semibold text-gray-900">
-                {formatCurrency(itemDisplayTotal(item))}
-            </TableCell>
-            <TableCell>
-                <Badge variant={ITEM_STATUS_VARIANT[item.status] ?? 'secondary'}>
-                    {ITEM_STATUS_LABEL[item.status] ?? item.status}
-                </Badge>
-            </TableCell>
-            <TableCell>
-                <div className="flex items-center justify-end gap-3">
+        <div className="rounded-md border border-vw-grey/15 px-3 py-2.5">
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={onView}
+                            className="truncate text-left text-sm font-medium text-gray-900 hover:text-vw-light-blue"
+                        >
+                            {item.name}
+                        </button>
+                        <Badge
+                            variant={ITEM_STATUS_VARIANT[item.status] ?? 'secondary'}
+                            className="text-[10px] font-normal"
+                        >
+                            {ITEM_STATUS_LABEL[item.status] ?? item.status}
+                        </Badge>
+                    </div>
+                    {item.description && (
+                        <p className="mt-0.5 truncate text-xs text-vw-grey">{item.description}</p>
+                    )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
                     <IconActionButton icon={Eye} label="View item" onClick={onView} />
                     {canEditItems && item.status !== 'rejected' && (
                         <IconActionButton icon={Pencil} label="Edit item" onClick={onEdit} />
@@ -440,8 +480,46 @@ function ItemTableRow({ item, canEditItems, onView, onEdit, onDelete, onReopen }
                         />
                     )}
                 </div>
-            </TableCell>
-        </TableRow>
+            </div>
+
+            <div className="mt-2 space-y-0.5 text-xs text-vw-grey">
+                <div className="flex justify-between">
+                    <span>
+                        Labour
+                        {Number(item.discount_labour_percent) > 0 &&
+                            ` (-${item.discount_labour_percent}%)`}
+                    </span>
+                    <span>{formatCurrency(item.cost_labour)}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span>
+                        Part
+                        {Number(item.discount_item_percent) > 0 &&
+                            ` (-${item.discount_item_percent}%)`}
+                    </span>
+                    <span>{formatCurrency(item.cost_item)}</span>
+                </div>
+            </div>
+
+            <div className="mt-1.5 flex justify-between border-t border-dashed border-vw-grey/25 pt-1.5 text-sm font-semibold text-gray-900">
+                <span>{isLocked ? 'Final Price' : 'Subtotal'}</span>
+                <span>{formatCurrency(itemDisplayTotal(item))}</span>
+            </div>
+        </div>
+    );
+}
+
+// Container generik untuk section di bawah panel Inspection Items (Invoice
+// PDF, Payment) — border + header tipis, senada dengan panel Inspection Items
+// dan tanpa Card supaya konsisten dengan gaya halaman Create.
+function Panel({ title, children }) {
+    return (
+        <div className="rounded-lg border border-vw-grey/15 bg-white">
+            <div className="border-b border-vw-grey/10 px-4 py-3">
+                <p className="text-sm font-semibold text-gray-900">{title}</p>
+            </div>
+            <div className="space-y-3 px-4 py-3">{children}</div>
+        </div>
     );
 }
 
@@ -458,10 +536,9 @@ export default function Show({
     const isAdmin = auth?.user?.role === 'admin';
 
     // Polling + change-detection (PROJECT-RULES.md bagian 12) — supaya SA/admin
-    // tidak perlu klik "Refresh Page" manual saat customer approve/reject item
-    // dari link publik sementara halaman ini masih terbuka. Tombol "Refresh
-    // Page" tetap dipertahankan sebagai fallback untuk user awam yang kurang
-    // familiar teknologi (lihat card "Update Status Progress" di bawah).
+    // tidak perlu refresh manual saat customer approve/reject item dari link
+    // publik sementara halaman ini masih terbuka. Tombol "Refresh Page" sudah
+    // dihapus karena tidak dipakai lagi.
     usePollLastActivity({
         url: route('admin.service-orders.last-activity', order.id),
         initialValue: order.last_activity_at,
@@ -492,6 +569,46 @@ export default function Show({
     const [addDialogGroup, setAddDialogGroup] = useState(null);
     const [viewingItem, setViewingItem] = useState(null);
     const [editingItem, setEditingItem] = useState(null);
+
+    // Modal preview Inspection Video (video tidak lagi di-embed memanjang).
+    const [videoOpen, setVideoOpen] = useState(false);
+
+    // Dialog Upload/Replace Video — dipakai untuk mengisi video pertama kali
+    // (order lama yang belum pernah punya video) maupun mengganti video yang
+    // rusak/hilang (kasus migrasi http->https). Tidak digate oleh
+    // order.status, lihat komentar di ServiceOrderController::uploadVideo().
+    const [videoUploadOpen, setVideoUploadOpen] = useState(false);
+    const videoUploadForm = useForm({
+        file: null,
+    });
+
+    const closeVideoUploadDialog = () => {
+        setVideoUploadOpen(false);
+        videoUploadForm.reset();
+        videoUploadForm.clearErrors();
+    };
+
+    const handleVideoUploadSubmit = () => {
+        videoUploadForm.post(route('admin.service-orders.upload-video', order.id), {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: (page) => {
+                if (flashToast(page, 'Video uploaded successfully.')) {
+                    closeVideoUploadDialog();
+                }
+            },
+        });
+    };
+
+    // Modal preview file (receipt) — { title, url } atau null kalau tertutup.
+    const [previewFile, setPreviewFile] = useState(null);
+
+    // Mode edit inline Customer Complaint (lewat ikon pensil).
+    const [isEditingComplaint, setIsEditingComplaint] = useState(false);
+
+    // Mode edit Invoice Number & Bill To — setelah tersimpan tampil read-only,
+    // baru jadi form lagi kalau SA klik ikon pensil.
+    const [isEditingPaymentDetails, setIsEditingPaymentDetails] = useState(false);
 
     const { setData, patch, processing } = useForm({ status: '' });
     const invoiceForm = useForm({ invoice_pdf: null });
@@ -627,9 +744,18 @@ export default function Show({
         e.preventDefault();
         complaintForm.patch(route('admin.service-orders.update-customer-complaint', order.id), {
             preserveScroll: true,
-            onSuccess: (page) => flashToast(page, 'Customer complaint saved'),
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Customer complaint saved');
+                if (ok) setIsEditingComplaint(false);
+            },
             onError: () => toast.error('Failed to save customer complaint'),
         });
+    };
+
+    const handleComplaintCancel = () => {
+        complaintForm.clearErrors();
+        complaintForm.setData('customer_complaint', order.customer_complaint ?? '');
+        setIsEditingComplaint(false);
     };
 
     // --- Inspection fee ---
@@ -783,11 +909,16 @@ export default function Show({
     };
 
     const handleAddItemSubmit = () => {
+        const targetGroup = addItemForm.data.group;
         addItemForm.post(route('admin.service-orders.inspection-items.store', order.id), {
             preserveScroll: true,
             onSuccess: (page) => {
                 const ok = flashToast(page, 'Item added');
-                if (ok) closeAddItemDialog();
+                if (ok) {
+                    // Pindah ke tab group tujuan supaya item baru langsung kelihatan.
+                    setActiveGroupTab(targetGroup);
+                    closeAddItemDialog();
+                }
             },
             onError: () => toast.error('Failed to add item — check the form for errors'),
         });
@@ -815,13 +946,17 @@ export default function Show({
     };
 
     const handleEditItemSubmit = () => {
+        const targetGroup = editItemForm.data.group;
         editItemForm.patch(
             route('admin.service-orders.inspection-items.update', [order.id, editingItem.id]),
             {
                 preserveScroll: true,
                 onSuccess: (page) => {
                     const ok = flashToast(page, 'Item updated');
-                    if (ok) closeEditItemDialog();
+                    if (ok) {
+                        setActiveGroupTab(targetGroup);
+                        closeEditItemDialog();
+                    }
                 },
                 onError: () => toast.error('Failed to update item — check the form for errors'),
             }
@@ -874,10 +1009,6 @@ export default function Show({
     const groupsWithItems = GROUPS.filter((group) =>
         (order.inspection_items ?? []).some((item) => item.group === group)
     );
-    // Group yang belum punya item sama sekali — dipakai untuk selector
-    // "Add Item to New Group", karena tab-nya belum ada sebelum item pertama
-    // ditambahkan.
-    const missingGroups = GROUPS.filter((group) => !groupsWithItems.includes(group));
 
     const [activeGroupTab, setActiveGroupTab] = useState(null);
     const currentGroupTab =
@@ -916,9 +1047,21 @@ export default function Show({
         e.preventDefault();
         paymentDetailsForm.patch(route('admin.service-orders.update-payment-details', order.id), {
             preserveScroll: true,
-            onSuccess: (page) => flashToast(page, 'Payment details saved'),
+            onSuccess: (page) => {
+                const ok = flashToast(page, 'Payment details saved');
+                if (ok) setIsEditingPaymentDetails(false);
+            },
             onError: () => toast.error('Failed to save payment details'),
         });
+    };
+
+    const handlePaymentDetailsCancel = () => {
+        paymentDetailsForm.clearErrors();
+        paymentDetailsForm.setData({
+            invoice_number: order.invoice_number ?? '',
+            bill_to: order.bill_to ?? '',
+        });
+        setIsEditingPaymentDetails(false);
     };
 
     const handleStaffReceiptChange = (e) => {
@@ -1087,166 +1230,190 @@ export default function Show({
         }
     };
 
+    // --- Derived values untuk panel Inspection Items ---
+    const allItems = order.inspection_items ?? [];
+    const itemsInGroup = currentGroupTab
+        ? allItems.filter((item) => item.group === currentGroupTab)
+        : [];
+    const groupBreakdown = breakdownByGroup?.[currentGroupTab] ?? {
+        subtotal: 0,
+        vat_amount: 0,
+        grand_total: 0,
+    };
+    // Estimation form milik tab yang sedang aktif (footer ikut berganti).
+    const estimationDoc = currentGroupTab ? docsByGroup[currentGroupTab] : null;
+    const hasEstimationFile = !!estimationDoc?.pdf_path;
+    // Estimated Grand Total sekarang sudah termasuk Inspection Fee
+    // (dipindah dari Order Totals). Nilai dasar tetap dari backend.
+    const estimatedGrandTotalWithFee =
+        Number(estimatedGrandTotal?.grand_total ?? 0) + Number(order.inspection_fee ?? 0);
+
+    // Layout section 3: kalau sudah ada inspection item DAN Invoice &
+    // Payment sudah muncul, keduanya ditaruh sebelahan (grid 2 kolom, lebar
+    // penuh) supaya makin lega. Selama belum ada item (grid Inspection
+    // Items belum tampil), section tetap 1 kolom di tengah seperti biasa.
+    const showInvoiceSideBySide = allItems.length > 0 && showInvoiceSection;
+
+    // Form Invoice Number/Bill To tampil kalau belum pernah disimpan, atau
+    // SA sedang mengedit lewat ikon pensil.
+    const showPaymentDetailsForm =
+        canEditPayment && (!hasPaymentDetails || isEditingPaymentDetails);
+
     return (
         <TooltipProvider delayDuration={200}>
-        <AdminLayout title={`Service Order #${order.work_order_number ?? order.id}`}>
-            <Head title={`Service Order #${order.work_order_number ?? order.id}`} />
-            {/* Header — back link + judul + status, dipisah dari Card supaya
-                konsisten dengan pola headerActions AdminLayout di halaman lain */}
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                    <Link
-                        href={route('admin.service-orders.index')}
-                        className="flex h-9 w-9 items-center justify-center rounded-md border border-vw-grey/30 text-vw-grey hover:bg-vw-grey-light"
-                    >
-                        <ArrowLeft className="h-4 w-4" />
-                    </Link>
-                    <div>
-                        <h1 className="text-lg font-semibold text-gray-900">
-                            {order.work_order_number ?? `Order #${order.id}`}
-                        </h1>
-                        <p className="text-sm text-vw-grey">
-                            {order.vehicle?.customer?.name ?? '—'} ·{' '}
-                            {order.vehicle?.plate_number ?? '—'}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
+        <AdminLayout
+            title={
+                <>
+                    <span className="truncate">
+                        Service Order #{order.work_order_number ?? order.id}
+                    </span>
+                    <span className="hidden min-w-0 truncate text-sm font-normal text-vw-grey sm:inline">
+                        {[order.vehicle?.plate_number, order.vehicle?.model, order.vehicle?.customer?.name].filter(Boolean).join(' · ')}
+                    </span>
                     <Badge variant={STATUS_VARIANT[order.status] ?? 'default'}>
                         {STATUS_LABEL[order.status] ?? order.status}
                     </Badge>
-                    {order.items_approval_status && (
-                        <Badge variant="outline">
-                            Items: {order.items_approval_status.replace('_', ' ')}
-                        </Badge>
-                    )}
                     {order.status === 'invoice_preparation' && (
-                        <Badge variant="outline" className="border-amber-500 text-amber-600">
+                        <Badge variant="outline" className="border-amber-500 text-amber-700">
                             Waiting for Pickup
                         </Badge>
                     )}
-                    {/* Delete order — admin-only, ditaruh di header supaya bisa
-                        diakses langsung dari halaman detail tanpa balik ke
-                        Index (keperluan debugging setelah live di hosting). */}
-                    {isAdmin && (
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleDeleteOrder}
+                </>
+            }
+        >
+            <Head title={`Service Order #${order.work_order_number ?? order.id}`} />
+
+            {/* ============================================================
+                1. ORDER OVERVIEW + CUSTOMER
+                Lebar & padding disamakan dengan halaman Create (max-w-2xl,
+                mx-auto, px-4 sm:px-0) supaya konten utama ada di tengah.
+                Tanpa Card — pakai Separator hairline seperti Create.
+               ============================================================ */}
+            <div className="mx-auto max-w-6xl space-y-5 px-4 sm:px-0">
+                <details open className="group rounded-lg border border-vw-grey/15 bg-white">
+                    <summary className="flex min-h-[48px] cursor-pointer list-none items-center gap-3 px-4 py-2 text-sm [&::-webkit-details-marker]:hidden">
+                        <Link
+                            href={route('admin.service-orders.index')}
+                            aria-label="Back to service orders"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-vw-grey/30 text-vw-grey hover:bg-vw-grey-light"
                         >
-                            <Trash2 className="mr-1 h-4 w-4" /> Delete Order
-                        </Button>
-                    )}
+                            <ArrowLeft className="h-4 w-4" />
+                        </Link>
+                        <span className="min-w-0 flex-1 truncate">
+                            <span className="font-semibold text-gray-900">{order.vehicle?.plate_number ?? '—'}</span>
+                            <span className="text-vw-grey">
+                                {' '}· {order.vehicle ? `${order.vehicle.brand} ${order.vehicle.model}` : '—'} · {order.vehicle?.customer?.name ?? '—'} · {order.vehicle?.customer?.phone ?? '—'}
+                            </span>
+                        </span>
+                        <span className="shrink-0 text-xs text-gray-600 group-open:hidden">Show details</span>
+                        <span className="hidden shrink-0 text-xs text-gray-600 group-open:inline">Hide details</span>
+                        <ChevronDown className="h-4 w-4 shrink-0 text-vw-grey transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="space-y-5 border-t border-vw-grey/10 px-4 py-4">
+                {/* Order Overview */}
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <Link
+                                href={route('admin.service-orders.index')}
+                                aria-label="Back to service orders"
+                                className="flex h-8 w-8 items-center justify-center rounded-md border border-vw-grey/30 text-vw-grey hover:bg-vw-grey-light"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                            </Link>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                Order Overview
+                            </p>
+                        </div>
+                        {/* Delete order — admin-only, dipindah ke header overview
+                            karena header lama sudah dihapus. */}
+                        {isAdmin && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-urgent hover:text-urgent"
+                                onClick={handleDeleteOrder}
+                            >
+                                <Trash2 className="mr-1 h-4 w-4" /> Delete Order
+                            </Button>
+                        )}
+                    </div>
+                    <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                            <p className="text-vw-grey">Work Order Number</p>
+                            <p className="font-medium text-gray-900">
+                                {order.work_order_number ?? '—'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-vw-grey">Service Advisor</p>
+                            <p className="font-medium text-gray-900">
+                                {order.service_advisor?.name ?? '—'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-vw-grey">Chief Technician</p>
+                            <p className="font-medium text-gray-900">
+                                {order.technician?.name ?? '—'}
+                            </p>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-                {/* Kolom kiri: info utama */}
-                <div className="space-y-6 lg:col-span-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Order Overview</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-                            <div>
-                                <p className="text-vw-grey">Customer</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.vehicle?.customer?.name ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Phone</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.vehicle?.customer?.phone ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Vehicle</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.vehicle
-                                        ? `${order.vehicle.brand} ${order.vehicle.model}`
-                                        : '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Plate Number</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.vehicle?.plate_number ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">VIN/Chasis Number</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.vehicle?.vin ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Service Advisor</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.service_advisor?.name ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Chief Technician</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.technician?.name ?? '—'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-vw-grey">Work Order Number</p>
-                                <p className="font-medium text-gray-900">
-                                    {order.work_order_number ?? '—'}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                <Separator />
 
-                    {/* Inspection Video — 1 slot (arsitektur final, lihat
-                        PROJECT-RULES 9.4 & komentar `video` di atas). Sengaja
-                        TIDAK digate oleh order.status: harus tetap tampil di
-                        status apapun, dari appointment sampai completed,
-                        supaya admin/SA bisa cek ulang video kapan saja. */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Inspection Video</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {video ? (
-                                videoEmbedUrl ? (
-                                    <div className="aspect-video overflow-hidden rounded-md">
-                                        <iframe
-                                            src={videoEmbedUrl}
-                                            title="Inspection video"
-                                            className="h-full w-full"
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                            allowFullScreen
-                                        />
-                                    </div>
-                                ) : (
-                                    <video
-                                        src={video.video_url}
-                                        controls
-                                        className="aspect-video w-full rounded-md bg-black"
+                {/* Customer data */}
+                <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                        Customer
+                    </p>
+                    <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                            <p className="text-vw-grey">Name</p>
+                            <p className="font-medium text-gray-900">
+                                {order.vehicle?.customer?.name ?? '—'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-vw-grey">Phone</p>
+                            <p className="font-medium text-gray-900">
+                                {order.vehicle?.customer?.phone ?? '—'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-vw-grey">Vehicle</p>
+                            <p className="font-medium text-gray-900">
+                                {order.vehicle
+                                    ? `${order.vehicle.brand} ${order.vehicle.model} — ${order.vehicle.plate_number}`
+                                    : '—'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-vw-grey">VIN/Chasis Number</p>
+                            <p className="font-medium text-gray-900">
+                                {order.vehicle?.vin ?? '—'}
+                            </p>
+                        </div>
+
+                        {/* Customer Complaint — editable lewat ikon pensil saat
+                            appointment & work_in_progress saja (guard sumber
+                            kebenaran di backend, lihat
+                            ServiceOrder::isCustomerComplaintEditable()). */}
+                        <div className="sm:col-span-2">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-vw-grey">Customer Complaint</p>
+                                {customerComplaintEditable && !isEditingComplaint && (
+                                    <IconActionButton
+                                        icon={Pencil}
+                                        label="Edit complaint"
+                                        onClick={() => setIsEditingComplaint(true)}
                                     />
-                                )
-                            ) : (
-                                <p className="text-sm text-vw-grey">No video uploaded yet.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Customer Complaint — editable saat appointment & work_in_progress
-                        saja (guard sumber kebenaran di backend, lihat
-                        ServiceOrder::isCustomerComplaintEditable()). Begitu order masuk
-                        quality_control dst, field dikunci jadi tampilan read-only. */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Customer Complaint</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            {customerComplaintEditable ? (
-                                <form onSubmit={handleComplaintSubmit} className="space-y-2">
+                                )}
+                            </div>
+                            {customerComplaintEditable && isEditingComplaint ? (
+                                <form onSubmit={handleComplaintSubmit} className="mt-1.5 space-y-2">
                                     <Textarea
                                         value={complaintForm.data.customer_complaint}
                                         onChange={(e) =>
@@ -1257,361 +1424,457 @@ export default function Show({
                                         }
                                         placeholder="What did the customer report/complain about their vehicle?"
                                         rows={3}
+                                        autoFocus
                                     />
                                     {complaintForm.errors.customer_complaint && (
                                         <p className="text-sm text-urgent">
                                             {complaintForm.errors.customer_complaint}
                                         </p>
                                     )}
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between gap-2">
                                         <p className="text-xs text-vw-grey">
                                             Editable until the order reaches Quality Control.
                                         </p>
-                                        <Button
-                                            type="submit"
-                                            size="sm"
-                                            disabled={complaintForm.processing}
-                                        >
-                                            {complaintForm.processing ? 'Saving...' : 'Save'}
-                                        </Button>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={handleComplaintCancel}
+                                                disabled={complaintForm.processing}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                type="submit"
+                                                size="sm"
+                                                disabled={complaintForm.processing}
+                                            >
+                                                {complaintForm.processing ? 'Saving...' : 'Save'}
+                                            </Button>
+                                        </div>
                                     </div>
                                 </form>
                             ) : (
-                                <p className="text-sm text-gray-900">
+                                <p className="text-gray-900">
                                     {order.customer_complaint || (
-                                        <span className="text-vw-grey">
-                                            No complaint recorded.
-                                        </span>
+                                        <span className="text-vw-grey">No complaint recorded.</span>
                                     )}
                                 </p>
                             )}
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
+                </div>
 
-                    {canEditItems && missingGroups.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Add Item to a New Group</CardTitle>
-                            </CardHeader>
-                            <CardContent className="flex items-end gap-3">
-                                <div className="flex-1 space-y-1.5">
-                                    <Label>Group</Label>
-                                    <Select value="" onValueChange={(value) => openAddItemDialog(value)}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select a group without items yet" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {missingGroups.map((group) => (
-                                                <SelectItem key={group} value={group}>
-                                                    {GROUP_LABEL[group]}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                <Separator />
+
+                {/* Inspection Video — tidak lagi di-embed memanjang; cukup tombol
+                    Preview yang membuka modal. Tetap TIDAK digate oleh
+                    order.status (harus bisa dilihat di status apapun,
+                    PROJECT-RULES 9.4). Tombol Copy Report Link (khusus
+                    work_in_progress) ditaruh sebaris di sini karena kartu
+                    "Report Link" di kolom kanan sudah tidak ada. */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        disabled={!video}
+                        onClick={() => setVideoOpen(true)}
+                    >
+                        <PlayCircle className="mr-1 h-4 w-4" />
+                        {video ? 'Preview Inspection Video' : 'No video uploaded'}
+                    </Button>
+
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVideoUploadOpen(true)}
+                    >
+                        {video ? 'Replace Video' : 'Upload Video'}
+                    </Button>
+
+                    {canShareReportLink && (
+                        <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleCopyReportLink}
+                            disabled={!reportUrl}
+                        >
+                            {reportLinkCopied ? (
+                                <>
+                                    <Check className="mr-1 h-4 w-4" /> Copied!
+                                </>
+                            ) : (
+                                <>
+                                    <Copy className="mr-1 h-4 w-4" /> Copy Report Link & Message
+                                </>
+                            )}
+                        </Button>
+                    )}
+                </div>
+                    </div>
+                </details>
+            </div>
+
+            {/* ============================================================
+                2. STATUS — sticky (nempel di bawah header admin, top-14,
+                sama seperti stepper di Create). Full-bleed lewat -mx, isi
+                dibatasi max-w-2xl. SA bisa pindah status kapan saja sambil
+                scroll/edit konten di bawah.
+               ============================================================ */}
+            <div className="sticky top-14 z-10 -mx-4 mt-5 border-y border-vw-grey/10 bg-white px-4 sm:-mx-6 sm:px-6">
+                <div className="mx-auto max-w-6xl space-y-2 py-2.5">
+                    {/* Aksi: pindah ke status berikutnya (+ Revert untuk
+                        admin, PROJECT-RULES bagian 7 poin 8). Badge status
+                        sudah dipindah ke header admin (sebelah nomor work
+                        order) supaya selalu kelihatan tanpa perlu scroll. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {availableTransitions.length > 0 ? (
+                            <>
+                                <span className="text-sm text-vw-grey">Next step:</span>
+                {availableTransitions
+                    .filter((status) => status !== 'all_rejected_cancelled')
+                    .map((status) => {
+                        const disabled = status === 'completed' && !hasInvoice;
+                        return (
+                            <Button
+                                key={status}
+                                type="button"
+                                disabled={disabled || processing}
+                                onClick={() => handleSelectStatus(status)}
+                            >
+                                Move to {STATUS_LABEL[status]}
+                                <ArrowRight className="ml-1.5 h-4 w-4" />
+                            </Button>
+                        );
+                    })}
+                {availableTransitions.includes('all_rejected_cancelled') && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto text-urgent hover:bg-urgent/10 hover:text-urgent"
+                        disabled={processing}
+                        onClick={() => handleSelectStatus('all_rejected_cancelled')}
+                    >
+                        Cancel order
+                    </Button>
+                )}
+                            </>
+                        ) : (
+                            <p className="text-xs text-vw-grey">
+                                Final status — no further transition.
+                            </p>
+                        )}
+
+                        {isAdmin && revertTarget && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className={cn('border-vw-grey/30 bg-white text-black hover:bg-vw-grey-light hover:text-black', !availableTransitions.includes('all_rejected_cancelled') && 'ml-auto')}
+                                        onClick={handleRevertStatus}
+                                    >
+                                        <RotateCcw className="mr-1 h-4 w-4" />
+                                        Revert to {STATUS_LABEL[revertTarget]}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-64">
+                                    Admin only — use this if items need to be reopened for
+                                    negotiation after this stage.
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                    </div>
+
+                    {isCompletedBlocked && (
+                        <p className="flex items-center gap-1.5 text-xs text-amber-700">
+                            <Info className="h-3.5 w-3.5 shrink-0" />
+                            Upload at least 1 invoice PDF before this order can be marked
+                            completed.
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            {/* ============================================================
+                3. INSPECTION ITEMS + ESTIMATION + TOTALS, lalu INVOICE &
+                PAYMENT di bawahnya.
+               ============================================================ */}
+            <div
+                className="mx-auto mt-5 max-w-6xl space-y-5 px-4 sm:px-0"
+            >
+                <div
+                    className="space-y-5"
+                >
+                {/* Panel Inspection Items — struktur sama dengan step 2 di
+                    Create (header + tabs grup, body list struk, footer).
+                    Beda: tinggi body dibatasi (max-h) alih-alih h-[70vh]
+                    tetap, karena footer di sini lebih tinggi (estimation
+                    form + estimated grand total + order totals). */}
+                <div className="flex h-full flex-col overflow-hidden rounded-lg border border-vw-grey/15 bg-white">
+                    {/* Header */}
+                    <div className="shrink-0 space-y-3 border-b border-vw-grey/10 px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">
+                                    Inspection Items
+                                </p>
+                                <p className="text-xs text-vw-grey">
+                                    {allItems.length} item{allItems.length !== 1 && 's'}
+                                </p>
+                            </div>
+                            {canEditItems && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() =>
+                                        openAddItemDialog(currentGroupTab ?? GROUPS[0])
+                                    }
+                                >
+                                    <Plus className="mr-1 h-3.5 w-3.5" /> Add Item
+                                </Button>
+                            )}
+                        </div>
+
+                        {groupsWithItems.length > 0 && currentGroupTab && (
+                            <Tabs value={currentGroupTab} onValueChange={setActiveGroupTab}>
+                                <TabsList className="w-full justify-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                    {groupsWithItems.map((group) => (
+                                        <TabsTrigger key={group} value={group}>
+                                            {GROUP_LABEL[group]}
+                                            <Badge variant="secondary" className="ml-1.5">
+                                                {
+                                                    allItems.filter((item) => item.group === group)
+                                                        .length
+                                                }
+                                            </Badge>
+                                        </TabsTrigger>
+                                    ))}
+                                </TabsList>
+                            </Tabs>
+                        )}
+                    </div>
+
+                    {/* Body — kalau belum ada item, tampilkan empty state
+                        full-width. Kalau sudah ada, dipecah jadi 2 grid:
+                        kiri daftar item (list struk), kanan semua angka
+                        total (breakdown grup, estimation form, estimated
+                        grand total, order totals) supaya tidak berdempet
+                        dan gampang dibaca. */}
+                    {allItems.length === 0 ? (
+                        <div className="flex-1 px-4 py-3">
+                            <div className="rounded-md border border-dashed border-vw-grey/40 py-10 text-center">
+                                <p className="text-sm text-vw-grey">No inspection items yet.</p>
+                                {canEditItems && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="mt-3"
+                                        onClick={() => openAddItemDialog(GROUPS[0])}
+                                    >
+                                        <Plus className="mr-1 h-4 w-4" /> Add your first item
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid flex-1 min-h-0 lg:grid-cols-[1.7fr_1fr] lg:gap-4">
+                            {/* Kiri — daftar item, hanya grup aktif */}
+                            <div className="h-full min-h-[10rem] overflow-y-auto border-b border-vw-grey/10 px-4 py-3 lg:border-b-0 lg:border-r lg:pr-5">
+                                <div className="space-y-2">
+                                    {itemsInGroup.map((item) => (
+                                        <ItemReceiptRow
+                                            key={item.id}
+                                            item={item}
+                                            canEditItems={canEditItems}
+                                            onView={() => setViewingItem(item)}
+                                            onEdit={() => openEditItemDialog(item)}
+                                            onDelete={() => handleDeleteItem(item)}
+                                            onReopen={() => handleReopenItem(item)}
+                                        />
+                                    ))}
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                            </div>
 
-                    {/*
-                        Inspection Items — FIX (layout): sebelumnya 1 Collapsible
-                        Card per group (5 card berulang, masing-masing menumpuk
-                        form add item + tabel + breakdown + estimation form jadi
-                        satu). Sekarang 1 Card + Tabs (1 tab per group yang sudah
-                        punya item), isi tiap tab dipisah jelas: Table item →
-                        breakdown angka → estimation form, dengan Separator di
-                        antaranya. Add/Edit item pindah ke Dialog terpisah,
-                        aksi per-baris pakai icon + Tooltip (bukan teks kecil).
-                    */}
-                    {groupsWithItems.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Inspection Items</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <Tabs value={currentGroupTab} onValueChange={setActiveGroupTab}>
-                                    <TabsList className="w-full justify-start overflow-x-auto">
-                                        {groupsWithItems.map((group) => {
-                                            const count = (order.inspection_items ?? []).filter(
-                                                (item) => item.group === group
-                                            ).length;
-                                            return (
-                                                <TabsTrigger key={group} value={group}>
-                                                    {GROUP_LABEL[group]}
-                                                    <Badge variant="secondary" className="ml-1.5">
-                                                        {count}
-                                                    </Badge>
-                                                </TabsTrigger>
-                                            );
-                                        })}
-                                    </TabsList>
+                            {/* Kanan — semua total: breakdown grup aktif,
+                                estimation form, estimated grand total, order
+                                totals. */}
+                            <div className="h-full overflow-y-auto bg-vw-grey-light/20 px-4 py-3 lg:px-5">
+                              <div className="flex flex-col gap-3">
+                                {/* Breakdown grup yang lagi aktif (dari backend) */}
+                                <div className="space-y-0.5 text-xs">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                        {GROUP_LABEL[currentGroupTab]} Breakdown
+                                    </p>
+                                    <div className="flex justify-between">
+                                        <span className="text-vw-grey">
+                                            {GROUP_LABEL[currentGroupTab]} subtotal
+                                        </span>
+                                        <span className="text-gray-900">
+                                            {formatCurrency(groupBreakdown.subtotal)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-vw-grey">VAT ({vatPercent}%)</span>
+                                        <span className="text-gray-900">
+                                            {formatCurrency(groupBreakdown.vat_amount)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between font-semibold text-gray-900">
+                                        <span>Estimated {GROUP_LABEL[currentGroupTab]} Total</span>
+                                        <span>{formatCurrency(groupBreakdown.grand_total)}</span>
+                                    </div>
+                                </div>
 
-                                    {groupsWithItems.map((group) => {
-                                        const groupItems = (order.inspection_items ?? []).filter(
-                                            (item) => item.group === group
-                                        );
-                                        const breakdown =
-                                            breakdownByGroup?.[group] ?? {
-                                                subtotal: 0,
-                                                vat_amount: 0,
-                                                grand_total: 0,
-                                            };
-                                        const doc = docsByGroup[group];
-                                        const hasFile = doc?.pdf_path;
+                                <Separator />
 
-                                        return (
-                                            <TabsContent key={group} value={group} className="mt-4 space-y-4">
-                                                {canEditItems && (
-                                                    <div className="flex justify-end">
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            onClick={() => openAddItemDialog(group)}
-                                                        >
-                                                            <Plus className="mr-1 h-4 w-4" /> Add Item
-                                                        </Button>
-                                                    </div>
-                                                )}
+                            {/* Estimation Form — dinamis, ikut tab grup yang
+                                sedang dipilih. */}
+                            {currentGroupTab && (
+                                <div className="order-last space-y-2 border-t border-vw-grey/10 pt-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+                                            <FileText className="h-4 w-4 text-vw-grey" />
+                                            Estimation Form — {GROUP_LABEL[currentGroupTab]}
+                                        </p>
+                                        {hasEstimationFile && (
+                                            <button
+    type="button"
+    className="text-sm text-blue-600 underline"
+    onClick={() =>
+        setPreviewFile({
+            title: `Estimation Form — ${GROUP_LABEL[currentGroupTab]}`,
+            url: `/storage/${estimationDoc.pdf_path}`,
+        })
+    }
+>
+    View file
+</button>
+                                        )}
+                                    </div>
 
-                                                <div className="rounded-md border border-vw-grey/20">
-                                                    <Table>
-                                                        <TableHeader>
-                                                            <TableRow>
-                                                                <TableHead>Item</TableHead>
-                                                                <TableHead>Part</TableHead>
-                                                                <TableHead>Labour</TableHead>
-                                                                <TableHead className="text-right">
-                                                                    Final Price
-                                                                </TableHead>
-                                                                <TableHead>Status</TableHead>
-                                                                <TableHead className="w-28" />
-                                                            </TableRow>
-                                                        </TableHeader>
-                                                        <TableBody>
-                                                            {groupItems.map((item) => (
-                                                                <ItemTableRow
-                                                                    key={item.id}
-                                                                    item={item}
-                                                                    canEditItems={canEditItems}
-                                                                    onView={() => setViewingItem(item)}
-                                                                    onEdit={() => openEditItemDialog(item)}
-                                                                    onDelete={() => handleDeleteItem(item)}
-                                                                    onReopen={() => handleReopenItem(item)}
-                                                                />
-                                                            ))}
-                                                        </TableBody>
-                                                    </Table>
-                                                </div>
+                                    {hasEstimationFile && estimationDoc.uploaded_at && (
+                                        <p className="text-xs text-vw-grey">
+                                            Uploaded {formatDate(estimationDoc.uploaded_at)}
+                                            {estimationDoc.uploaded_by?.name &&
+                                                ` by ${estimationDoc.uploaded_by.name}`}
+                                        </p>
+                                    )}
 
-                                                <Separator />
+                                    {!hasEstimationFile && (
+                                        <p className="text-xs text-vw-grey">
+                                            {canEditEstimationDocs
+                                                ? 'No file uploaded yet.'
+                                                : 'No file was uploaded for this group.'}
+                                        </p>
+                                    )}
 
-                                                <div className="space-y-1">
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <p className="text-vw-grey">Subtotal</p>
-                                                        <p className="text-gray-900">
-                                                            {formatCurrency(breakdown.subtotal)}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <p className="text-vw-grey">VAT ({vatPercent}%)</p>
-                                                        <p className="text-gray-900">
-                                                            {formatCurrency(breakdown.vat_amount)}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                                        <p className="font-semibold text-gray-900">
-                                                            Estimated Group Total
-                                                        </p>
-                                                        <p className="font-semibold text-gray-900">
-                                                            {formatCurrency(breakdown.grand_total)}
-                                                        </p>
-                                                    </div>
-                                                </div>
+                                    {canEditEstimationDocs ? (
+                                        <form
+                                            onSubmit={handleEstimationUpload}
+                                            className="flex items-center gap-2"
+                                        >
+                                            <Input
+                                                key={currentGroupTab}
+                                                type="file"
+                                                accept="application/pdf"
+                                                className="min-w-0 flex-1 text-xs"
+                                                onChange={(e) =>
+                                                    handleEstimationFileChange(
+                                                        currentGroupTab,
+                                                        e.target.files[0]
+                                                    )
+                                                }
+                                            />
+                                            <Button
+                                                type="submit"
+                                                size="sm"
+                                                disabled={
+                                                    estimationForm.processing ||
+                                                    selectedGroup !== currentGroupTab ||
+                                                    !estimationForm.data.pdf
+                                                }
+                                            >
+                                                {estimationForm.processing &&
+                                                selectedGroup === currentGroupTab
+                                                    ? 'Uploading...'
+                                                    : hasEstimationFile
+                                                    ? 'Replace'
+                                                    : 'Upload'}
+                                            </Button>
+                                            {hasEstimationFile && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-urgent hover:text-urgent/80"
+                                                    onClick={() =>
+                                                        handleDeleteEstimationDoc(estimationDoc)
+                                                    }
+                                                >
+                                                    Delete
+                                                </Button>
+                                            )}
+                                        </form>
+                                    ) : (
+                                        <p className="text-xs text-vw-grey">
+                                            Estimation forms can only be uploaded or changed while
+                                            the order is at Appointment or Work In Progress.
+                                        </p>
+                                    )}
 
-                                                <Separator />
+                                    {selectedGroup === currentGroupTab &&
+                                        estimationForm.errors.pdf && (
+                                            <p className="text-xs text-urgent">
+                                                {estimationForm.errors.pdf}
+                                            </p>
+                                        )}
+                                </div>
+                            )}
 
-                                                {/* Estimation form — dikasih kotak sendiri supaya
-                                                    jelas ini "dokumen", terpisah secara visual dari
-                                                    breakdown angka di atasnya. */}
-                                                <div className="rounded-lg border border-vw-grey/10 p-3">
-                                                    <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900">
-                                                        <FileText className="h-4 w-4 text-vw-grey" />
-                                                        Estimation Form
-                                                    </p>
-
-                                                    {!canEditEstimationDocs && (
-                                                        <p className="text-xs text-vw-grey">
-                                                            Estimation forms can only be uploaded or changed
-                                                            while the order is at Appointment or Work In
-                                                            Progress.
-                                                        </p>
-                                                    )}
-
-                                                    {hasFile ? (
-                                                        <div className="space-y-0.5">
-                                                            <a
-                                                                href={`/storage/${doc.pdf_path}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-sm text-blue-600 underline"
-                                                            >
-                                                                View current file
-                                                            </a>
-                                                            {doc.uploaded_at && (
-                                                                <p className="text-xs text-vw-grey">
-                                                                    Uploaded {formatDate(doc.uploaded_at)}
-                                                                    {doc.uploaded_by?.name &&
-                                                                        ` by ${doc.uploaded_by.name}`}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        canEditEstimationDocs && (
-                                                            <p className="text-sm text-vw-grey">
-                                                                No file uploaded yet.
-                                                            </p>
-                                                        )
-                                                    )}
-
-                                                    {canEditEstimationDocs && (
-                                                        <form
-                                                            onSubmit={handleEstimationUpload}
-                                                            className="mt-2 flex items-center gap-2"
-                                                        >
-                                                            <Input
-                                                                type="file"
-                                                                accept="application/pdf"
-                                                                className="text-xs"
-                                                                onChange={(e) =>
-                                                                    handleEstimationFileChange(
-                                                                        group,
-                                                                        e.target.files[0]
-                                                                    )
-                                                                }
-                                                            />
-                                                            <Button
-                                                                type="submit"
-                                                                size="sm"
-                                                                disabled={
-                                                                    estimationForm.processing ||
-                                                                    selectedGroup !== group ||
-                                                                    !estimationForm.data.pdf
-                                                                }
-                                                            >
-                                                                {estimationForm.processing &&
-                                                                selectedGroup === group
-                                                                    ? 'Uploading...'
-                                                                    : hasFile
-                                                                    ? 'Replace'
-                                                                    : 'Upload'}
-                                                            </Button>
-                                                            {hasFile && (
-                                                                <Button
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="text-urgent hover:text-urgent/80"
-                                                                    onClick={() =>
-                                                                        handleDeleteEstimationDoc(doc)
-                                                                    }
-                                                                >
-                                                                    Delete
-                                                                </Button>
-                                                            )}
-                                                        </form>
-                                                    )}
-                                                    {selectedGroup === group && estimationForm.errors.pdf && (
-                                                        <p className="mt-1 text-xs text-urgent">
-                                                            {estimationForm.errors.pdf}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </TabsContent>
-                                        );
-                                    })}
-                                </Tabs>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {(order.inspection_items?.length ?? 0) === 0 && (
-                        <Card>
-                            <CardContent className="py-8 text-center text-sm text-vw-grey">
-                                No inspection items yet.
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {(order.inspection_items?.length ?? 0) > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-1">
-                                    Estimated Grand Total
+                            {/* Estimated Grand Total — sekarang sudah termasuk
+                                Inspection Fee (dipindah dari Order Totals). */}
+                            <div className="space-y-1 text-sm">
+                                <div className="flex items-center gap-1">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                        Estimated Grand Total
+                                    </p>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
                                         </TooltipTrigger>
                                         <TooltipContent className="max-w-64">
-                                            Full quotation value — ALL inspection items across
-                                            every group, regardless of status (pending,
-                                            approved, or rejected). Does not change based on
-                                            approve/reject decisions.
+                                            Full quotation value — ALL inspection items across every
+                                            group, regardless of status (pending, approved, or
+                                            rejected), plus the inspection fee. Does not change
+                                            based on approve/reject decisions.
                                         </TooltipContent>
                                     </Tooltip>
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-1">
-                                <div className="flex items-center justify-between text-sm">
-                                    <p className="text-vw-grey">Subtotal</p>
-                                    <p className="text-gray-900">
+                                </div>
+
+                                <div className="flex justify-between">
+                                    <span className="text-vw-grey">Items Subtotal</span>
+                                    <span className="text-gray-900">
                                         {formatCurrency(estimatedGrandTotal?.subtotal ?? 0)}
-                                    </p>
+                                    </span>
                                 </div>
-                                <div className="flex items-center justify-between text-sm">
-                                    <p className="text-vw-grey">VAT ({vatPercent}%)</p>
-                                    <p className="text-gray-900">
+                                <div className="flex justify-between">
+                                    <span className="text-vw-grey">VAT ({vatPercent}%)</span>
+                                    <span className="text-gray-900">
                                         {formatCurrency(estimatedGrandTotal?.vat_amount ?? 0)}
-                                    </p>
-                                </div>
-                                <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                    <p className="font-semibold text-gray-900">
-                                        Estimated Grand Total
-                                    </p>
-                                    <p className="font-semibold text-gray-900">
-                                        {formatCurrency(estimatedGrandTotal?.grand_total ?? 0)}
-                                    </p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {(order.inspection_items?.length ?? 0) > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Order Totals</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-1">
-                                <div className="flex items-center justify-between text-sm">
-                                    <div className="flex items-center gap-1">
-                                        <p className="text-vw-grey">Confirmed Total</p>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
-                                            </TooltipTrigger>
-                                            <TooltipContent className="max-w-64">
-                                                Approved items only — final and locked, will
-                                                not change.
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </div>
-                                    <p className="text-gray-900">{formatCurrency(grandTotalApproved)}</p>
+                                    </span>
                                 </div>
 
-                                {/* Inspection Fee — dulu Card terpisah, sekarang jadi baris
-                                    di sini. Default tampilan "paten" (read-only), baru masuk
-                                    mode edit kalau SA klik ikon pensil (guard sumber
-                                    kebenaran tetap di backend, lihat
-                                    ServiceOrder::isInspectionFeeEditable()). */}
+                                {/* Inspection Fee — default read-only, masuk mode
+                                    edit lewat ikon pensil (guard sumber kebenaran
+                                    di backend, ServiceOrder::isInspectionFeeEditable()). */}
                                 {isEditingFee ? (
                                     <form
                                         onSubmit={handleInspectionFeeSubmit}
@@ -1645,9 +1908,7 @@ export default function Show({
                                                     const isChecked = checked === true;
                                                     setFeeIncludedChecked(isChecked);
                                                     // Centang → paksa fee ke 0 & isi note
-                                                    // default (masih bisa diedit manual),
-                                                    // biar SA nggak bingung kenapa 0 padahal
-                                                    // belum diketik.
+                                                    // default (masih bisa diedit manual).
                                                     if (isChecked) {
                                                         inspectionFeeForm.setData(
                                                             'inspection_fee',
@@ -1708,24 +1969,21 @@ export default function Show({
                                         </div>
                                     </form>
                                 ) : (
-                                    <div className="space-y-0.5 border-t border-vw-grey/10 pt-1.5">
-                                        <div className="flex items-center justify-between text-sm">
+                                    <div className="space-y-0.5">
+                                        <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-1">
-                                                <p className="text-vw-grey">Inspection Fee</p>
+                                                <span className="text-vw-grey">Inspection Fee</span>
                                                 {inspectionFeeEditable && (
-                                                    <button
-                                                        type="button"
+                                                    <IconActionButton
+                                                        icon={Pencil}
+                                                        label="Edit inspection fee"
                                                         onClick={() => setIsEditingFee(true)}
-                                                        className="text-vw-grey hover:text-gray-900"
-                                                        aria-label="Edit inspection fee"
-                                                    >
-                                                        <Pencil className="h-3.5 w-3.5" />
-                                                    </button>
+                                                    />
                                                 )}
                                             </div>
-                                            <p className="text-gray-900">
+                                            <span className="text-gray-900">
                                                 {formatCurrency(order.inspection_fee)}
-                                            </p>
+                                            </span>
                                         </div>
                                         {order.inspection_fee_note && (
                                             <p className="text-xs text-vw-grey">
@@ -1735,484 +1993,616 @@ export default function Show({
                                     </div>
                                 )}
 
-                                <div className="flex items-center justify-between border-t border-vw-grey/10 pt-1.5">
-                                    <p className="font-semibold text-gray-900">Grand Total</p>
-                                    <p className="font-semibold text-gray-900">
-                                        {formatCurrency(finalGrandTotal)}
-                                    </p>
+                                <div className="flex justify-between border-t border-vw-grey/15 pt-1 font-semibold text-gray-900">
+                                    <span>Estimated Grand Total</span>
+                                    <span>{formatCurrency(estimatedGrandTotalWithFee)}</span>
                                 </div>
-                            </CardContent>
-                        </Card>
+                            </div>
+
+                            {/* Order Totals — baru muncul mulai Invoice Preparation
+                                (bukan dari awal), tepat di bawah Estimated Grand
+                                Total. Inspection Fee sudah tidak ditampilkan
+                                sebagai baris di sini, tapi tetap masuk ke Grand
+                                Total final. */}
+                            {showPaymentSection && (
+                                <>
+                                    <Separator />
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                            Order Totals
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-vw-grey">Confirmed Total</span>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Info className="h-3.5 w-3.5 shrink-0 text-vw-grey" />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent className="max-w-64">
+                                                        Approved items only — final and locked, will
+                                                        not change.
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
+                                            <span className="text-gray-900">
+                                                {formatCurrency(grandTotalApproved)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between border-t border-vw-grey/15 pt-1 font-semibold text-gray-900">
+                                            <div>
+                                                <p>Grand Total</p>
+                                                <p className="text-xs font-normal text-vw-grey">
+                                                    Confirmed Total + Inspection Fee
+                                                </p>
+                                            </div>
+                                            <span>{formatCurrency(finalGrandTotal)}</span>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                              </div>
+                            </div>
+                        </div>
                     )}
                 </div>
 
-                {/* Kolom kanan: status control + invoice — sticky supaya tetap
-                    terlihat selagi scroll daftar group item di kiri yang panjang */}
-                <div className="lg:col-span-1">
-                    <div className="lg:sticky lg:top-6 space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Update Status Progress</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="w-full"
-                                    onClick={() => window.location.reload()}
-                                >
-                                    <RefreshCw className="mr-2 h-4 w-4" /> Refresh Page
-                                </Button>
-
-                                {availableTransitions.length > 0 ? (
-                                    <>
-                                        <div
-                                            className={cn(
-                                                'grid gap-2',
-                                                availableTransitions.length > 1 && 'grid-cols-2'
-                                            )}
-                                        >
-                                            {availableTransitions.map((status) => {
-                                                const disabled =
-                                                    status === 'completed' && !hasInvoice;
-                                                const isDestructive =
-                                                    status === 'all_rejected_cancelled';
-                                                return (
-                                                    <Button
-                                                        key={status}
-                                                        type="button"
-                                                        variant={isDestructive ? 'outline' : 'default'}
-                                                        className={cn(
-                                                            isDestructive &&
-                                                                'border-urgent text-urgent hover:bg-urgent/10 hover:text-urgent'
-                                                        )}
-                                                        disabled={disabled || processing}
-                                                        onClick={() => handleSelectStatus(status)}
-                                                    >
-                                                        {STATUS_LABEL[status]}
-                                                    </Button>
-                                                );
-                                            })}
-                                        </div>
-                                        {isCompletedBlocked && (
-                                            <Alert>
-                                                <Info className="h-4 w-4" />
-                                                <AlertTitle className="text-sm">Invoice required</AlertTitle>
-                                                <AlertDescription className="text-xs">
-                                                    Upload at least 1 invoice PDF before this order can be marked completed.
-                                                </AlertDescription>
-                                            </Alert>
-                                        )}
-                                    </>
-                                ) : (
-                                    <p className="text-sm text-vw-grey">
-                                        This order is at a final status (
-                                        {STATUS_LABEL[order.status]}) — no further manual
-                                        transition available.
-                                    </p>
-                                )}
-
-                                {/* Revert status — khusus admin, dipakai kalau ada miss
-                                    komunikasi soal item setelah lewat negosiasi
-                                    (PROJECT-RULES bagian 7 poin 8). */}
-                                {isAdmin && revertTarget && (
-                                    <div className="border-t border-vw-grey/10 pt-3">
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={handleRevertStatus}
-                                        >
-                                            <RotateCcw className="mr-1 h-4 w-4" />
-                                            Revert to {STATUS_LABEL[revertTarget]}
-                                        </Button>
-                                        <p className="mt-1 text-xs text-vw-grey">
-                                            Admin only — use this if items need to be reopened for
-                                            negotiation after this stage.
-                                        </p>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        {/* Report Link — copy link + pesan siap kirim jadi 1 klik, SA
-                            tinggal paste manual ke WhatsApp customer. Muncul HANYA
-                            saat status work_in_progress — hilang lagi begitu order
-                            pindah ke quality_control dan seterusnya. */}
-                        {canShareReportLink && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Report Link</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-2">
-                                    <p className="text-xs text-vw-grey">
-                                        Copies a ready-to-send WhatsApp message with the
-                                        customer's report link. Paste it manually into their
-                                        WhatsApp chat.
-                                    </p>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="w-full"
-                                        onClick={handleCopyReportLink}
-                                        disabled={!reportUrl}
-                                    >
-                                        {reportLinkCopied ? (
-                                            <>
-                                                <Check className="mr-1 h-4 w-4" /> Copied!
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Copy className="mr-1 h-4 w-4" /> Copy Link & Message
-                                            </>
-                                        )}
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        )}
-
-                        {/* Invoice PDF section — disembunyikan selama appointment/
-                            work_in_progress, baru muncul mulai quality_control. */}
-                        {showInvoiceSection && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Invoice PDF</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
+                {/* Invoice & Payment — 1 card, muncul di bawah container
+                    Inspection Items mulai quality_control. Bagian Payment
+                    (dan Report to Cashier) baru muncul mulai
+                    invoice_preparation; antar bagian dipisah hairline. */}
+                {showInvoiceSection && (
+                    <Panel title="Invoice & Payment">
+                        {/* --- Invoice PDF: 1 baris. Kiri = file yang sudah
+                            di-upload (+ ikon lihat & hapus), kanan = form upload. */}
+                        <div className="space-y-1.5">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                1 · Invoice PDF
+                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex min-w-0 items-center gap-2">
                                     {hasInvoice ? (
-                                        <div className="flex items-center justify-between gap-2 rounded border border-vw-grey/10 p-2">
-                                            <div className="space-y-0.5">
-                                                <a
-                                                    href={`/storage/${invoice.file_path}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-sm text-blue-600 underline"
-                                                >
-                                                    View Invoice
-                                                </a>
+                                        <>
+                                            <FileText className="h-4 w-4 shrink-0 text-vw-grey" />
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm text-gray-900">
+                                                    Invoice uploaded
+                                                </p>
                                                 {invoice.uploaded_at && (
-                                                    <p className="text-xs text-vw-grey">
-                                                        Uploaded {formatDate(invoice.uploaded_at)}
+                                                    <p className="truncate text-xs text-vw-grey">
+                                                        {formatDate(invoice.uploaded_at)}
                                                         {invoice.uploaded_by?.name &&
-                                                            ` by ${invoice.uploaded_by.name}`}
+                                                            ` · ${invoice.uploaded_by.name}`}
                                                     </p>
                                                 )}
                                             </div>
-                                            {order.status !== 'completed' && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="text-urgent hover:text-urgent/80"
-                                                    onClick={handleDeleteInvoice}
-                                                >
-                                                    Delete
-                                                </Button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-vw-grey">No invoice uploaded yet.</p>
-                                    )}
-
-                                    {order.status !== 'completed' && (
-                                        <form onSubmit={handleInvoiceUpload} className="space-y-2">
-                                            <Label htmlFor="invoice_pdf">
-                                                {hasInvoice ? 'Replace invoice PDF' : 'Upload invoice PDF'}
-                                            </Label>
-                                            <Input
-                                                id="invoice_pdf"
-                                                type="file"
-                                                accept="application/pdf"
-                                                onChange={handleInvoiceFileChange}
+                                            <IconActionButton
+    icon={Eye}
+    label="View invoice"
+    onClick={() =>
+        setPreviewFile({
+            title: 'Invoice PDF',
+            url: `/storage/${invoice.file_path}`,
+        })
+    }
+/>
+                                            <IconActionButton
+                                                icon={Trash2}
+                                                label="Delete invoice"
+                                                tone="danger"
+                                                onClick={handleDeleteInvoice}
                                             />
-                                            {invoiceForm.errors.invoice_pdf && (
-                                                <p className="text-xs text-urgent">
-                                                    {invoiceForm.errors.invoice_pdf}
-                                                </p>
-                                            )}
-                                            <Button
-                                                type="submit"
-                                                disabled={
-                                                    invoiceForm.processing || !invoiceForm.data.invoice_pdf
-                                                }
-                                                size="sm"
-                                            >
-                                                {invoiceForm.processing
-                                                    ? 'Uploading...'
-                                                    : hasInvoice
-                                                    ? 'Replace'
-                                                    : 'Upload'}
-                                            </Button>
-                                        </form>
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-vw-grey">
+                                            No invoice uploaded yet.
+                                        </p>
                                     )}
-                                </CardContent>
-                            </Card>
-                        )}
+                                </div>
 
-                        {/* Payment — FIX (layout): sebelumnya 5 sub-fungsi (bank info,
-                            invoice details, customer receipt, staff receipt, report to
-                            cashier) ditumpuk jadi 1 card panjang. Sekarang dipecah pakai
-                            Accordion, "Invoice Details" default terbuka karena itu yang
-                            paling sering dicek/diedit duluan. */}
-                        {showPaymentSection && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Payment</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <Accordion
-                                        type="single"
-                                        collapsible
-                                        defaultValue="invoice-details"
+                                <form
+                                    onSubmit={handleInvoiceUpload}
+                                    className="flex w-full items-center gap-2 sm:w-auto"
+                                >
+                                    <Input
+                                        id="invoice_pdf"
+                                        type="file"
+                                        accept="application/pdf"
+                                        aria-label={
+                                            hasInvoice ? 'Replace invoice PDF' : 'Upload invoice PDF'
+                                        }
+                                        className="h-9 min-w-0 flex-1 text-xs sm:w-52 sm:flex-none"
+                                        onChange={handleInvoiceFileChange}
+                                    />
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        disabled={
+                                            invoiceForm.processing || !invoiceForm.data.invoice_pdf
+                                        }
                                     >
-                                        <AccordionItem value="bank-accounts">
-                                            <AccordionTrigger>Bank Accounts</AccordionTrigger>
-                                            <AccordionContent>
-                                                <div className="space-y-1.5 rounded-md bg-vw-grey-light p-3 text-xs">
-                                                    {BANK_ACCOUNTS.map((acc) => (
-                                                        <div key={acc.bank}>
-                                                            <p className="font-semibold text-gray-900">
-                                                                {acc.bank}
-                                                            </p>
-                                                            <p className="text-vw-grey">{acc.account}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </AccordionContent>
-                                        </AccordionItem>
+                                        {invoiceForm.processing
+                                            ? 'Uploading...'
+                                            : hasInvoice
+                                            ? 'Replace'
+                                            : 'Upload'}
+                                    </Button>
+                                </form>
+                            </div>
+                            {invoiceForm.errors.invoice_pdf && (
+                                <p className="text-xs text-urgent">{invoiceForm.errors.invoice_pdf}</p>
+                            )}
+                        </div>
 
-                                        <AccordionItem value="invoice-details">
-                                            <AccordionTrigger>Invoice Details</AccordionTrigger>
-                                            <AccordionContent>
-                                                {canEditPayment ? (
-                                                    <form
-                                                        onSubmit={handlePaymentDetailsSubmit}
-                                                        className="space-y-2"
-                                                    >
-                                                        <div className="space-y-1.5">
-                                                            <Label>Invoice Number</Label>
-                                                            <Input
-                                                                value={paymentDetailsForm.data.invoice_number}
-                                                                onChange={(e) =>
-                                                                    paymentDetailsForm.setData(
-                                                                        'invoice_number',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                        </div>
-                                                        <div className="space-y-1.5">
-                                                            <Label>Bill To</Label>
-                                                            <Input
-                                                                value={paymentDetailsForm.data.bill_to}
-                                                                onChange={(e) =>
-                                                                    paymentDetailsForm.setData(
-                                                                        'bill_to',
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                            />
-                                                        </div>
-                                                        <Button
-                                                            type="submit"
-                                                            size="sm"
-                                                            disabled={paymentDetailsForm.processing}
-                                                        >
-                                                            {paymentDetailsForm.processing
-                                                                ? 'Saving...'
-                                                                : 'Save'}
-                                                        </Button>
-                                                    </form>
-                                                ) : (
-                                                    <div className="space-y-1 text-sm">
-                                                        <p>
-                                                            <span className="text-vw-grey">
-                                                                Invoice Number:
-                                                            </span>{' '}
-                                                            {order.invoice_number ?? '—'}
+                        {showPaymentSection && (
+                            <>
+                                <Separator />
+
+                                {/* --- Payment --- */}
+                                <div className="space-y-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                        2 · Payment &amp; Receipts
+                                    </p>
+
+                                    {/* Bank Accounts (kiri) sebaris dengan receipts (kanan).
+                                        Di kanan: Customer Receipt di atas, Staff Receipt di
+                                        bawah, dibatasi hairline. */}
+                                    <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+                                        <div className="space-y-1.5">
+                                            <p className="text-xs text-vw-grey">Bank Accounts</p>
+                                            <div className="space-y-1.5">
+                                                {BANK_ACCOUNTS.map((acc) => (
+                                                    <div key={acc.bank}>
+                                                        <p className="text-xs font-semibold text-gray-900">
+                                                            {acc.bank}
                                                         </p>
-                                                        <p>
-                                                            <span className="text-vw-grey">Bill To:</span>{' '}
-                                                            {order.bill_to ?? '—'}
+                                                        <p className="text-xs text-vw-grey">
+                                                            {acc.account}
                                                         </p>
                                                     </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                        <div className="space-y-1.5">
+                                            <p className="text-xs text-vw-grey">Customer Receipt</p>
+                                            {order.customer_payment_receipt ? (
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <FileText className="h-4 w-4 shrink-0 text-vw-grey" />
+                                                        <span className="text-sm text-gray-900">Receipt</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <IconActionButton
+    icon={Eye}
+    label="View customer receipt"
+    onClick={() =>
+        setPreviewFile({
+            title: 'Customer Receipt',
+            url: `/storage/${order.customer_payment_receipt.file_path}`,
+        })
+    }
+/>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-vw-grey">
+                                                    Not uploaded by customer yet.
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <Separator />
+
+                                        <div className="space-y-1.5">
+                                            <p className="text-xs text-vw-grey">Staff Receipt</p>
+                                            {order.staff_payment_receipt ? (
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <FileText className="h-4 w-4 shrink-0 text-vw-grey" />
+                                                        <span className="text-sm text-gray-900">Receipt</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <IconActionButton
+    icon={Eye}
+    label="View staff receipt"
+    onClick={() =>
+        setPreviewFile({
+            title: 'Staff Receipt',
+            url: `/storage/${order.staff_payment_receipt.file_path}`,
+        })
+    }
+/>
+                                                        <IconActionButton
+                                                            icon={Trash2}
+                                                            label="Delete staff receipt"
+                                                            tone="danger"
+                                                            onClick={handleDeleteStaffReceipt}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-vw-grey">
+                                                    No receipt uploaded yet.
+                                                </p>
+                                            )}
+                                            <form
+                                                onSubmit={handleStaffReceiptUpload}
+                                                className="space-y-1.5 pt-0.5"
+                                            >
+                                                <Input
+                                                    type="file"
+                                                    accept=".pdf,.jpg,.jpeg,.png"
+                                                    aria-label="Upload staff receipt"
+                                                    className="h-9 text-xs"
+                                                    onChange={handleStaffReceiptChange}
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    className="w-full"
+                                                    disabled={
+                                                        staffReceiptForm.processing ||
+                                                        !staffReceiptForm.data.receipt
+                                                    }
+                                                >
+                                                    {staffReceiptForm.processing
+                                                        ? 'Uploading...'
+                                                        : 'Upload'}
+                                                </Button>
+                                            </form>
+                                        </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Invoice Number + Bill To + Save. Kalau sudah tersimpan,
+                                        tampil read-only dengan ikon pensil untuk edit. */}
+                                    {showPaymentDetailsForm ? (
+                                        <form
+                                            onSubmit={handlePaymentDetailsSubmit}
+                                            className="flex flex-wrap items-end gap-3"
+                                        >
+                                            <div className="min-w-[10rem] flex-1 space-y-1.5">
+                                                <Label>Invoice Number</Label>
+                                                <Input
+                                                    value={paymentDetailsForm.data.invoice_number}
+                                                    onChange={(e) =>
+                                                        paymentDetailsForm.setData(
+                                                            'invoice_number',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                />
+                                                {paymentDetailsForm.errors.invoice_number && (
+                                                    <p className="text-xs text-urgent">
+                                                        {paymentDetailsForm.errors.invoice_number}
+                                                    </p>
                                                 )}
-                                            </AccordionContent>
-                                        </AccordionItem>
-
-                                        <AccordionItem value="receipts">
-                                            <AccordionTrigger>Receipts</AccordionTrigger>
-                                            <AccordionContent className="space-y-4">
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">
-                                                        Customer Receipt
+                                            </div>
+                                            <div className="min-w-[10rem] flex-1 space-y-1.5">
+                                                <Label>Bill To</Label>
+                                                <Input
+                                                    value={paymentDetailsForm.data.bill_to}
+                                                    onChange={(e) =>
+                                                        paymentDetailsForm.setData(
+                                                            'bill_to',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                />
+                                                {paymentDetailsForm.errors.bill_to && (
+                                                    <p className="text-xs text-urgent">
+                                                        {paymentDetailsForm.errors.bill_to}
                                                     </p>
-                                                    {order.customer_payment_receipt ? (
-                                                        <a
-                                                            href={`/storage/${order.customer_payment_receipt.file_path}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-sm text-blue-600 underline"
-                                                        >
-                                                            View receipt
-                                                        </a>
-                                                    ) : (
-                                                        <p className="text-sm text-vw-grey">
-                                                            Not uploaded by customer yet.
-                                                        </p>
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">
-                                                        Staff Receipt
-                                                    </p>
-                                                    {order.staff_payment_receipt ? (
-                                                        <div className="flex items-center justify-between">
-                                                            <a
-                                                                href={`/storage/${order.staff_payment_receipt.file_path}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-sm text-blue-600 underline"
-                                                            >
-                                                                View receipt
-                                                            </a>
-                                                            {canEditPayment && (
-                                                                <Button
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="text-urgent hover:text-urgent/80"
-                                                                    onClick={handleDeleteStaffReceipt}
-                                                                >
-                                                                    Delete
-                                                                </Button>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <p className="text-sm text-vw-grey">
-                                                            No receipt uploaded yet.
-                                                        </p>
-                                                    )}
-                                                    {canEditPayment && (
-                                                        <form
-                                                            onSubmit={handleStaffReceiptUpload}
-                                                            className="mt-2 flex items-center gap-2"
-                                                        >
-                                                            <Input
-                                                                type="file"
-                                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                                className="text-xs"
-                                                                onChange={handleStaffReceiptChange}
-                                                            />
-                                                            <Button
-                                                                type="submit"
-                                                                size="sm"
-                                                                disabled={
-                                                                    staffReceiptForm.processing ||
-                                                                    !staffReceiptForm.data.receipt
-                                                                }
-                                                            >
-                                                                {staffReceiptForm.processing
-                                                                    ? 'Uploading...'
-                                                                    : 'Upload'}
-                                                            </Button>
-                                                        </form>
-                                                    )}
-                                                </div>
-                                            </AccordionContent>
-                                        </AccordionItem>
-
-                                        {canEditPayment && (
-                                            <AccordionItem value="report-to-cashier">
-                                                <AccordionTrigger>Report to Cashier</AccordionTrigger>
-                                                <AccordionContent className="space-y-2">
-                                                    {!canReportToCashier && (
-                                                        <p className="text-xs text-amber-600">
-                                                            Fill in Invoice Number, Bill To, and upload
-                                                            at least one receipt before reporting to
-                                                            cashier.
-                                                        </p>
-                                                    )}
-
-                                                    {(order.customer_payment_receipt ||
-                                                        order.staff_payment_receipt) && (
-                                                        <a
-                                                            href={`/storage/${
-                                                                (
-                                                                    order.staff_payment_receipt ??
-                                                                    order.customer_payment_receipt
-                                                                ).file_path
-                                                            }`}
-                                                            download
-                                                            className="block w-full rounded-md border border-vw-grey px-4 py-2 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
-                                                        >
-                                                            Download Receipt
-                                                        </a>
-                                                    )}
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {hasPaymentDetails && (
                                                     <Button
                                                         type="button"
-                                                        variant="outline"
+                                                        variant="ghost"
                                                         size="sm"
-                                                        className="w-full"
-                                                        onClick={handleCopyMessage}
-                                                        disabled={!canReportToCashier}
+                                                        onClick={handlePaymentDetailsCancel}
+                                                        disabled={paymentDetailsForm.processing}
                                                     >
-                                                        {copied ? (
-                                                            <>
-                                                                <Check className="mr-1 h-4 w-4" /> Copied!
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Copy className="mr-1 h-4 w-4" /> Copy
-                                                                Message
-                                                            </>
-                                                        )}
+                                                        Cancel
                                                     </Button>
-                                                    {canReportToCashier ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                window.open(
-                                                                    CASHIER_WA_GROUP_URL,
-                                                                    'wa_cashier_tab'
-                                                                )
-                                                            }
-                                                            className="block w-full rounded-md bg-vw-blue px-4 py-2 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
-                                                        >
-                                                            Open Cashier WA Group
-                                                        </button>
-                                                    ) : (
-                                                        <button
-                                                            type="button"
-                                                            disabled
-                                                            className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-4 py-2 text-center text-xs font-semibold text-white"
-                                                        >
-                                                            Open Cashier WA Group
-                                                        </button>
-                                                    )}
-                                                    <p className="text-xs text-vw-grey">
-                                                        1) Download the receipt · 2) Copy the message ·
-                                                        3) Open the group and paste the message + attach
-                                                        the receipt manually.
+                                                )}
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    disabled={paymentDetailsForm.processing}
+                                                >
+                                                    {paymentDetailsForm.processing ? 'Saving...' : 'Save'}
+                                                </Button>
+                                            </div>
+                                        </form>
+                                    ) : (
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="grid flex-1 gap-3 text-sm sm:grid-cols-2">
+                                                <div>
+                                                    <p className="text-xs text-vw-grey">Invoice Number</p>
+                                                    <p className="font-medium text-gray-900">
+                                                        {order.invoice_number ?? '—'}
                                                     </p>
-                                                </AccordionContent>
-                                            </AccordionItem>
-                                        )}
-                                    </Accordion>
-                                </CardContent>
-                            </Card>
-                        )}
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-vw-grey">Bill To</p>
+                                                    <p className="font-medium text-gray-900">
+                                                        {order.bill_to ?? '—'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {canEditPayment && (
+                                                <IconActionButton
+                                                    icon={Pencil}
+                                                    label="Edit invoice details"
+                                                    onClick={() => setIsEditingPaymentDetails(true)}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
 
-                    </div>
+                                {/* --- Report to Cashier --- */}
+                                {canEditPayment && (
+                                    <>
+                                        <Separator />
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                                                3 · Report to Cashier
+                                            </p>
+
+                                            {!canReportToCashier && (
+                                                <p className="text-xs text-amber-700">
+                                                    Fill in Invoice Number, Bill To, and upload at
+                                                    least one receipt before reporting to cashier.
+                                                </p>
+                                            )}
+
+                                            {/* Step by step: tiap langkah punya tombolnya sendiri. */}
+                                            <ol className="space-y-2.5">
+                                                <li className="flex items-center justify-between gap-3">
+                                                    <div className="flex min-w-0 items-center gap-2">
+                                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-vw-grey-light text-[11px] font-semibold text-vw-grey">
+                                                            1
+                                                        </span>
+                                                        <span className="text-sm text-gray-900">
+                                                            Download the receipt
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-44 shrink-0">
+                                                        {order.customer_payment_receipt ||
+                                                        order.staff_payment_receipt ? (
+                                                            <a
+                                                                href={`/storage/${
+                                                                    (
+                                                                        order.staff_payment_receipt ??
+                                                                        order.customer_payment_receipt
+                                                                    ).file_path
+                                                                }`}
+                                                                download
+                                                                className="block w-full rounded-md border border-vw-grey px-3 py-1.5 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                                            >
+                                                                Download Receipt
+                                                            </a>
+                                                        ) : (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="w-full"
+                                                                disabled
+                                                            >
+                                                                Download Receipt
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </li>
+                                                <li className="flex items-center justify-between gap-3">
+                                                    <div className="flex min-w-0 items-center gap-2">
+                                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-vw-grey-light text-[11px] font-semibold text-vw-grey">
+                                                            2
+                                                        </span>
+                                                        <span className="text-sm text-gray-900">
+                                                            Copy the message
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-44 shrink-0">
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="w-full"
+                                                            onClick={handleCopyMessage}
+                                                            disabled={!canReportToCashier}
+                                                        >
+                                                            {copied ? (
+                                                                <>
+                                                                    <Check className="mr-1 h-4 w-4" /> Copied!
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Copy className="mr-1 h-4 w-4" /> Copy Message
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                </li>
+                                                <li className="flex items-center justify-between gap-3">
+                                                    <div className="flex min-w-0 items-center gap-2">
+                                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-vw-grey-light text-[11px] font-semibold text-vw-grey">
+                                                            3
+                                                        </span>
+                                                        <span className="text-sm text-gray-900">
+                                                            Open the group, paste the message, and attach the receipt manually
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-44 shrink-0">
+                                                        {canReportToCashier ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    window.open(
+                                                                        CASHIER_WA_GROUP_URL,
+                                                                        'wa_cashier_tab'
+                                                                    )
+                                                                }
+                                                                className="block w-full rounded-md bg-vw-blue px-3 py-1.5 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
+                                                            >
+                                                                Open Cashier WA Group
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                disabled
+                                                                className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-3 py-1.5 text-center text-xs font-semibold text-white"
+                                                            >
+                                                                Open Cashier WA Group
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </li>
+                                            </ol>
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </Panel>
+                )}
                 </div>
             </div>
 
+            {/* Inspection Video Dialog — video hanya di-mount saat dialog
+                terbuka, jadi otomatis berhenti diputar begitu ditutup. */}
+            <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
+                <DialogContent className="sm:max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>Inspection Video</DialogTitle>
+                    </DialogHeader>
+                    {video &&
+                        (videoEmbedUrl ? (
+                            <div className="aspect-video overflow-hidden rounded-md">
+                                <iframe
+                                    src={videoEmbedUrl}
+                                    title="Inspection video"
+                                    className="h-full w-full"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                />
+                            </div>
+                        ) : (
+                            <video
+                                src={video.video_url}
+                                controls
+                                autoPlay
+                                className="aspect-video w-full rounded-md bg-black"
+                            />
+                        ))}
+                </DialogContent>
+            </Dialog>
+
+            {/* Upload/Replace Video Dialog — dipakai baik untuk mengisi video
+                pertama kali (order belum punya video) maupun mengganti video
+                yang rusak/hilang secara fisik (kasus migrasi http->https,
+                lihat PROJECT-RULES.md). Tidak digate status order. */}
+            <Dialog
+                open={videoUploadOpen}
+                onOpenChange={(open) => !open && closeVideoUploadDialog()}
+            >
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>{video ? 'Replace Video' : 'Upload Video'}</DialogTitle>
+                    </DialogHeader>
+
+                    {video && (
+                        <Alert>
+                            <Info className="h-4 w-4" />
+                            <AlertTitle className="text-sm">This order already has a video</AlertTitle>
+                            <AlertDescription className="text-xs">
+                                Uploading a new file/link here will replace the existing video.
+                                The old file (if any) will be removed after the new one is saved
+                                successfully.
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Video File</Label>
+                            <Input
+                                type="file"
+                                accept="video/mp4,video/quicktime,video/webm"
+                                onChange={(e) =>
+                                    videoUploadForm.setData('file', e.target.files?.[0] ?? null)
+                                }
+                            />
+                            <p className="text-xs text-vw-grey">Max 100MB, max 2 minutes duration.</p>
+                            {videoUploadForm.errors.file && (
+                                <p className="text-xs text-destructive">{videoUploadForm.errors.file}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={closeVideoUploadDialog}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleVideoUploadSubmit}
+                            disabled={videoUploadForm.processing || !videoUploadForm.data.file}
+                        >
+                            {videoUploadForm.processing ? 'Uploading...' : 'Save Video'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Preview File Dialog — receipt, invoice & estimation form dibuka di sini (bukan tab baru).
+                PDF lewat viewer bawaan browser, gambar lewat <img>. Link "Open
+                in new tab" jadi cadangan (mis. browser mobile yang hanya
+                menampilkan halaman pertama PDF di dalam iframe). */}
+            <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+                <DialogContent className="sm:max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>{previewFile?.title}</DialogTitle>
+                    </DialogHeader>
+                    {previewFile &&
+                        (isImageFile(previewFile.url) ? (
+                            <img
+                                src={previewFile.url}
+                                alt={previewFile.title}
+                                className="max-h-[75vh] w-full rounded-md object-contain"
+                            />
+                        ) : (
+                            <iframe
+                                src={previewFile.url}
+                                title={previewFile.title}
+                                className="h-[75vh] w-full rounded-md border border-vw-grey/15"
+                            />
+                        ))}
+                    <DialogFooter>
+                        {previewFile && (
+                            <a
+                                href={previewFile.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-sm text-blue-600 underline"
+                            >
+                                Open in new tab
+                            </a>
+                        )}
+                        <Button type="button" variant="outline" onClick={() => setPreviewFile(null)}>
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* View Item Dialog — read-only, tersedia untuk semua item apapun
-                statusnya (termasuk approved, yang tidak lagi bisa dibuka lewat
-                Edit). Menampilkan semua detail sekunder yang di-drop dari
-                tabel: description, harga+discount, final price, decided_at. */}
+                statusnya (termasuk approved). */}
             <Dialog open={!!viewingItem} onOpenChange={(open) => !open && setViewingItem(null)}>
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
@@ -2281,24 +2671,27 @@ export default function Show({
                 </DialogContent>
             </Dialog>
 
-            {/* Add Item Dialog — dipicu dari tombol "Add Item" tiap tab group,
-                atau dari selector "Add Item to a New Group" untuk group yang
-                belum punya tab sama sekali. */}
+            {/* Add Item Dialog — dipicu dari tombol "Add Item" di header
+                container Inspection Items. Group dipilih di dalam dialog
+                (default: tab yang sedang aktif). */}
             <Dialog
                 open={!!addDialogGroup}
                 onOpenChange={(open) => !open && closeAddItemDialog()}
             >
                 <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
                     <DialogHeader>
-                        <DialogTitle>
-                            Add Item {addDialogGroup && `— ${GROUP_LABEL[addDialogGroup]}`}
-                        </DialogTitle>
+                        <DialogTitle>Add Item</DialogTitle>
                     </DialogHeader>
                     <ItemFormFields
                         data={addItemForm.data}
                         errors={addItemForm.errors}
+                        groups={GROUPS}
                         onChange={(field, value) => addItemForm.setData(field, value)}
                     />
+                    <p className="text-xs text-vw-grey">
+                        Item Name, Labour Price, Part Price, and Group are required. Description is
+                        optional.
+                    </p>
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={closeAddItemDialog}>
                             Cancel
@@ -2306,7 +2699,7 @@ export default function Show({
                         <Button
                             type="button"
                             onClick={handleAddItemSubmit}
-                            disabled={addItemForm.processing || !addItemForm.data.name.trim()}
+                            disabled={addItemForm.processing || !isItemComplete(addItemForm.data)}
                         >
                             {addItemForm.processing ? 'Saving...' : 'Add Item'}
                         </Button>
@@ -2314,8 +2707,8 @@ export default function Show({
                 </DialogContent>
             </Dialog>
 
-            {/* Edit Item Dialog — cuma dipicu untuk item yang belum approved
-                (lihat guard di ItemTableRow). */}
+            {/* Edit Item Dialog — cuma dipicu untuk item yang belum rejected
+                (lihat guard di ItemReceiptRow). */}
             <Dialog
                 open={!!editingItem}
                 onOpenChange={(open) => !open && closeEditItemDialog()}
@@ -2339,8 +2732,13 @@ export default function Show({
                     <ItemFormFields
                         data={editItemForm.data}
                         errors={editItemForm.errors}
+                        groups={GROUPS}
                         onChange={(field, value) => editItemForm.setData(field, value)}
                     />
+                    <p className="text-xs text-vw-grey">
+                        Item Name, Labour Price, Part Price, and Group are required. Description is
+                        optional.
+                    </p>
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={closeEditItemDialog}>
                             Cancel
@@ -2348,7 +2746,7 @@ export default function Show({
                         <Button
                             type="button"
                             onClick={handleEditItemSubmit}
-                            disabled={editItemForm.processing || !editItemForm.data.name.trim()}
+                            disabled={editItemForm.processing || !isItemComplete(editItemForm.data)}
                         >
                             {editItemForm.processing ? 'Saving...' : 'Save Changes'}
                         </Button>
@@ -2358,8 +2756,7 @@ export default function Show({
 
             {/* Satu AlertDialog generik untuk semua aksi destruktif/berisiko di
                 halaman ini (delete item/invoice/estimation doc/receipt/order,
-                reopen item, ubah status, revert status) — menggantikan
-                window.confirm(). */}
+                reopen item, ubah status, revert status). */}
             <AlertDialog open={!!confirmDialog} onOpenChange={(open) => !open && closeConfirmDialog()}>
                 <AlertDialogContent>
                     <AlertDialogHeader>

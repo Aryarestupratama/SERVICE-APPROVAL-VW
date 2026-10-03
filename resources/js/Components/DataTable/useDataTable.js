@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     getCoreRowModel,
     getSortedRowModel,
@@ -11,11 +11,27 @@ export function useDataTable({
     columns,
     manualSorting = false,
     sorting: controlledSorting,
+    storageKey, // opsional; default: per path halaman
     onSortingChange: controlledOnSortingChange,
 }) {
     const [internalSorting, setInternalSorting] = useState([]);
     const [globalFilter, setGlobalFilter] = useState('');
-    const [columnVisibility, setColumnVisibility] = useState({});
+    const visibilityKey =
+        storageKey ?? (typeof window !== 'undefined' ? `datatable:${window.location.pathname}:columns` : null);
+    const [columnVisibility, setColumnVisibility] = useState(() => {
+        try {
+            const raw = visibilityKey && window.localStorage.getItem(visibilityKey);
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
+    });
+    useEffect(() => {
+        if (!visibilityKey) return;
+        try {
+            window.localStorage.setItem(visibilityKey, JSON.stringify(columnVisibility));
+        } catch { /* abaikan */ }
+    }, [visibilityKey, columnVisibility]);
     const [columnFilters, setColumnFilters] = useState([]);
 
     // manualSorting: true dipakai halaman yang kolomnya dihitung via subquery

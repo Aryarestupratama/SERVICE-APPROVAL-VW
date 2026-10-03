@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, useForm, Head } from '@inertiajs/react';
+import { router, useForm, Head, Link } from '@inertiajs/react';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/Components/ui/sheet';
 import { Button } from '@/Components/ui/button';
@@ -48,6 +48,13 @@ function toLocalDigits(raw) {
         digits = digits.slice(1);
     }
     return digits;
+}
+
+// DB menyimpan 62xxx (lihat Customer::phone()). Tampilkan sebagai "+62 812-3456-7890".
+function formatPhone(raw) {
+    const local = toLocalDigits(String(raw ?? ''));
+    if (!local) return '—';
+    return '+62 ' + local.replace(/^(\d{3})(\d{3,4})(\d*)$/, (_, a, b, c) => [a, b, c].filter(Boolean).join('-'));
 }
 
 function PhoneInput({ id, value, onChange, error }) {
@@ -260,7 +267,12 @@ function DeleteConfirmDialog({ open, onOpenChange, customer }) {
     const handleDelete = () => {
         destroy(route('admin.customers.destroy', customer.id), {
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error('Failed to delete customer', { description: page.props.flash.error });
+                    onOpenChange(false);
+                    return;
+                }
                 onOpenChange(false);
                 toast.success('Customer deleted', {
                     description: `${customer?.name} has been removed.`,
@@ -277,8 +289,7 @@ function DeleteConfirmDialog({ open, onOpenChange, customer }) {
     const title = 'Delete Customer';
     const description = (
         <>
-            Are you sure you want to delete <strong>{customer?.name}</strong>? This will also affect related
-            vehicles and service orders. This action cannot be undone.
+            Are you sure you want to delete <strong>{customer?.name}</strong>? Customers that are still linked to vehicles or service orders cannot be deleted. This action cannot be undone.
         </>
     );
 
@@ -360,6 +371,9 @@ export default function Index({ customers, search, filters, titles }) {
     const [activeFilters, setActiveFilters] = useState(() => ({
         title: filters?.title ?? '',
     }));
+    const [sorting, setSorting] = useState(() =>
+        filters?.sort_by ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }] : []
+    );
     const [formOpen, setFormOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deletingCustomer, setDeletingCustomer] = useState(null);
@@ -397,9 +411,12 @@ export default function Index({ customers, search, filters, titles }) {
         }
 
         const timeout = setTimeout(() => {
+            const activeSort = sorting[0];
             const nextParams = {
                 search: searchTerm || undefined,
                 title: activeFilters.title || undefined,
+            sort_by: activeSort?.id || undefined,
+                sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
             };
 
             router.get(route('admin.customers.index'), nextParams, {
@@ -408,7 +425,7 @@ export default function Index({ customers, search, filters, titles }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters]);
+    }, [searchTerm, activeFilters, sorting]);
 
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
@@ -446,6 +463,7 @@ export default function Index({ customers, search, filters, titles }) {
                 accessorKey: 'phone',
                 header: 'Phone',
                 meta: { label: 'Phone' },
+                cell: ({ row }) => <span className="tabular-nums">{formatPhone(row.original.phone)}</span>,
             },
             {
                 accessorKey: 'email',
@@ -457,7 +475,20 @@ export default function Index({ customers, search, filters, titles }) {
                 id: 'vehicles',
                 header: 'Vehicles',
                 meta: { label: 'Vehicles' },
-                accessorFn: (row) => row.vehicles?.length ?? 0,
+                accessorFn: (row) => row.vehicles_count ?? row.vehicles?.length ?? 0,
+                cell: ({ row }) => {
+                    const count = row.original.vehicles_count ?? row.original.vehicles?.length ?? 0;
+                    return count > 0 ? (
+                        <Link
+                            href={route('admin.vehicles.index', { search: row.original.name })}
+                            className="inline-flex min-h-[36px] items-center text-vw-light-blue hover:underline"
+                        >
+                            {count}
+                        </Link>
+                    ) : (
+                        0
+                    );
+                },
             },
             {
                 id: 'actions',
@@ -465,18 +496,18 @@ export default function Index({ customers, search, filters, titles }) {
                 enableSorting: false,
                 enableHiding: false,
                 cell: ({ row }) => (
-                    <div className="space-x-3 whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         <button
                             type="button"
                             onClick={() => openEditForm(row.original)}
-                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-vw-light-blue hover:underline"
                         >
                             Edit
                         </button>
                         <button
                             type="button"
                             onClick={() => setDeletingCustomer(row.original)}
-                            className="text-sm font-medium text-urgent hover:underline"
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-urgent hover:underline"
                         >
                             Delete
                         </button>
@@ -487,19 +518,25 @@ export default function Index({ customers, search, filters, titles }) {
         []
     );
 
-    const table = useDataTable({ data: customers.data, columns });
+    const table = useDataTable({
+        data: customers.data,
+        columns,
+        manualSorting: true,
+        sorting,
+        onSortingChange: setSorting,
+    });
 
     return (
-        <AdminLayout
-            title="Customers"
-            headerActions={<Button onClick={openAddForm}>Add Customer</Button>}
-        >
+        <AdminLayout title="Customers">
             <Head title="Customers" />
             <DataTable
                 table={table}
                 links={customers.links}
                 emptyMessage="No customers found."
                 isLoading={isLoading}
+                isFiltered={Boolean(searchTerm || activeFilters.title)}
+                paginationMeta={{ from: customers.from, to: customers.to, total: customers.total }}
+                onRowClick={openEditForm}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
@@ -514,8 +551,10 @@ export default function Index({ customers, search, filters, titles }) {
                         values={activeFilters}
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
+                        table={table}
                     />
                 }
+                primaryAction={<Button onClick={openAddForm}>Add Customer</Button>}
             />
 
             <CustomerFormDialog

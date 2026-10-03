@@ -164,6 +164,13 @@ class ServiceOrderController extends Controller
 
     public function store(Request $request)
     {
+        // Plat disimpan seragam (huruf besar, tanpa spasi) seperti data impor.
+        if ($request->filled('new_vehicle.plate_number')) {
+            $request->merge(['new_vehicle' => array_merge($request->input('new_vehicle'), [
+                'plate_number' => strtoupper(preg_replace('/\s+/', '', (string) $request->input('new_vehicle.plate_number'))),
+            ])]);
+        }
+
         $validated = $request->validate([
             'work_order_number' => ['required', 'string', 'max:255', 'unique:service_orders,work_order_number'],
 
@@ -180,8 +187,8 @@ class ServiceOrderController extends Controller
             'new_vehicle.vin' => ['required_with:new_vehicle', 'string', 'size:17', 'unique:vehicles,vin'],
             'new_vehicle.model' => ['required_with:new_vehicle', 'string', 'max:100'],
 
-            'technician_id' => ['nullable', 'exists:users,id'],
-            'personal_message' => ['nullable', 'string'],
+            'technician_id' => ['required', Rule::exists('users', 'id')->where('role', 'chief_technician')],
+            'personal_message' => ['required', 'string'],
             'inspection_fee' => ['required', 'numeric', 'min:0'],
             'inspection_fee_note' => ['nullable', 'string'],
 
@@ -189,7 +196,7 @@ class ServiceOrderController extends Controller
             // still editable during work_in_progress via updateCustomerComplaint(),
             // and locked once it enters quality_control (see
             // ServiceOrder::CUSTOMER_COMPLAINT_EDITABLE_STATUSES).
-            'customer_complaint' => ['nullable', 'string'],
+            'customer_complaint' => ['required', 'string'],
 
             'inspection_items' => ['required', 'array', 'min:1'],
             'inspection_items.*.name' => ['required', 'string', 'max:255'],
@@ -200,7 +207,7 @@ class ServiceOrderController extends Controller
             'inspection_items.*.discount_labour_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'inspection_items.*.group' => ['required', Rule::in(InspectionItem::GROUPS)],
 
-            'videos' => ['nullable', 'array', 'max:1'],
+            'videos' => ['required', 'array', 'min:1', 'max:1'],
             'videos.*.video_source' => ['required_with:videos', Rule::in(['upload', 'external_link'])],
             'videos.*.video_url' => ['required_if:videos.*.video_source,external_link', 'nullable', 'url'],
             'videos.*.file' => [
@@ -223,7 +230,7 @@ class ServiceOrderController extends Controller
 
         $serviceOrder = DB::transaction(function () use ($validated, $request) {
             $customerId = $validated['customer_id']
-                ?? Customer::create($validated['new_customer'])->id;
+                ?? $this->findOrCreateCustomer($validated['new_customer'])->id;
 
             if ($validated['vehicle_id']) {
                 $vehicleId = $validated['vehicle_id'];
@@ -299,6 +306,78 @@ class ServiceOrderController extends Controller
         return redirect()
             ->route('admin.service-orders.show', $serviceOrder->id)
             ->with('success', 'Service order created successfully.');
+    }
+
+    /**
+     * Upload/replace the single video for an EXISTING service order.
+     *
+     * Sengaja dibuat TIDAK digate oleh order.status — beda dari
+     * uploadEstimationDocument()/uploadInvoice() yang dikunci ke status
+     * tertentu. Alasan: fitur ini dibuat khusus untuk memungkinkan SA/admin
+     * memperbaiki/mengisi ulang video yang datanya rusak/hilang (kasus
+     * migrasi http->https, lihat PROJECT-RULES.md), termasuk untuk WO lama
+     * yang sudah 'completed' — jadi tidak masuk akal kalau dibatasi status.
+     *
+     * Mengikuti pola store-new-lalu-delete-old yang sama dengan
+     * uploadEstimationDocument() (PROJECT-RULES.md bagian 1, bug fix urutan
+     * upload) — file baru & row DB harus sukses dulu sebelum file lama
+     * (kalau ada & video_source='upload') dihapus.
+     */
+    public function uploadVideo(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        $validated = $request->validate([
+            'file' => [
+                'required',
+                'file',
+                'mimes:mp4,mov,webm',
+                'max:102400',
+                new MaxVideoDuration(120),
+            ],
+        ]);
+
+        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+            $existing = $serviceOrder->videos()->first();
+            $oldPath = null;
+            if ($existing && $existing->video_source === 'upload' && $existing->video_url) {
+                $oldPath = str_replace(Storage::disk('public')->url(''), '', $existing->video_url);
+            }
+
+            $file = $request->file('file');
+
+            $getID3 = new \getID3();
+            $info = $getID3->analyze($file->getRealPath());
+            $durationSeconds = isset($info['playtime_seconds'])
+                ? (int) round($info['playtime_seconds'])
+                : null;
+
+            // Store the new file FIRST — if this fails, the old file remains intact.
+            $path = $file->store('service-order-videos', 'public');
+
+            $newAttributes = [
+                'video_url' => Storage::disk('public')->url($path),
+                'video_source' => 'upload',
+                'sort_order' => 0,
+                'duration_seconds' => $durationSeconds,
+            ];
+
+            if ($existing) {
+                $existing->update($newAttributes);
+            } else {
+                $serviceOrder->videos()->create($newAttributes);
+            }
+
+            // Only delete the old physical file AFTER the new file + DB row
+            // are confirmed successful.
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
+
+            $serviceOrder->touchActivity();
+        });
+
+        return back()->with('success', 'Video uploaded successfully.');
     }
 
     public function show(Request $request, ServiceOrder $serviceOrder, InspectionItemPricingService $pricingService)
@@ -403,7 +482,7 @@ class ServiceOrderController extends Controller
         }
 
         $validated = $request->validate([
-            'customer_complaint' => ['nullable', 'string'],
+            'customer_complaint' => ['required', 'string'],
         ]);
 
         $serviceOrder->update($validated + ['last_activity_at' => now()]);
@@ -730,10 +809,6 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
-            return back()->with('error', 'The order is already completed, the invoice can no longer be changed.');
-        }
-
         $validated = $request->validate([
             'invoice_pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
         ]);
@@ -766,10 +841,6 @@ class ServiceOrderController extends Controller
     public function deleteInvoice(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
-
-        if ($serviceOrder->status === ServiceOrder::STATUS_COMPLETED) {
-            return back()->with('error', 'The order is already completed, the invoice can no longer be deleted.');
-        }
 
         $invoice = $serviceOrder->invoice;
 
@@ -805,10 +876,6 @@ class ServiceOrderController extends Controller
     public function uploadStaffPaymentReceipt(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
-
-        if ($serviceOrder->status !== ServiceOrder::STATUS_INVOICE_PREPARATION) {
-            return back()->with('error', 'Receipt can only be uploaded while status is Invoice Preparation.');
-        }
 
         $validated = $request->validate([
             'receipt' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
@@ -981,5 +1048,38 @@ class ServiceOrderController extends Controller
             'finalized_at' => ServiceOrder::hasPendingItems($freshItems) ? null : now(),
             'last_activity_at' => now(),
         ]);
+    }
+
+    /**
+     * Pakai customer yang sudah ada kalau nama (abaikan huruf besar/kecil dan
+     * spasi tepi) DAN nomor telepon (hanya digit) sama — mencegah duplikat
+     * dari form "New Customer" di Create.
+     */
+    private function findOrCreateCustomer(array $data): Customer
+    {
+        $digits = self::canonicalPhone($data['phone']);
+
+        $existing = Customer::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($data['name']))])
+            ->get()
+            ->first(fn ($c) => self::canonicalPhone($c->phone) === $digits);
+
+        return $existing ?? Customer::create($data);
+    }
+
+    /**
+     * Bentuk kanonik nomor telepon (sama dengan toLocalDigits di Customers/Index.jsx):
+     * hanya digit, tanpa awalan 62 atau 0 — supaya "0812…", "+62 812…", dan "812…" dianggap sama.
+     */
+    private static function canonicalPhone(?string $raw): string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $raw);
+        if (str_starts_with($digits, '62')) {
+            return substr($digits, 2);
+        }
+        if (str_starts_with($digits, '0')) {
+            return substr($digits, 1);
+        }
+
+        return $digits;
     }
 }

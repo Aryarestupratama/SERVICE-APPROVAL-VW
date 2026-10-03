@@ -14,9 +14,10 @@ import { DataTableToolbar } from './DataTableToolbar';
 
 const SKELETON_ROWS = 5;
 
-// Layout final (2026-08-03): toolbar (search, filter, columns, primary
-// action) selalu di atas tabel, tabel di tengah, pagination di bawah.
-// Lihat DataTableToolbar.jsx untuk detail urutan elemen di dalam toolbar.
+// Layout (2026-09-20, revisi dari 2026-08-03): toolbar (search, filter +
+// columns di tengah, primary action di kanan) selalu di atas tabel, tabel di
+// tengah, pagination di bawah. Lihat DataTableToolbar.jsx untuk detail urutan
+// elemen di dalam toolbar.
 export function DataTable({
     table,
     links,
@@ -27,6 +28,13 @@ export function DataTable({
     showToolbar = true,
     showColumnsToggle = true,
     isLoading = false,
+    primaryAction,
+    // isFiltered: true kalau search/filter sedang aktif — pesan kosongnya jadi "tidak ada hasil",
+    // bukan "belum ada data". paginationMeta: { from, to, total } dari paginator Laravel (opsional).
+    isFiltered = false,
+    onRowClick, // opsional: klik area kosong baris = buka detail (klik link/tombol di dalam baris tidak ikut terpicu)
+    filteredEmptyMessage = 'No results match your search or filters.',
+    paginationMeta,
 }) {
     const columnCount = table.getAllColumns().length;
 
@@ -38,10 +46,10 @@ export function DataTable({
                     searchPlaceholder={searchPlaceholder}
                     searchSlot={searchSlot}
                     filterSlot={filterSlot}
-                    showColumnsToggle={showColumnsToggle}
+                    primaryAction={primaryAction}
                 />
             )}
-            <div className="rounded-lg border border-vw-grey/20 bg-white">
+            <div className="rounded-lg border border-vw-grey/20 bg-white" aria-busy={isLoading}>
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
@@ -69,7 +77,7 @@ export function DataTable({
                                 <TableCell colSpan={columnCount} className="py-10 text-center text-vw-grey">
                                     <div className="flex flex-col items-center gap-2">
                                         <Inbox className="h-6 w-6 text-vw-grey/40" />
-                                        <span>{emptyMessage}</span>
+                                        <span>{isFiltered ? filteredEmptyMessage : emptyMessage}</span>
                                     </div>
                                 </TableCell>
                             </TableRow>
@@ -79,7 +87,15 @@ export function DataTable({
                             table.getRowModel().rows.map((row) => (
                                 <TableRow
                                     key={row.id}
-                                    className="transition-colors hover:bg-vw-grey-light/60"
+                                    className={`transition-colors hover:bg-vw-grey-light/60 ${onRowClick ? 'cursor-pointer' : ''}`}
+                                    onClick={
+                                        onRowClick
+                                            ? (e) => {
+                                                  if (e.target.closest('a,button,input,select,textarea,[role="button"]')) return;
+                                                  onRowClick(row.original);
+                                              }
+                                            : undefined
+                                    }
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <TableCell key={cell.id}>
@@ -91,7 +107,7 @@ export function DataTable({
                     </TableBody>
                 </Table>
             </div>
-            <DataTablePagination links={links} />
+            <DataTablePagination links={links} meta={paginationMeta} />
         </>
     );
 }

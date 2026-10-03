@@ -4,7 +4,7 @@ import { Input } from '@/Components/ui/input';
 import { PasswordInput } from '@/Components/ui/password-input';
 import { Label } from '@/Components/ui/label';
 import GuestLayout from '@/Layouts/GuestLayout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Login({ status }) {
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -32,7 +32,7 @@ export default function Login({ status }) {
             </p>
 
             {status && (
-                <div className="mt-6 rounded-md border-l-4 border-approved bg-approved/5 px-4 py-3 text-sm font-medium text-approved">
+                <div role="status" className="mt-6 rounded-md border-l-4 border-approved bg-approved/5 px-4 py-3 text-sm font-medium text-approved">
                     {status}
                 </div>
             )}
@@ -47,6 +47,9 @@ export default function Login({ status }) {
                         value={data.email}
                         autoComplete="username"
                         autoFocus
+                        inputMode="email"
+                        autoCapitalize="none"
+                        spellCheck={false}
                         onChange={(e) => setData('email', e.target.value)}
                     />
                     <InputError message={errors.email} />
@@ -62,10 +65,19 @@ export default function Login({ status }) {
                         onChange={(e) => setData('password', e.target.value)}
                     />
                     <InputError message={errors.password} />
+                    <p className="text-xs text-muted-foreground">
+                        {route().has('password.request') ? (
+                            <Link href={route('password.request')} className="font-medium text-vw-blue hover:underline">
+                                Forgot your password?
+                            </Link>
+                        ) : (
+                            'Forgot your password? Ask an admin to reset it.'
+                        )}
+                    </p>
                 </div>
 
                 <Button type="submit" className="w-full" disabled={processing}>
-                    Sign in
+                    {processing ? 'Signing in…' : 'Sign in'}
                 </Button>
             </form>
         </GuestLayout>

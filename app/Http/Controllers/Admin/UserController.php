@@ -17,6 +17,10 @@ class UserController extends Controller
     {
         $search = $request->string('search')->toString();
 
+        $sortMap = ['name' => 'name', 'email' => 'email', 'phone' => 'phone', 'role' => 'role'];
+        $sortCol = $sortMap[$request->string('sort_by')->toString()] ?? null;
+        $sortDir = $request->string('sort_dir')->toString() === 'desc' ? 'desc' : 'asc';
+
         $users = User::query()
             ->when($search, function ($query) use ($search) {
                 $query->where(function ($q) use ($search) {
@@ -27,14 +31,18 @@ class UserController extends Controller
             ->when($request->role, fn ($q, $role) =>
                 $q->where('role', $role)
             )
-            ->orderBy('name')
+            ->when(
+                $sortCol,
+                fn ($q) => $q->orderBy($sortCol, $sortDir)->orderBy('id'),
+                fn ($q) => $q->orderBy('name')
+            )
             ->paginate(15)
             ->withQueryString();
 
         return Inertia::render('Admin/Users/Index', [
             'users' => $users,
             'search' => $search,
-            'filters' => $request->only(['role']),
+            'filters' => $request->only(['role', 'sort_by', 'sort_dir']),
         ]);
     }
 
@@ -72,6 +80,16 @@ class UserController extends Controller
             'photo' => ['nullable', 'image', 'max:2048'],
         ]);
 
+        // Cegah admin mengunci dirinya sendiri / sistem tanpa admin.
+        if ($validated['role'] !== $user->role) {
+            if ($user->id === $request->user()->id) {
+                return back()->withErrors(['role' => 'You cannot change your own role.']);
+            }
+            if ($user->role === 'admin' && User::where('role', 'admin')->count() <= 1) {
+                return back()->withErrors(['role' => 'At least one admin account must remain.']);
+            }
+        }
+
         // Password cuma diupdate kalau diisi — kosongin field artinya "tidak diganti"
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
@@ -104,16 +122,21 @@ class UserController extends Controller
             return back()->with('error', 'You cannot delete your own account.');
         }
 
+        $photoPath = $user->photo_path;
+
         try {
-            if ($user->photo_path) {
-                Storage::disk('public')->delete($user->photo_path);
-            }
             $user->delete();
         } catch (QueryException $e) {
             return back()->with(
                 'error',
                 'Cannot delete this staff account — it still has related service orders.'
             );
+        }
+
+        // Foto dihapus SETELAH baris user benar-benar terhapus. Sebelumnya foto dihapus
+        // lebih dulu, sehingga kalau delete ditolak (FK) fotonya hilang tapi akunnya tetap ada.
+        if ($photoPath) {
+            Storage::disk('public')->delete($photoPath);
         }
 
         return back()->with('success', 'Staff account deleted.');

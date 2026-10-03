@@ -25,9 +25,10 @@ class SettingController extends Controller
             'workshop_name' => ['required', 'string', 'max:255'],
             'address' => ['required', 'string'],
             'phone' => ['required', 'string', 'max:30'],
-            'google_maps_url' => ['required', 'url', 'max:500'],
-            'google_maps_embed_url' => ['nullable', 'url', 'max:1000'],
-            'website_url' => ['nullable', 'url', 'max:500'],
+            'google_maps_url' => ['required', 'url', 'starts_with:http://,https://', 'max:500'],
+            // Nilai ini dipakai sebagai src iframe di halaman publik: hanya embed resmi Google Maps.
+            'google_maps_embed_url' => ['nullable', 'url', 'starts_with:https://www.google.com/maps/embed', 'max:1000'],
+            'website_url' => ['nullable', 'url', 'starts_with:http://,https://', 'max:500'],
             'ppn_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'hero_image' => ['nullable', 'image', 'max:4096'],
@@ -35,7 +36,10 @@ class SettingController extends Controller
             // Thank You section (Revisi Besar #2, poin 9)
             'era_phone' => ['nullable', 'string', 'max:30'],
             'booking_whatsapp_phone' => ['nullable', 'string', 'max:30'],
-            'survey_form_url' => ['nullable', 'url', 'max:500'],
+            'survey_form_url' => ['nullable', 'url', 'starts_with:http://,https://', 'max:500'],
+        ], [
+            'google_maps_embed_url.starts_with' => 'Use the embed link from Google Maps (Share → Embed a map). It must start with https://www.google.com/maps/embed',
+            '*.starts_with' => 'The link must start with http:// or https://',
         ]);
 
         $settings = Setting::first() ?? new Setting();
@@ -50,7 +54,7 @@ class SettingController extends Controller
             'ppn_percent' => $validated['ppn_percent'],
 
             'era_phone' => $validated['era_phone'] ?? null,
-            'booking_whatsapp_phone' => $validated['booking_whatsapp_phone'] ?? null,
+            'booking_whatsapp_phone' => $this->normalizeWaPhone($validated['booking_whatsapp_phone'] ?? null),
             'survey_form_url' => $validated['survey_form_url'] ?? null,
         ]);
 
@@ -81,5 +85,21 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'Workshop settings updated.');
+    }
+
+    /**
+     * wa.me butuh format internasional tanpa +, spasi, atau 0 di depan (0812… → 62812…).
+     * Dinormalisasi di server juga, bukan hanya di form, supaya tombol WhatsApp tidak rusak
+     * kalau nilainya diisi dari jalur lain.
+     */
+    private function normalizeWaPhone(?string $raw): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $raw);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        return str_starts_with($digits, '0') ? '62' . substr($digits, 1) : $digits;
     }
 }

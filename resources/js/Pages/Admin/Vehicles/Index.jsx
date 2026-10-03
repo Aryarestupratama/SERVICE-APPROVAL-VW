@@ -286,7 +286,7 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                 <Input
                     id="plate_number"
                     value={data.plate_number}
-                    onChange={(e) => setData('plate_number', e.target.value)}
+                    onChange={(e) => setData('plate_number', e.target.value.toUpperCase().replace(/\s+/g, ''))}
                     placeholder="B1234XYZ"
                 />
                 {errors.plate_number && (
@@ -321,9 +321,11 @@ function VehicleFormDialog({ open, onOpenChange, vehicle, customers, brands, onS
                     value={data.vin}
                     onChange={(e) => setData('vin', e.target.value.toUpperCase())}
                     placeholder="17-character VIN/Chasis Number"
-                    maxLength={17}
                     className="uppercase"
                 />
+                <p className={`text-xs ${!data.vin || data.vin.length === 17 ? 'text-gray-600' : 'text-urgent'}`}>
+                    {data.vin.length}/17 characters
+                </p>
                 {errors.vin && <p className="text-sm text-urgent">{errors.vin}</p>}
             </div>
 
@@ -423,7 +425,12 @@ function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
     const handleDelete = () => {
         destroy(route('admin.vehicles.destroy', vehicle.id), {
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error('Failed to delete vehicle', { description: page.props.flash.error });
+                    onOpenChange(false);
+                    return;
+                }
                 onOpenChange(false);
                 toast.success('Vehicle deleted', {
                     description: `${vehicle?.plate_number} has been removed.`,
@@ -440,8 +447,7 @@ function DeleteConfirmDialog({ open, onOpenChange, vehicle }) {
     const title = 'Delete Vehicle';
     const description = (
         <>
-            Are you sure you want to delete <strong>{vehicle?.plate_number}</strong>? This will
-            also affect related service orders. This action cannot be undone.
+            Are you sure you want to delete <strong>{vehicle?.plate_number}</strong>? Vehicles that still have service orders cannot be deleted. This action cannot be undone.
         </>
     );
 
@@ -522,6 +528,9 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
     const [activeFilters, setActiveFilters] = useState(() => ({
         brand: filters?.brand ?? '',
     }));
+    const [sorting, setSorting] = useState(() =>
+        filters?.sort_by ? [{ id: filters.sort_by, desc: filters.sort_dir === 'desc' }] : []
+    );
     const [formOpen, setFormOpen] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState(null);
     const [deletingVehicle, setDeletingVehicle] = useState(null);
@@ -549,11 +558,14 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
         }
 
         const timeout = setTimeout(() => {
+            const activeSort = sorting[0];
             router.get(
                 route('admin.vehicles.index'),
                 {
                     search: searchTerm || undefined,
                     brand: activeFilters.brand || undefined,
+                    sort_by: activeSort?.id || undefined,
+                    sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
                 },
                 {
                     preserveState: true,
@@ -563,7 +575,7 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
         }, 400);
 
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters]);
+    }, [searchTerm, activeFilters, sorting]);
 
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
@@ -645,18 +657,18 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
                 enableSorting: false,
                 enableHiding: false,
                 cell: ({ row }) => (
-                    <div className="space-x-3 whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         <button
                             type="button"
                             onClick={() => openEditForm(row.original)}
-                            className="text-sm font-medium text-vw-light-blue hover:underline"
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-vw-light-blue hover:underline"
                         >
                             Edit
                         </button>
                         <button
                             type="button"
                             onClick={() => setDeletingVehicle(row.original)}
-                            className="text-sm font-medium text-urgent hover:underline"
+                            className="inline-flex min-h-[36px] items-center px-2 text-sm font-medium text-urgent hover:underline"
                         >
                             Delete
                         </button>
@@ -667,19 +679,25 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
         []
     );
 
-    const table = useDataTable({ data: vehicles.data, columns });
+    const table = useDataTable({
+        data: vehicles.data,
+        columns,
+        manualSorting: true,
+        sorting,
+        onSortingChange: setSorting,
+    });
 
     return (
-        <AdminLayout
-            title="Vehicles"
-            headerActions={<Button onClick={openAddForm}>Add Vehicle</Button>}
-        >
+        <AdminLayout title="Vehicles">
             <Head title="Vehicles" />
             <DataTable
                 table={table}
                 links={vehicles.links}
                 emptyMessage="No vehicles found."
                 isLoading={isLoading}
+                isFiltered={Boolean(searchTerm || activeFilters.brand)}
+                paginationMeta={{ from: vehicles.from, to: vehicles.to, total: vehicles.total }}
+                onRowClick={openEditForm}
                 searchSlot={
                     <DataTableSearchInput
                         value={searchTerm}
@@ -694,6 +712,7 @@ export default function Index({ vehicles, search, filters, customers, brands }) 
                         values={activeFilters}
                         onChange={handleFilterChange}
                         onClear={handleFilterClear}
+                        table={table}
                     />
                 }
                 primaryAction={<Button onClick={openAddForm}>Add Vehicle</Button>}

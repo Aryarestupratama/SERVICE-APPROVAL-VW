@@ -13,26 +13,40 @@ class VehicleCustomerController extends Controller
 {
     public function index(Request $request)
     {
+        $sortBy = $request->string('sort_by')->toString();
+        $sortDir = $request->string('sort_dir')->toString() === 'desc' ? 'desc' : 'asc';
+
         $pivots = CustomerVehicle::query()
             ->with(['customer', 'vehicle'])
             ->when($request->search, fn ($q, $search) =>
-                $q->whereHas('customer', fn ($q2) => $q2->where('name', 'like', "%{$search}%"))
+                // Dibungkus grup supaya filter role tidak ikut ter-OR.
+                $q->where(fn ($w) => $w
+                    ->whereHas('customer', fn ($q2) => $q2->where('name', 'like', "%{$search}%"))
                     ->orWhereHas('vehicle', fn ($q2) =>
                         $q2->where('plate_number', 'like', "%{$search}%")
                             ->orWhere('vin', 'like', "%{$search}%")
-                    )
+                    ))
             )
             ->when($request->role, fn ($q, $role) =>
                 $q->where('is_primary', $role === 'primary')
             )
-            ->latest()
+            ->when(in_array($sortBy, ['vehicle', 'customer', 'role'], true), function ($q) use ($sortBy, $sortDir) {
+                if ($sortBy === 'vehicle') {
+                    $q->orderBy(Vehicle::select('plate_number')->whereColumn('vehicles.id', 'customer_vehicle.vehicle_id'), $sortDir);
+                } elseif ($sortBy === 'customer') {
+                    $q->orderBy(Customer::select('name')->whereColumn('customers.id', 'customer_vehicle.customer_id'), $sortDir);
+                } else {
+                    $q->orderBy('is_primary', $sortDir);
+                }
+                $q->orderBy('id');
+            }, fn ($q) => $q->latest())
             ->paginate(20)
             ->withQueryString();
 
         return Inertia::render('Admin/VehicleCustomers/Index', [
             'pivots' => $pivots,
             'search' => $request->search,
-            'filters' => $request->only(['role']),
+            'filters' => $request->only(['role', 'sort_by', 'sort_dir']),
             'vehicles' => Vehicle::select('id', 'plate_number', 'vin', 'brand', 'model')
                 ->orderBy('plate_number')->get(),
             'customers' => Customer::select('id', 'name')->orderBy('name')->get(),
