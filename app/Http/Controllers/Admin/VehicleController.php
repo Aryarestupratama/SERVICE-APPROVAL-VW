@@ -103,6 +103,15 @@ class VehicleController extends Controller
 
     public function destroy(Vehicle $vehicle)
     {
+        // Guard aplikasi: FK service_orders.vehicle_id adalah cascadeOnDelete, jadi
+        // tanpa cek ini menghapus kendaraan ikut menghapus SEMUA order & itemnya.
+        if ($vehicle->serviceOrders()->exists()) {
+            return back()->with(
+                'error',
+                'Vehicle cannot be deleted because it still has related service orders.'
+            );
+        }
+
         try {
             $vehicle->delete();
         } catch (QueryException $e) {

@@ -90,6 +90,16 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
+        // Guard aplikasi: pivot customer_vehicle.customer_id adalah cascadeOnDelete dan
+        // vehicles.customer_id nullOnDelete, jadi tanpa cek ini kendaraan (dan order-nya)
+        // diam-diam kehilangan customer. Lepas customer dari kendaraan dulu.
+        if ($customer->vehicles()->exists()) {
+            return back()->with(
+                'error',
+                'Customer cannot be deleted because they still have related vehicles or service orders.'
+            );
+        }
+
         try {
             $customer->delete();
         } catch (QueryException $e) {

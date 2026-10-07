@@ -122,6 +122,15 @@ class UserController extends Controller
             return back()->with('error', 'You cannot delete your own account.');
         }
 
+        // Guard aplikasi: FK service_orders.service_advisor_id adalah cascadeOnDelete,
+        // jadi tanpa cek ini menghapus SA ikut menghapus SEMUA order miliknya.
+        if ($user->serviceOrders()->exists()) {
+            return back()->with(
+                'error',
+                'Cannot delete this staff account — it still has related service orders.'
+            );
+        }
+
         $photoPath = $user->photo_path;
 
         try {
