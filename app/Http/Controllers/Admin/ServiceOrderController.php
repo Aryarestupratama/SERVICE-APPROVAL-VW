@@ -105,6 +105,17 @@ class ServiceOrderController extends Controller
             )
             ->when($request->service_advisor_id, fn ($q, $saId) =>
                 $q->where('service_orders.service_advisor_id', $saId)
+            )
+            // Filter tanggal berdasarkan created_at. Tanggal dari UI (YYYY-MM-DD)
+            // diartikan dalam Asia/Jakarta (konvensi project), lalu dikonversi ke
+            // timezone aplikasi supaya cocok dengan nilai yang disimpan di DB.
+            // 1 tanggal saja = date_from sama dengan date_to; salah satu boleh
+            // kosong untuk rentang terbuka. Tanggal tidak valid diabaikan.
+            ->when($this->parseFilterDate($request->date_from, 'start'), fn ($q, $from) =>
+                $q->where('service_orders.created_at', '>=', $from)
+            )
+            ->when($this->parseFilterDate($request->date_to, 'end'), fn ($q, $to) =>
+                $q->where('service_orders.created_at', '<=', $to)
             );
 
         $targetSql = $request->grand_total_field === 'approved' ? $approvedSql : $estimateSql;
@@ -128,6 +139,17 @@ class ServiceOrderController extends Controller
             $query->orderByRaw("{$estimateSql} {$sortDir}", [$vatPercent]);
         } elseif ($request->sort_by === 'grand_total_approved') {
             $query->orderByRaw("{$approvedSql} {$sortDir}");
+        } elseif ($request->sort_by === 'service_advisor') {
+            // Urut berdasarkan nama service advisor via subquery, jadi tidak
+            // perlu join dan select('service_orders.*') tetap aman.
+            $advisor = (new ServiceOrder)->serviceAdvisor()->getRelated();
+            $query->orderBy(
+                $advisor->newQuery()
+                    ->select('name')
+                    ->whereColumn($advisor->getQualifiedKeyName(), 'service_orders.service_advisor_id')
+                    ->limit(1),
+                $sortDir
+            );
         } elseif (in_array($request->sort_by, $directSortColumns, true)) {
             $query->orderBy($request->sort_by, $sortDir);
         } else {
@@ -139,10 +161,37 @@ class ServiceOrderController extends Controller
             'search' => $request->search,
             'filters' => $request->only([
                 'status', 'items_approval_status', 'service_advisor_id',
+                'date_from', 'date_to',
                 'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
                 'sort_by', 'sort_dir',
             ]),
         ]);
+    }
+
+    /**
+     * Parse tanggal filter (YYYY-MM-DD) dari request menjadi batas waktu awal/akhir
+     * hari di Asia/Jakarta, dikonversi ke timezone aplikasi. Return null kalau
+     * kosong atau formatnya tidak valid.
+     */
+    private function parseFilterDate(?string $value, string $edge): ?\Illuminate\Support\Carbon
+    {
+        if (! $value || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+
+        try {
+            $date = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $value, 'Asia/Jakarta');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($date === false) {
+            return null;
+        }
+
+        $date = $edge === 'end' ? $date->endOfDay() : $date->startOfDay();
+
+        return $date->setTimezone(config('app.timezone'));
     }
 
     public function create()

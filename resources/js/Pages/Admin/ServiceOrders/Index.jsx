@@ -39,6 +39,85 @@ const STATUS_VARIANT = {
     all_rejected_cancelled: 'destructive',
 };
 
+// Filter tanggal "Created At" memakai tipe 'date' di DataTableFilterPanel:
+// value = { mode: 'preset' | 'range', preset, from, to }. Preset (Today, dst.)
+// dan rentang custom sama-sama diterjemahkan jadi date_from/date_to
+// (YYYY-MM-DD) sebelum dikirim ke server. "Hari ini" dihitung di Asia/Jakarta
+// supaya tidak bergeser oleh timezone device. 1 tanggal saja = Custom dengan
+// From dan To diisi tanggal yang sama.
+const DATE_PRESETS = [
+    { key: 'all', label: 'All time' },
+    { key: 'today', label: 'Today' },
+    { key: 'yesterday', label: 'Yesterday' },
+    { key: 'last_7_days', label: 'Last 7 days' },
+    { key: 'last_30_days', label: 'Last 30 days' },
+    { key: 'this_month', label: 'This month' },
+    { key: 'last_month', label: 'Last month' },
+];
+
+const EMPTY_DATE_FILTER = { mode: 'preset', preset: 'all', from: '', to: '' };
+
+const toISODate = (d) => d.toISOString().slice(0, 10);
+
+function todayInJakarta() {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date());
+}
+
+function shiftDays(iso, days) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return toISODate(new Date(Date.UTC(y, m - 1, d + days)));
+}
+
+function resolveDateRange(value) {
+    if (!value) return {};
+
+    let from = '';
+    let to = '';
+
+    if (value.mode === 'range') {
+        from = value.from || '';
+        to = value.to || '';
+    } else if (value.preset && value.preset !== 'all') {
+        const today = todayInJakarta();
+        const [y, m] = today.split('-').map(Number);
+
+        switch (value.preset) {
+            case 'today':
+                from = to = today;
+                break;
+            case 'yesterday':
+                from = to = shiftDays(today, -1);
+                break;
+            case 'last_7_days':
+                from = shiftDays(today, -6);
+                to = today;
+                break;
+            case 'last_30_days':
+                from = shiftDays(today, -29);
+                to = today;
+                break;
+            case 'this_month':
+                from = toISODate(new Date(Date.UTC(y, m - 1, 1)));
+                to = today;
+                break;
+            case 'last_month':
+                from = toISODate(new Date(Date.UTC(y, m - 2, 1)));
+                to = toISODate(new Date(Date.UTC(y, m - 1, 0)));
+                break;
+        }
+    }
+
+    // Kalau user memilih From setelah To, tukar saja daripada hasilnya kosong.
+    if (from && to && from > to) [from, to] = [to, from];
+
+    return { date_from: from || undefined, date_to: to || undefined };
+}
+
 const ITEMS_APPROVAL_LABEL = {
     pending: 'Pending',
     partially_approved: 'Partially Approved',
@@ -149,6 +228,14 @@ function DeleteServiceOrderDialog({ order, open, onOpenChange }) {
 function buildColumns({ isAdmin, onRequestDelete }) {
     return [
         {
+            accessorKey: 'created_at',
+            header: 'Created At',
+            meta: { label: 'Created At' },
+            cell: ({ row }) => (
+                <span className="text-muted-foreground">{formatDate(row.original.created_at)}</span>
+            ),
+        },
+        {
             accessorKey: 'work_order_number',
             header: 'WO Number',
             meta: { label: 'WO Number' },
@@ -182,7 +269,6 @@ function buildColumns({ isAdmin, onRequestDelete }) {
             id: 'service_advisor',
             header: 'Service Advisor',
             meta: { label: 'Service Advisor' },
-            enableSorting: false,
             accessorFn: (row) => row.service_advisor?.name ?? '',
             cell: ({ row }) => row.original.service_advisor?.name ?? '—',
         },
@@ -214,14 +300,6 @@ function buildColumns({ isAdmin, onRequestDelete }) {
                 <div className="text-right font-medium tabular-nums text-approved">
                     {formatCurrency(row.original.grand_total_approved)}
                 </div>
-            ),
-        },
-        {
-            accessorKey: 'created_at',
-            header: 'Created At',
-            meta: { label: 'Created At' },
-            cell: ({ row }) => (
-                <span className="text-muted-foreground">{formatDate(row.original.created_at)}</span>
             ),
         },
         {
@@ -264,6 +342,12 @@ function buildColumns({ isAdmin, onRequestDelete }) {
 // Status & Items Approval.
 const filterDefs = [
     {
+        key: 'created_at',
+        label: 'Created At',
+        type: 'date',
+        presetOptions: DATE_PRESETS,
+    },
+    {
         key: 'status',
         label: 'Status',
         type: 'select',
@@ -285,6 +369,12 @@ export default function Index({ orders, search, filters }) {
     const [activeFilters, setActiveFilters] = useState(() => ({
         status: filters?.status ?? '',
         items_approval_status: filters?.items_approval_status ?? '',
+        // Preset sudah diterjemahkan jadi tanggal saat request, jadi setelah
+        // reload nilainya dipulihkan sebagai rentang Custom dari URL.
+        created_at:
+            filters?.date_from || filters?.date_to
+                ? { mode: 'range', preset: 'all', from: filters.date_from ?? '', to: filters.date_to ?? '' }
+                : { ...EMPTY_DATE_FILTER },
     }));
 
     // Filter dari Dashboard SA (?service_advisor_id=…): dibawa terus di setiap request, bukan hilang saat user mengetik/mengurutkan.
@@ -342,6 +432,7 @@ export default function Index({ orders, search, filters }) {
                 status: activeFilters.status || undefined,
                 items_approval_status: activeFilters.items_approval_status || undefined,
                 service_advisor_id: saFilter || undefined,
+                ...resolveDateRange(activeFilters.created_at),
                 sort_by: activeSort?.id || undefined,
                 sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
             };
@@ -354,6 +445,9 @@ export default function Index({ orders, search, filters }) {
         return () => clearTimeout(timeout);
     }, [searchTerm, activeFilters, sorting, saFilter]);
 
+    const { date_from: activeDateFrom, date_to: activeDateTo } = resolveDateRange(activeFilters.created_at);
+    const hasDateFilter = Boolean(activeDateFrom || activeDateTo);
+
     const handleFilterChange = (key, value) => {
         setActiveFilters((current) => ({ ...current, [key]: value }));
     };
@@ -362,6 +456,7 @@ export default function Index({ orders, search, filters }) {
         setActiveFilters({
             status: '',
             items_approval_status: '',
+            created_at: { ...EMPTY_DATE_FILTER },
         });
     };
 
@@ -404,7 +499,7 @@ export default function Index({ orders, search, filters }) {
                 links={orders.links}
                 emptyMessage="No service orders yet."
                 isLoading={isLoading}
-                isFiltered={Boolean(searchTerm || saFilter || activeFilters.status || activeFilters.items_approval_status)}
+                isFiltered={Boolean(searchTerm || saFilter || hasDateFilter || activeFilters.status || activeFilters.items_approval_status)}
                 paginationMeta={{ from: orders.from, to: orders.to, total: orders.total }}
                 onRowClick={(order) => router.visit(route('admin.service-orders.show', order.id))}
                 searchSlot={

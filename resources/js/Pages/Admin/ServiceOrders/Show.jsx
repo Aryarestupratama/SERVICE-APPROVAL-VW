@@ -1711,7 +1711,7 @@ export default function Show({
                     ) : (
                         <div className="grid flex-1 min-h-0 lg:grid-cols-[1.1fr_1fr] lg:gap-4">
                             {/* Kiri — daftar item, hanya grup aktif */}
-                            <div className="h-full min-h-[10rem] overflow-y-auto border-b border-vw-grey/10 px-4 py-3 lg:border-b-0 lg:border-r lg:pr-5">
+                            <div className="h-full max-h-[60vh] min-h-[10rem] overflow-y-auto border-b border-vw-grey/10 px-4 py-3 lg:max-h-[70vh] lg:border-b-0 lg:border-r lg:pr-5">
                                 <div className="space-y-2">
                                     {itemsInGroup.map((item) => (
                                         <ItemReceiptRow

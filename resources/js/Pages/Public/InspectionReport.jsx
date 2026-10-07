@@ -945,7 +945,7 @@ export default function InspectionReport({
     const pendingList = orderedItems.filter(isServerPending);
     const decidedList = orderedItems.filter((item) => !isServerPending(item));
     const itemsList = (
-        <>
+        <div className="-mx-1 max-h-[70vh] overflow-y-auto px-1 pb-1">
             {pendingList.length > 0 && (
                 <ul className="mt-4 space-y-3">
                     {pendingList.map((item) => (
@@ -974,7 +974,7 @@ export default function InspectionReport({
                     </ul>
                 </div>
             )}
-        </>
+        </div>
     );
 
     return (
