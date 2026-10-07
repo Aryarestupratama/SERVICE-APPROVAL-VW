@@ -7,7 +7,7 @@ export default function PublicLayout({ children }) {
 
             <footer className="mx-auto w-full max-w-6xl border-t border-vw-grey-light px-6 py-6 text-center sm:px-10 lg:px-16 xl:px-24">
                 <p className="text-[11px] uppercase tracking-widest text-vw-grey/70">
-                    Powered by digital inspection report
+                    Digital inspection report by VW PIK
                 </p>
             </footer>
         </div>

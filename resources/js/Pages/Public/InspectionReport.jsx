@@ -1,10 +1,9 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Phone, Mail, MessageCircle, FileText, CheckCircle2, ExternalLink, Sparkles, MapPin, Globe, CalendarCheck, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Droplets, Upload, ChevronRight, ChevronDown, ArrowDown, Copy } from 'lucide-react';
+import { Phone, MessageCircle, FileText, CheckCircle2, ExternalLink, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Upload, ChevronRight, ChevronDown, ArrowDown, Copy, MapPin, Globe, Landmark, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
-import { Separator } from '@/Components/ui/separator';
 import { Progress } from '@/Components/ui/progress';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/Components/ui/accordion';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/Components/ui/sheet';
@@ -23,6 +22,9 @@ function flashFailed(page) {
     return true;
 }
 
+// Kartu "melayang": putih, sudut besar, bayangan lembut + ring tipis (gaya referensi payment/cart).
+const SOFT_CARD = 'rounded-3xl bg-white ring-1 ring-black/[0.04] shadow-[0_12px_40px_-16px_rgba(22,27,89,0.22)]';
+
 function StatusStamp({ status }) {
     const config = {
         pending: { label: 'Waiting', Icon: Clock, cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
@@ -33,10 +35,47 @@ function StatusStamp({ status }) {
 
     return (
         <span
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset ${cls}`}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${cls}`}
         >
             <Icon className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
             {label}
+        </span>
+    );
+}
+
+// Logo WhatsApp (gelembung chat + gagang telepon). lucide-react tidak punya ikon brand,
+// jadi digambar inline; mengikuti warna teks lewat currentColor.
+function WhatsAppIcon({ className = '' }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="M3 21l1.65-4.9A9 9 0 1 1 8 19.4L3 21z" />
+            <g transform="translate(6.6 6.6) scale(0.45)" strokeWidth="3.6">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+            </g>
+        </svg>
+    );
+}
+
+// Logo bank dari /public/images/banks/. Kalau file belum ada / gagal dimuat,
+// otomatis jatuh ke ikon gedung bank supaya tampilan tidak rusak.
+function BankLogo({ src, alt }) {
+    const [failed, setFailed] = useState(false);
+    return (
+        <span className="flex h-11 w-16 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 ring-1 ring-black/[0.06]">
+            {src && !failed ? (
+                <img src={src} alt={alt} onError={() => setFailed(true)} className="max-h-full max-w-full object-contain" />
+            ) : (
+                <Landmark className="h-5 w-5 text-vw-blue" aria-label={alt} />
+            )}
         </span>
     );
 }
@@ -52,7 +91,6 @@ const GROUP_LABEL = {
 // Label pendek dipakai di stepper mode mobile (kriteria mobile-responsive
 // TODO #2) supaya tidak sempit/tumpang tindih di layar sempit (~320-375px).
 const STATUS_STEPS = [
-    { key: 'appointment', label: 'Appointment', shortLabel: 'Appt', icon: CalendarCheck, description: 'Your appointment is confirmed. Please review the inspection results below.' },
     { key: 'work_in_progress', label: 'In Progress', shortLabel: 'Progress', icon: Wrench, description: 'Our technicians are working on your vehicle.' },
     { key: 'quality_control', label: 'Quality Control', shortLabel: 'QC', icon: ShieldCheck, description: 'Your vehicle is being checked and washed before handover.' },
     { key: 'invoice_preparation', label: 'Invoice', shortLabel: 'Invoice', icon: Receipt, description: 'Your invoice is ready. Please review it and proceed with payment.' },
@@ -155,12 +193,11 @@ function formatDateTime(value) {
 // gayanya disamakan dengan header grup di Inspection Items.
 function SectionTitle({ children, count }) {
     return (
-        <div className="flex items-center gap-3">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">{children}</h2>
+        <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-gray-900">{children}</h2>
             {count > 1 && (
-                <span className="rounded-full bg-vw-blue/10 px-2 py-0.5 text-[10px] font-bold text-vw-blue">{count}</span>
+                <span className="rounded-full bg-vw-blue/10 px-2 py-0.5 text-xs font-bold text-vw-blue">{count}</span>
             )}
-            <div className="h-px flex-1 bg-vw-grey/15" />
         </div>
     );
 }
@@ -169,7 +206,8 @@ function SectionTitle({ children, count }) {
 // halaman (onOpen) — customer iPhone tidak perlu lagi pindah tab lalu cari tab lama.
 // Tetap <a href target="_blank"> supaya long-press / klik-tengah / "open in new tab"
 // masih berfungsi, dan tetap jalan kalau JS gagal.
-function DocumentCard({ href, title, subtitle, onOpen }) {
+function DocumentCard({ href, title, subtitle, onOpen, variant = 'row' }) {
+    const isTile = variant === 'tile';
     return (
         <a
             href={href}
@@ -180,20 +218,46 @@ function DocumentCard({ href, title, subtitle, onOpen }) {
                 e.preventDefault();
                 onOpen({ url: href, title });
             }}
-            className="group flex items-center gap-3 rounded-xl border border-vw-grey/15 bg-white p-3.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-vw-blue/40 hover:shadow-md"
+            className={`group ${SOFT_CARD} transition hover:ring-vw-blue/30 ${isTile ? 'flex flex-col gap-3 p-4' : 'flex items-center gap-3 p-3.5'}`}
         >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-vw-blue/10 text-vw-blue transition-colors group-hover:bg-vw-blue group-hover:text-white">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-vw-grey-light text-vw-blue transition-colors group-hover:bg-vw-blue group-hover:text-white">
                 <FileText className="h-5 w-5" aria-hidden="true" />
             </span>
-            <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold text-gray-900">{title}</span>
-                <span className="block truncate text-xs text-vw-grey">{subtitle}</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-0.5 text-xs font-semibold text-vw-blue">
-                <span className="hidden sm:inline">View</span>
-                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            <span className={`flex min-w-0 flex-1 justify-between gap-2 ${isTile ? 'items-end' : 'items-center'}`}>
+                <span className="min-w-0">
+                    <span className="block break-words text-sm font-semibold leading-snug text-gray-900">{title}</span>
+                    <span className="block truncate text-xs text-vw-grey">{subtitle}</span>
+                </span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vw-grey-light text-vw-blue">
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </span>
             </span>
         </a>
+    );
+}
+
+// Ilustrasi tahap di hero: public/images/stages/{key}.jpg
+// Customer hanya melihat 4 tahap (tanpa appointment), jadi tidak ada gambar appointment.
+// Kalau ada key lain tanpa gambar, otomatis pakai ikon tahap sebagai fallback.
+const STAGE_ILLUSTRATIONS = ['work_in_progress', 'quality_control', 'invoice_preparation', 'completed'];
+
+function StageIllustration({ step }) {
+    if (!step) return <div className="h-24" />;
+    const Icon = step.icon;
+    return (
+        <div className="relative -mx-5 mt-3 flex min-h-[8rem] items-center justify-center sm:mx-0">
+            {STAGE_ILLUSTRATIONS.includes(step.key) ? (
+                <img
+                    src={`/images/stages/${step.key}.jpg`}
+                    alt=""
+                    className="max-h-72 w-full object-contain mix-blend-multiply sm:max-h-80"
+                />
+            ) : (
+                <span className="flex h-24 w-24 items-center justify-center rounded-full bg-vw-blue/10 text-vw-blue ring-8 ring-vw-blue/5">
+                    <Icon className="h-11 w-11" aria-hidden="true" />
+                </span>
+            )}
+        </div>
     );
 }
 
@@ -229,7 +293,7 @@ function ItemDescription({ text }) {
     return (
         <div className="mt-0.5">
             <p
-                className="text-sm leading-snug text-gray-600"
+                className="text-[13px] leading-snug text-gray-600"
                 style={
                     isLong && !expanded
                         ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
@@ -261,58 +325,90 @@ function ItemDescription({ text }) {
 // di-tap di mobile.
 function InspectionItemCard({ item, canDecide, itemRef, onDecision, onUndoLocal }) {
     const discount = itemDiscountAmount(item);
+    const listPrice = itemListPrice(item);
+    const showStruckPrice = discount > 0 && listPrice > itemDisplayPrice(item);
+    const isLocked = item.final_price_snapshot !== null && item.final_price_snapshot !== undefined;
 
     return (
         <li
             ref={itemRef}
-            className="relative scroll-mt-24 overflow-hidden rounded-lg border border-vw-grey/15 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            className={`relative scroll-mt-24 overflow-hidden rounded-3xl p-4 ring-1 shadow-[0_12px_40px_-16px_rgba(22,27,89,0.22)] transition ${item.status === 'approved' ? 'bg-approved/5 ring-approved/40' : 'bg-white ring-black/[0.04]'}`}
         >
-            <span className="absolute inset-y-0 left-0 w-1 bg-vw-blue" aria-hidden="true" />
+            <div className="flex items-start justify-between gap-3">
+                <h3 className="min-w-0 break-words text-[15px] font-bold leading-snug text-gray-900">{item.name}</h3>
+                <StatusStamp status={item.status} />
+            </div>
+            <ItemDescription text={item.description} />
 
-            <div className="p-3 pl-4 sm:p-3.5 sm:pl-5">
-                <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                        <p className="text-sm font-semibold leading-snug text-gray-900">{item.name}</p>
-                        <ItemDescription text={item.description} />
+            {showStruckPrice && (
+                <dl className="mt-3 space-y-2 text-[13px]">
+                    <div className="flex items-center justify-between gap-3">
+                        <dt className="text-vw-grey">Price</dt>
+                        <dd className="font-semibold text-gray-900"><Rupiah value={listPrice} /></dd>
                     </div>
-                    <StatusStamp status={item.status} />
-                </div>
-
-                <div className="mt-2.5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-                    <div>
-                        <Rupiah value={itemDisplayPrice(item)} className="block text-base font-bold text-gray-900" />
-                        {discount > 0 && (
-                            <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-approved/10 px-1.5 py-0.5 text-[10px] font-semibold text-approved">
-                                <Tag className="h-2.5 w-2.5" aria-hidden="true" />
-                                Discount <Rupiah value={discount} />
-                            </p>
-                        )}
+                    <div className="flex items-center justify-between gap-3">
+                        <dt className="text-vw-grey">Discount</dt>
+                        <dd className="whitespace-nowrap font-semibold text-approved">−<Rupiah value={discount} /></dd>
                     </div>
+                </dl>
+            )}
 
-                    {canDecide && (
-                        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+            <div className="my-3 border-t border-dashed border-vw-grey/30" />
+
+            <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-bold text-gray-900">Total</span>
+                <Rupiah value={itemDisplayPrice(item)} className="text-xl font-bold text-vw-blue" />
+            </div>
+            <p className="mt-0.5 text-right text-xs text-vw-grey">
+                {isLocked ? 'Price includes VAT' : 'Price excludes VAT'}
+            </p>
+
+            {canDecide && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    {item.status === 'pending' ? (
+                        <>
                             <button
                                 type="button"
-                                aria-pressed={item.status === 'approved'}
-                                onClick={() => (item.status === 'approved' ? onUndoLocal(item) : onDecision(item.id, 'approved'))}
-                                className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-4 text-sm font-semibold transition active:scale-95 ${item.status === 'approved' ? 'bg-approved text-white shadow-sm ring-2 ring-approved/30' : 'border border-approved/60 bg-white text-approved hover:bg-approved/10'}`}
+                                onClick={() => onDecision(item.id, 'approved')}
+                                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-approved/60 bg-white px-3 text-[13px] font-semibold text-approved transition hover:bg-approved/10 active:scale-95"
                             >
                                 <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
-                                {item.status === 'approved' ? 'Approved · Undo' : 'Approve'}
+                                Approve
                             </button>
                             <button
                                 type="button"
-                                aria-pressed={item.status === 'rejected'}
-                                onClick={() => (item.status === 'rejected' ? onUndoLocal(item) : onDecision(item.id, 'rejected'))}
-                                className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-4 text-sm font-semibold transition active:scale-95 ${item.status === 'rejected' ? 'bg-gray-700 text-white shadow-sm ring-2 ring-gray-700/30' : 'border border-gray-400 bg-white text-gray-700 hover:bg-gray-100'}`}
+                                onClick={() => onDecision(item.id, 'rejected')}
+                                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-gray-400 bg-white px-3 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100 active:scale-95"
                             >
                                 <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
-                                {item.status === 'rejected' ? 'Rejected · Undo' : 'Reject'}
+                                Reject
                             </button>
-                        </div>
+                        </>
+                    ) : (
+                        <>
+                            <div
+                                role="status"
+                                className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-white ${item.status === 'approved' ? 'bg-approved' : 'bg-gray-700'}`}
+                            >
+                                {item.status === 'approved' ? (
+                                    <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
+                                ) : (
+                                    <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
+                                )}
+                                {item.status === 'approved' ? 'Approved' : 'Rejected'}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => onUndoLocal(item)}
+                                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-vw-grey/30 bg-white px-3 text-[13px] font-semibold text-gray-700 transition hover:bg-vw-grey-light active:scale-95"
+                            >
+                                <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Change
+                            </button>
+                        </>
                     )}
                 </div>
-            </div>
+            )}
         </li>
     );
 }
@@ -325,25 +421,27 @@ function DecidedItemRow({ item, canCancel, onCancel }) {
     const isApproved = item.status === 'approved';
 
     return (
-        <li className="flex items-center gap-2.5 rounded-lg border border-vw-grey/10 bg-vw-grey-light/40 px-3 py-0.5">
+        <li className="flex items-center gap-3 rounded-2xl bg-white px-3.5 py-3 ring-1 ring-black/[0.04] shadow-[0_10px_30px_-16px_rgba(22,27,89,0.22)]">
             <span
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-approved text-white' : 'bg-vw-grey/20 text-vw-grey'}`}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-approved text-white' : 'bg-vw-grey/20 text-vw-grey'}`}
             >
-                {isApproved ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <X className="h-3.5 w-3.5" strokeWidth={3} />}
+                {isApproved ? <Check className="h-4 w-4" strokeWidth={3} /> : <X className="h-4 w-4" strokeWidth={3} />}
             </span>
-            <span className={`min-w-0 flex-1 truncate text-sm font-medium ${isApproved ? 'text-gray-800' : 'text-gray-600 line-through decoration-1'}`}>
-                {item.name}
-            </span>
-            {isApproved ? (
-                <Rupiah value={itemDisplayPrice(item)} className="shrink-0 text-sm font-semibold text-gray-900" />
-            ) : (
-                <span className="shrink-0 text-xs font-medium text-gray-600">Rejected</span>
-            )}
+            <div className="min-w-0 flex-1">
+                <p className={`break-words text-sm font-medium leading-snug ${isApproved ? 'text-gray-800' : 'text-gray-600 line-through decoration-1'}`}>
+                    {item.name}
+                </p>
+                {isApproved ? (
+                    <Rupiah value={itemDisplayPrice(item)} className="mt-0.5 block text-sm font-semibold text-gray-900" />
+                ) : (
+                    <p className="mt-0.5 text-xs font-medium text-gray-600">Rejected</p>
+                )}
+            </div>
             {canCancel && (
                 <button
                     type="button"
                     onClick={() => onCancel(item)}
-                    className="ml-1 flex min-h-[44px] shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-semibold text-gray-600 transition hover:bg-vw-blue/5 hover:text-vw-blue"
+                    className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-gray-600 transition hover:bg-vw-blue/5 hover:text-vw-blue"
                 >
                     <Undo2 className="h-3 w-3" aria-hidden="true" />
                     Change
@@ -655,8 +753,8 @@ export default function InspectionReport({
     const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
 
     const BANK_ACCOUNTS = [
-        { bank: 'Bank Mandiri IDR', holder: 'PT Wahana Wirawan', number: '1240012993409' },
-        { bank: 'Bank Central Asia IDR', holder: 'PT Wahana Wirawan', number: '7160263789' },
+        { bank: 'Bank Mandiri', holder: 'PT Wahana Wirawan', number: '1240012993409', logo: '/images/banks/mandiri.png' },
+        { bank: 'Bank Central Asia (BCA)', holder: 'PT Wahana Wirawan', number: '7160263789', logo: '/images/banks/bca.png' },
     ];
 
     const handleCopy = async (text, label) => {
@@ -690,18 +788,34 @@ export default function InspectionReport({
 
     const workshopName = settings.workshop_name ?? 'Volkswagen PIK';
 
-    const currentStepIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
+    // Baris inspection fee di Order summary (tampil kalau ada biayanya).
+    const inspectionFeeRow = inspectionFee > 0 && (
+        <div className="flex items-start justify-between gap-3">
+            <dt className="min-w-0 text-vw-grey">
+                Inspection fee
+                {order.inspection_fee_note && (
+                    <span className="block text-xs">{order.inspection_fee_note}</span>
+                )}
+            </dt>
+            <dd className="shrink-0 font-semibold text-gray-900"><Rupiah value={inspectionFee} /></dd>
+        </div>
+    );
+
+    // Customer hanya melihat 4 tahap (mulai In Progress). Kalau status 'appointment' sempat
+    // sampai ke halaman ini, tampilkan sebagai tahap pertama.
+    const stepKey = order.status === 'appointment' ? 'work_in_progress' : order.status;
+    const currentStepIndex = STATUS_STEPS.findIndex((s) => s.key === stepKey);
     const currentStep = STATUS_STEPS[currentStepIndex];
     const nextStep = STATUS_STEPS[currentStepIndex + 1];
-    const CurrentStepIcon = currentStep?.icon;
+    const prevStep = currentStepIndex > 0 ? STATUS_STEPS[currentStepIndex - 1] : null;
     const isCancelled = order.status === 'all_rejected_cancelled';
     const progressValue = currentStepIndex >= 0 ? ((currentStepIndex + 1) / STATUS_STEPS.length) * 100 : 0;
 
     const invoiceBlock = showInvoiceSection && (
                         <>
-                            <Separator className="my-8" />
+                            <div className="my-6" />
                             <section>
-                                <SectionTitle>Invoice Form</SectionTitle>
+                                <SectionTitle>Invoice form</SectionTitle>
                                 <div className="mt-3">
                                     {invoice ? (
                                         <DocumentCard
@@ -722,56 +836,68 @@ export default function InspectionReport({
                     );
     const paymentBlock = showPaymentSection && (
                         <>
-                            <Separator className="my-8" />
+                            <div className="my-6" />
                             <section>
                                 <SectionTitle>Payment</SectionTitle>
-                                <p className="mt-3 text-sm text-gray-700">Transfer to one of the accounts below, then upload your receipt.</p>
-                                <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-vw-blue/20 bg-vw-blue/[0.06] px-4 py-3">
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Amount due</p>
-                                        <Rupiah value={grandTotal + inspectionFee} className="block text-xl font-bold text-vw-blue" />
-                                        {inspectionFee > 0 && (
-                                            <p className="mt-1 text-xs text-gray-600">
-                                                Includes inspection fee <Rupiah value={inspectionFee} />.
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-gray-600">Please follow the amount stated on your invoice.</p>
-                                    </div>
-                                    <button
-                                            type="button"
-                                            onClick={() => handleCopy(String(Math.round(grandTotal + inspectionFee)), 'Amount')}
-                                            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md border border-vw-blue/30 bg-white px-3 text-xs font-semibold text-vw-blue hover:bg-vw-blue/5"
-                                        >
-                                            <Copy className="h-4 w-4" aria-hidden="true" />
-                                            Copy
-                                        </button>
-                                </div>
-                                <div className="mt-3 space-y-2">
-                                    {BANK_ACCOUNTS.map((acc) => (
-                                        <div key={acc.bank} className="flex items-center justify-between gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm">
-                                            <div className="min-w-0">
-                                                <p className="font-semibold text-gray-900">{acc.bank}</p>
-                                                <p className="text-xs text-gray-600">{acc.holder}</p>
-                                                <p className="mt-0.5 font-mono text-base font-semibold tracking-wide text-gray-900">{acc.number}</p>
+                                <p className="mt-2 text-sm text-vw-grey">Transfer to one of the accounts below, then upload your receipt.</p>
+
+                                <div className={`mt-4 p-5 ${SOFT_CARD}`}>
+                                    <p className="text-base font-bold text-gray-900">Payment details</p>
+                                    {(order.invoice_number || order.bill_to) && (
+                                    <>
+                                    <dl className="mt-4 space-y-3 text-sm">
+                                        {order.invoice_number && (
+                                            <div className="flex items-center justify-between gap-3">
+                                                <dt className="text-vw-grey">Invoice number</dt>
+                                                <dd className="font-semibold text-gray-900">{order.invoice_number}</dd>
                                             </div>
-                                            <button
-                                            type="button"
-                                            onClick={() => handleCopy(acc.number, 'Account number')}
-                                            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md border border-vw-blue/30 bg-white px-3 text-xs font-semibold text-vw-blue hover:bg-vw-blue/5"
-                                        >
-                                            <Copy className="h-4 w-4" aria-hidden="true" />
-                                            Copy
-                                        </button>
+                                        )}
+                                        {order.bill_to && (
+                                            <div className="flex items-center justify-between gap-3">
+                                                <dt className="shrink-0 text-vw-grey">Bill to</dt>
+                                                <dd className="min-w-0 text-right font-semibold text-gray-900">{order.bill_to}</dd>
+                                            </div>
+                                        )}
+                                    </dl>
+                                    <div className="my-4 border-t border-dashed border-vw-grey/30" />
+                                    </>
+                                    )}
+                                    <div className="mt-4 flex items-center justify-between gap-3">
+                                        <span className="text-sm font-bold text-gray-900">Amount due</span>
+                                        <Rupiah value={grandTotal + inspectionFee} className="text-2xl font-bold text-vw-blue" />
+                                    </div>
+                                    <p className="mt-2 text-xs text-vw-grey">Please follow the amount stated on your invoice.</p>
+                                </div>
+
+                                <div className={`mt-4 divide-y divide-dashed divide-vw-grey/30 p-5 ${SOFT_CARD}`}>
+                                    {BANK_ACCOUNTS.map((acc) => (
+                                        <div key={acc.bank} className="py-4 first:pt-0 last:pb-0">
+                                            <div className="flex items-center gap-3">
+                                                <BankLogo src={acc.logo} alt={acc.bank} />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold leading-snug text-gray-900">{acc.bank}</p>
+                                                    <p className="text-xs text-vw-grey">Account name</p>
+                                                    <p className="text-sm font-semibold leading-snug text-gray-900">{acc.holder}</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs text-vw-grey">Account number</p>
+                                                    <p className="mt-0.5 break-all text-xl font-bold tabular-nums tracking-wide text-gray-900">{acc.number}</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopy(acc.number, 'Account number')}
+                                                    className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border border-vw-grey/30 bg-white px-3.5 text-xs font-semibold text-gray-900 hover:bg-vw-grey-light"
+                                                >
+                                                    <Copy className="h-4 w-4" aria-hidden="true" />
+                                                    Copy
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
-                                {(order.invoice_number || order.bill_to) && (
-                                    <div className="mt-3 space-y-1 text-sm text-gray-700">
-                                        {order.invoice_number && <p>Invoice Number: {order.invoice_number}</p>}
-                                        {order.bill_to && <p>Bill To: {order.bill_to}</p>}
-                                    </div>
-                                )}
-                                <div className="mt-5">
+                                <div className={`mt-4 p-5 ${SOFT_CARD}`}>
                                     <p className="text-sm font-semibold text-gray-900">Payment receipt</p>
                                     {customerPaymentReceipt ? (
                                         <div className="mt-2 space-y-2.5">
@@ -791,28 +917,28 @@ export default function InspectionReport({
                                                 subtitle="Tap to view"
                                             />
                                             <p className="text-xs text-vw-grey">
-                                                Uploaded the wrong file? Choose a new one below to replace it.
+                                                Wrong file? Upload a new one to replace it.
                                             </p>
                                         </div>
                                     ) : (
                                         <p className="mt-1 text-sm text-vw-grey">
-                                            Upload your proof of transfer once the payment is done.
+                                            Upload your transfer proof.
                                         </p>
                                     )}
                                     <form
                                         onSubmit={handleReceiptUpload}
-                                        className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+                                        className="mt-3 flex flex-col gap-2"
                                     >
                                         <input
                                             type="file"
                                             accept=".pdf,.jpg,.jpeg,.png"
-                                            className="w-full min-w-0 text-xs text-vw-grey file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-vw-blue/10 file:px-3 file:py-2.5 file:text-xs file:font-semibold file:text-vw-blue hover:file:bg-vw-blue/15 sm:flex-1"
+                                            className="w-full min-w-0 rounded-xl border border-vw-grey/20 p-1.5 text-xs text-vw-grey file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-vw-grey-light file:px-3 file:py-2.5 file:text-xs file:font-semibold file:text-gray-900 hover:file:bg-vw-grey/20"
                                             onChange={(e) => setReceiptFile(e.target.files[0])}
                                         />
                                         <button
                                             type="submit"
                                             disabled={uploadingReceipt || !receiptFile}
-                                            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-vw-blue px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:opacity-50 sm:w-auto"
+                                            className="inline-flex min-h-[48px] w-full items-center justify-center gap-1.5 rounded-full bg-vw-blue px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:bg-vw-grey/20 disabled:text-vw-grey disabled:shadow-none"
                                         >
                                             {uploadingReceipt ? (
                                                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -826,132 +952,93 @@ export default function InspectionReport({
                             </section>
                         </>
                     );
+    const pendingList = orderedItems.filter(isServerPending);
+    const decidedList = orderedItems.filter((item) => !isServerPending(item));
     const itemsList = (
-        <ul className="mt-4 space-y-2.5">
-                            {orderedItems.map((item) =>
-                                isServerPending(item) ? (
-                                    <InspectionItemCard
-                                        key={item.id}
-                                        item={item}
-                                        canDecide={canDecide}
-                                        onDecision={handleDecision}
-                                        onUndoLocal={handleCancelDecision}
-                                        itemRef={(el) => {
-                                            if (el) pendingItemRefs.current[item.id] = el;
-                                        }}
-                                    />
-                                ) : (
-                                    <DecidedItemRow
-                                        key={item.id}
-                                        item={item}
-                                        canCancel={canDecide && (localDecisionIds.has(item.id) || canUndoSubmitted)}
-                                        onCancel={handleCancelDecision}
-                                    />
-                                )
-                            )}
-                        </ul>
+        <>
+            {pendingList.length > 0 && (
+                <ul className="mt-4 space-y-3">
+                    {pendingList.map((item) => (
+                        <InspectionItemCard
+                            key={item.id}
+                            item={item}
+                            canDecide={canDecide}
+                            onDecision={handleDecision}
+                            onUndoLocal={handleCancelDecision}
+                            itemRef={(el) => {
+                                if (el) pendingItemRefs.current[item.id] = el;
+                            }}
+                        />
+                    ))}
+                </ul>
+            )}
+            {decidedList.length > 0 && (
+                <div className="mt-6">
+                    <h3 className="text-sm font-bold text-gray-900">Already decided</h3>
+                    <ul className="mt-3 space-y-2">
+                        {decidedList.map((item) => (
+                            <DecidedItemRow
+                                key={item.id}
+                                item={item}
+                                canCancel={canDecide && (localDecisionIds.has(item.id) || canUndoSubmitted)}
+                                onCancel={handleCancelDecision}
+                            />
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </>
     );
 
     return (
         <PublicLayout>
             <Head title="Inspection Report" />
 
-            <div className={`min-h-screen bg-white ${canDecide ? 'pb-28' : 'pb-24'}`}>
-                {/* Navbar — kriteria #1: nama VW PIK + logo, terpisah dari hero. */}
-                <header className="sticky top-0 z-40 border-b border-vw-grey/10 bg-white/95 backdrop-blur">
-                    <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                        <Avatar className="h-9 w-9 shrink-0 rounded-sm">
-                            <AvatarImage src="/images/vw-logo-navy.jpeg" alt={workshopName} className="object-contain" />
-                            <AvatarFallback className="rounded-sm bg-vw-blue text-xs font-bold text-white">
+            <div className={`min-h-screen bg-gradient-to-b from-white via-vw-blue/[0.04] to-vw-blue/[0.07] ${canDecide ? 'pb-28' : 'pb-24'}`}>
+                {/* Hero navy: logo + ilustrasi tahap. Kartu progress menimpa bagian bawahnya. */}
+                <header className="relative mx-auto max-w-3xl px-5 pb-2 pt-5 sm:px-8 xl:max-w-4xl">
+                    <div className="relative flex items-center gap-3">
+                        <Avatar className="h-10 w-10 shrink-0 rounded-lg bg-white ring-1 ring-vw-grey/15">
+                            <AvatarImage src="/images/vw-logo-navy.jpeg" alt={workshopName} className="object-contain p-0.5" />
+                            <AvatarFallback className="rounded-lg bg-white text-xs font-bold text-vw-blue">
                                 {initials(workshopName)}
                             </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-bold text-gray-900">{workshopName}</p>
-                            <p className="truncate text-[10px] uppercase tracking-widest text-vw-grey">Service Inspection Report</p>
+                            <p className="truncate text-sm font-bold text-vw-blue">{workshopName}</p>
+                            <p className="truncate text-xs text-vw-grey">Service Inspection Report</p>
                         </div>
                     </div>
+                    <StageIllustration step={isCancelled ? null : currentStep} />
                 </header>
 
-                {canDecide && pendingItems.length > 0 && (
-                    <div className="mx-auto mt-3 max-w-3xl px-4 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                        <button
-                            type="button"
-                            onClick={() => itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                            className="flex min-h-[48px] w-full items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left text-sm font-semibold text-amber-900"
-                        >
-                            <span>
-                                {pendingItems.length} {pendingItems.length === 1 ? 'item is' : 'items are'} waiting for your decision
-                            </span>
-                            <span className="inline-flex shrink-0 items-center gap-1 text-xs">
-                                Review
-                                <ArrowDown className="h-4 w-4" aria-hidden="true" />
-                            </span>
-                        </button>
-                    </div>
-                )}
-
-                {/* Hero image — kriteria #2 & #3: gambar dari upload Settings, ganti-ganti tanpa sentuh kode.
-                    Kriteria #13: tidak ada lagi "Report No." di sini.
-                    Mobile: aspect ratio dipertinggi (4/3) supaya judul+subtitle tidak sempit,
-                    balik ke wide 16/7 mulai breakpoint sm ke atas. */}
-                <section className="relative mx-auto mt-4 max-w-3xl overflow-hidden px-4 sm:rounded-lg sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-md sm:aspect-[16/7] sm:rounded-lg">
-                        {settings.hero_image_path ? (
-                            <img
-                                src={`/storage/${settings.hero_image_path}`}
-                                alt=""
-                                className="absolute inset-0 h-full w-full object-cover"
-                            />
-                        ) : (
-                            <div className="absolute inset-0 bg-gradient-to-br from-vw-blue to-[#001233]" />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-vw-blue/90 via-vw-blue/30 to-transparent" />
-                        <div className="absolute inset-x-0 bottom-0 px-5 pb-4 sm:px-8 sm:pb-5">
-                            <h1 className="text-lg font-semibold tracking-tight text-white sm:text-2xl">
-                                Vehicle Inspection Report
-                            </h1>
-                            <p className="mt-0.5 text-sm text-white/80">
-                                Prepared for {customer.name}
-                            </p>
-                        </div>
-                    </div>
-                </section>
-
-                {/* Status progress — REDESIGN v2: hanya menampilkan 1 tahap aktif (bukan
-                    timeline 5 tahap sekaligus) dalam kartu ber-background solid, supaya
-                    customer langsung fokus ke tahap sekarang. Tahap lain cuma diwakili
-                    segmented bar tipis + hint "Next: ..." di bawahnya. */}
-                <section className="mt-6 px-4 sm:px-10 xl:mx-auto xl:max-w-4xl xl:px-24">
+                <div className="relative mx-auto mt-4 max-w-3xl px-4 sm:px-8 xl:max-w-4xl">
                     {isCancelled ? (
-                        <div className="flex items-center gap-2 rounded-md border border-vw-grey/20 bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-vw-grey">
+                        <div className="rounded-2xl bg-white p-5 text-sm font-medium text-vw-grey shadow-lg ring-1 ring-vw-grey/10">
                             This order has been cancelled.
                         </div>
                     ) : (
                         currentStep && (
-                            <div className="rounded-lg bg-vw-blue p-5 text-white shadow-md sm:p-6">
-                                <div className="flex items-center justify-between gap-2">
-                                    <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">
-                                        Current Progress
-                                    </p>
-                                    <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wider">
-                                        Step {currentStepIndex + 1} of {STATUS_STEPS.length}
-                                    </span>
-                                </div>
-
-                                <div className="mt-4 flex items-center gap-4">
-                                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/15 ring-4 ring-white/10 sm:h-16 sm:w-16">
-                                        <CurrentStepIcon className="h-7 w-7 sm:h-8 sm:w-8" />
-                                    </span>
+                            <div className="rounded-3xl bg-vw-blue p-4 text-white shadow-lg shadow-vw-blue/20">
+                                <div className="flex items-center gap-3">
                                     <div className="min-w-0">
-                                        <p className="text-xl font-bold leading-tight sm:text-2xl">{currentStep.label}</p>
-                                        <p className="mt-1 text-sm leading-snug text-white/80">{currentStep.description}</p>
+                                        <p className="text-xs font-bold text-white">Current progress</p>
+                                        <p className="text-xs text-white/70">
+                                            Step {currentStepIndex + 1} of {STATUS_STEPS.length}
+                                        </p>
                                     </div>
                                 </div>
 
-                                {/* Segmented bar: tahap yang sudah lewat & tahap sekarang terisi putih,
-                                    sisanya redup. Tidak ada label per-tahap supaya tetap fokus. */}
-                                <div className="mt-5 flex gap-1.5" role="progressbar" aria-label="Service progress" aria-valuemin={1} aria-valuemax={STATUS_STEPS.length} aria-valuenow={currentStepIndex + 1}>
+                                <p className="mt-3 text-xl font-bold leading-tight text-white">{currentStep.label}</p>
+
+                                <div
+                                    className="mt-3 flex gap-1.5"
+                                    role="progressbar"
+                                    aria-label="Service progress"
+                                    aria-valuemin={1}
+                                    aria-valuemax={STATUS_STEPS.length}
+                                    aria-valuenow={currentStepIndex + 1}
+                                >
                                     {STATUS_STEPS.map((step, idx) => (
                                         <div
                                             key={step.key}
@@ -959,27 +1046,60 @@ export default function InspectionReport({
                                         />
                                     ))}
                                 </div>
-                                <p className="mt-2 text-xs text-white/70">
-                                    {nextStep ? `Next: ${nextStep.label}` : 'All steps completed'}
-                                </p>
+
+                                <div className="mt-3 flex justify-between gap-4 text-xs">
+                                    <div>
+                                        {prevStep && (
+                                            <>
+                                                <p className="font-bold text-white">{prevStep.label}</p>
+                                                <p className="text-white/70">Done</p>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div className="text-right">
+                                        {nextStep && (
+                                            <>
+                                                <p className="font-bold text-white">{nextStep.label}</p>
+                                                <p className="text-white/70">Next</p>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         )
                     )}
-                </section>
+                </div>
 
-                <div className="mx-auto max-w-3xl px-4 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
-                    {/* Vehicle & customer strip — kriteria #4: License Number, bukan Plate Number.
-                        truncate ditambahkan supaya plat nomor panjang tidak overflow di grid sempit. */}
-                    <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6">
-                        <div className="min-w-0 rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
-                            <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">License Number</p>
-                            <p className="mt-0.5 truncate font-mono text-sm font-semibold text-gray-900">{vehicle.plate_number}</p>
+                <div className="mx-auto max-w-3xl px-4 sm:px-8 xl:max-w-4xl">
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="min-w-0 rounded-xl bg-vw-grey-light/70 px-4 py-3">
+                            <p className="text-xs text-vw-grey">License Number</p>
+                            <p className="mt-0.5 truncate text-sm font-bold text-gray-900">{vehicle.plate_number}</p>
                         </div>
-                        <div className="min-w-0 rounded-md border border-vw-grey/15 bg-white px-4 py-3 shadow-sm">
-                            <p className="text-[10px] font-semibold uppercase tracking-widest text-vw-grey">Customer</p>
-                            <p className="mt-0.5 truncate text-sm font-medium text-gray-900">{customer.name}</p>
+                        <div className="min-w-0 rounded-xl bg-vw-grey-light/70 px-4 py-3">
+                            <p className="text-xs text-vw-grey">Customer</p>
+                            <p className="mt-0.5 truncate text-sm font-bold text-gray-900">{customer.name}</p>
                         </div>
                     </div>
+
+                    {canDecide && pendingItems.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            className="group mt-3 flex min-h-[52px] w-full items-center gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-left text-[13px] font-semibold text-amber-900 shadow-sm transition active:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 focus-visible:ring-offset-2"
+                        >
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                                <Clock className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">
+                                {pendingItems.length} {pendingItems.length === 1 ? 'item' : 'items'} to decide
+                            </span>
+                            <span className="inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-full bg-amber-700 px-3 text-[13px] font-bold text-white group-active:bg-amber-800">
+                                Review
+                                <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                        </button>
+                    )}
 
                     {isInvoiceStage && (
                         <div className="mt-8 [&>*:first-child]:hidden">
@@ -990,11 +1110,11 @@ export default function InspectionReport({
 
                     {/* Video — kriteria #5: 1 slot saja, tidak ada tab pilihan part. */}
                     <section className="mt-8">
-                        <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Inspection Video</h2>
+                        <h2 className="text-base font-bold text-gray-900">Inspection video</h2>
 
                         {video ? (
                             embedUrl ? (
-                                <div className="mt-3 aspect-video overflow-hidden rounded-md">
+                                <div className="mt-3 aspect-video overflow-hidden rounded-2xl">
                                     <iframe
                                         src={embedUrl}
                                         title="Inspection video"
@@ -1004,7 +1124,7 @@ export default function InspectionReport({
                                     />
                                 </div>
                             ) : (
-                                <video src={video.video_url} controls playsInline preload="metadata" className="mt-3 aspect-video w-full rounded-md bg-black" />
+                                <video src={video.video_url} controls playsInline preload="metadata" className="mt-3 aspect-video w-full rounded-2xl bg-black" />
                             )
                         ) : (
                             <p className="mt-3 text-sm text-vw-grey">No video available yet.</p>
@@ -1021,7 +1141,7 @@ export default function InspectionReport({
                                         alt={chiefTechnician?.name ?? 'Chief Technician'}
                                         className="object-cover"
                                     />
-                                    <AvatarFallback className="bg-vw-grey-light text-[11px] font-semibold text-vw-grey">
+                                    <AvatarFallback className="bg-vw-blue text-[11px] font-semibold text-white">
                                         {initials(chiefTechnician?.name)}
                                     </AvatarFallback>
                                 </Avatar>
@@ -1037,49 +1157,9 @@ export default function InspectionReport({
                         )}
                     </section>
 
-                    <Separator className="my-8" />
+                    <div className="my-6" />
 
-                    {/* Banner Quality Control — dipoles: kartu gradient, ikon dengan ring berdenyut
-                        (dimatikan otomatis untuk yang prefers-reduced-motion), plus 2 chip yang
-                        menjelaskan apa yang sedang dikerjakan. Chip sengaja statis (bukan
-                        checklist progres) karena sistem tidak melacak progres per langkah. */}
-                    {order.status === 'quality_control' && (
-                        <>
-                            <section>
-                                <div className="rounded-xl border border-vw-blue/20 bg-gradient-to-br from-vw-blue/10 via-vw-blue/[0.05] to-white p-5 shadow-sm">
-                                    <div className="flex items-start gap-4">
-                                        <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-                                            <span className="absolute inset-0 rounded-full bg-vw-blue/25 motion-safe:animate-ping" aria-hidden="true" />
-                                            <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-vw-blue text-white shadow-md">
-                                                <Sparkles className="h-6 w-6" aria-hidden="true" />
-                                            </span>
-                                        </span>
-                                        <div className="min-w-0">
-                                            <p className="text-base font-bold leading-snug text-gray-900">
-                                                Your vehicle is being checked and washed
-                                            </p>
-                                            <p className="mt-1 text-sm leading-snug text-vw-grey">
-                                                Final quality control is in progress. We'll notify you once the invoice is ready.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-vw-blue shadow-sm ring-1 ring-vw-blue/15">
-                                            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                                            Final inspection
-                                        </span>
-                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-vw-blue shadow-sm ring-1 ring-vw-blue/15">
-                                            <Droplets className="h-3.5 w-3.5" aria-hidden="true" />
-                                            Car wash
-                                        </span>
-                                    </div>
-                                </div>
-                            </section>
-                            <Separator className="my-8" />
-                        </>
-                    )}
-
-                    {/* Inspection Items — REDESIGN v3: grouping visual (Safety/Durability/dst)
+                                        {/* Inspection Items — REDESIGN v3: grouping visual (Safety/Durability/dst)
                         SENGAJA DILEPAS — customer awam tidak familiar dengan istilah grup
                         internal itu. Sebagai gantinya: item pending selalu naik ke atas
                         (orderedItems), kartu pending dibuat tipis+ringkas, item yang sudah
@@ -1088,9 +1168,9 @@ export default function InspectionReport({
                         + total + tombol Submit) supaya customer tidak perlu scroll ke bawah. */}
                     <section ref={itemsSectionRef} className="scroll-mt-20">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Inspection Items</h2>
+                            <h2 className="text-base font-bold text-gray-900">Inspection items</h2>
                             <span
-                                className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset
+                                className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset
                                     ${isPricingFinal ? 'bg-approved/10 text-approved ring-approved/25' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}
                             >
                                 {isPricingFinal ? 'Final Price' : 'Estimated Price'}
@@ -1098,17 +1178,17 @@ export default function InspectionReport({
                         </div>
 
                         {isLocked && !hasPendingItems && (
-                            <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-gray-700">
+                            <p className="mt-3 rounded-lg bg-vw-grey-light px-3.5 py-2 text-[13px] font-medium text-gray-700">
                                 {canDecide && canUndoSubmitted
-                                    ? 'All items have been decided. You can still change a decision until your vehicle enters quality control.'
+                                    ? 'All items decided. You can change them until quality control.'
                                     : canDecide
-                                        ? 'All items have been decided for this report.'
-                                        : 'All items have been decided. Decisions can no longer be changed.'}
+                                        ? 'All items decided.'
+                                        : 'All items decided. Changes are no longer possible.'}
                             </p>
                         )}
                         {isLocked && hasPendingItems && !canDecide && (
-                            <p className="mt-3 rounded-lg bg-vw-grey-light px-4 py-2.5 text-sm font-medium text-gray-700">
-                                This report is no longer accepting new decisions.
+                            <p className="mt-3 rounded-lg bg-vw-grey-light px-3.5 py-2 text-[13px] font-medium text-gray-700">
+                                This report no longer accepts decisions.
                             </p>
                         )}
 
@@ -1129,7 +1209,7 @@ export default function InspectionReport({
 
                         {isInvoiceStage ? (
                             <Accordion type="single" collapsible className="mt-4">
-                                <AccordionItem value="items" className="rounded-lg border border-vw-grey/15 px-4">
+                                <AccordionItem value="items" className={`px-4 ${SOFT_CARD}`}>
                                     <AccordionTrigger className="min-h-[48px] text-sm font-semibold text-gray-900">
                                         Inspection items ({items.length})
                                     </AccordionTrigger>
@@ -1140,73 +1220,45 @@ export default function InspectionReport({
                             itemsList
                         )}
 
-                        {/* Ringkasan harga + total diskon */}
-                        <div className="mt-8 overflow-hidden rounded-xl border border-vw-grey/15 bg-white shadow-lg">
-                            {totalDiscount > 0 && (
-                                <div className="flex items-center gap-3 border-b border-approved/20 bg-gradient-to-r from-approved/15 to-approved/5 px-5 py-4">
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-approved text-white shadow-sm">
-                                        <Tag className="h-5 w-5" aria-hidden="true" />
-                                    </span>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-bold uppercase tracking-widest text-approved">
-                                            Total discount you get
-                                        </p>
-                                        <Rupiah value={totalDiscount} className="block text-2xl font-bold text-approved" />
-                                        <p className="text-[11px] text-vw-grey">Rejected items are not counted.</p>
-                                    </div>
-                                </div>
-                            )}
+                        {/* Order summary */}
+                        <div className={`mt-8 p-5 ${SOFT_CARD}`}>
+                            <div className="flex items-center justify-between gap-3">
+                                <h3 className="text-base font-bold text-gray-900">Order summary</h3>
+                            </div>
 
-                            <div className="space-y-2.5 px-5 py-4 text-sm text-vw-grey">
+                            <dl className="mt-4 space-y-3 text-sm">
                                 {totalDiscount > 0 && (
                                     <>
-                                        <div className="flex items-center justify-between">
-                                            <span>Price before discount</span>
-                                            <Rupiah value={listTotal} className="text-gray-700" />
+                                        <div className="flex items-center justify-between gap-3">
+                                            <dt className="text-vw-grey">Price before discount</dt>
+                                            <dd className="font-semibold text-gray-900"><Rupiah value={listTotal} /></dd>
                                         </div>
-                                        <div className="flex items-center justify-between font-medium text-approved">
-                                            <span>Discount</span>
-                                            <span className="whitespace-nowrap">
-                                                −<Rupiah value={totalDiscount} />
-                                            </span>
+                                        {inspectionFeeRow}
+                                        <div className="flex items-center justify-between gap-3">
+                                            <dt className="text-vw-grey">Discount</dt>
+                                            <dd className="whitespace-nowrap font-semibold text-approved">−<Rupiah value={totalDiscount} /></dd>
                                         </div>
                                     </>
                                 )}
-                                <div className="flex items-center justify-between">
-                                    <span>Subtotal</span>
-                                    <Rupiah value={subtotal} className="text-gray-700" />
+                                {totalDiscount <= 0 && inspectionFeeRow}
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-vw-grey">Subtotal</dt>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={subtotal} /></dd>
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <span>VAT ({vatPercent}%)</span>
-                                    <Rupiah value={vatAmount} className="text-gray-700" />
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-vw-grey">VAT ({vatPercent}%)</dt>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={vatAmount} /></dd>
                                 </div>
-                            </div>
+                            </dl>
 
-                            <div className="flex items-center justify-between gap-3 bg-vw-blue/[0.06] px-5 py-4">
-                                <span className="text-xs font-bold uppercase tracking-wider text-vw-grey">
-                                    {isPricingFinal ? 'Final Total' : 'Estimated Total'}
+                            <div className="my-4 border-t border-dashed border-vw-grey/30" />
+
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-bold text-gray-900">
+                                    {isPricingFinal ? 'Final total' : 'Estimated total'}
                                 </span>
-                                <Rupiah value={grandTotal} className="text-2xl font-bold text-vw-blue" />
+                                <Rupiah value={grandTotal + inspectionFee} className="text-2xl font-bold text-vw-blue" />
                             </div>
-
-                            {inspectionFee > 0 && (
-                                <>
-<div className="flex items-start justify-between gap-3 border-t border-vw-grey/15 px-5 py-3 text-sm">
-                                    <div className="min-w-0">
-                                        <p className="font-medium text-gray-800">Inspection fee</p>
-                                        {order.inspection_fee_note && (
-                                            <p className="text-xs text-gray-600">{order.inspection_fee_note}</p>
-                                        )}
-                                        <p className="text-xs text-gray-600">Not included in the item total above.</p>
-                                    </div>
-                                    <Rupiah value={inspectionFee} className="shrink-0 font-semibold text-gray-900" />
-                                </div>
-                                    <div className="flex items-center justify-between gap-3 border-t border-vw-grey/15 bg-vw-blue/[0.06] px-5 py-4">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-vw-blue">Total with inspection fee</span>
-                                        <Rupiah value={grandTotal + inspectionFee} className="text-xl font-bold text-vw-blue" />
-                                    </div>
-                                </>
-                            )}
                         </div>
 
                         {!isPricingFinal && (
@@ -1225,12 +1277,12 @@ export default function InspectionReport({
                     {/* Kriteria #9: section kondisional tetap ikut arahan status yang sudah ada. */}
                     {showEstimationSection && (
                         <>
-                            <Separator className="my-8" />
+                            <div className="my-6" />
                             <section>
-                                <SectionTitle count={estimationDocuments?.length ?? 0}>Estimation Form</SectionTitle>
+                                <SectionTitle count={estimationDocuments?.length ?? 0}>Estimation form</SectionTitle>
                                 <div className="mt-3">
                                     {estimationDocuments?.length > 0 ? (
-                                        <div className="space-y-2.5">
+                                        <div className="space-y-3">
                                             {estimationDocuments.map((doc) => (
                                                 <DocumentCard
                                                     onOpen={setViewerDoc}
@@ -1258,10 +1310,10 @@ export default function InspectionReport({
 
                     {showThankYouSection && (
                         <>
-                            <Separator className="my-8" />
+                            <div className="my-6" />
                             <section>
-                                <div className="rounded-md border border-approved/20 bg-approved/5 px-5 py-5 text-center">
-                                    <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-sm bg-approved/10">
+                                <div className={`p-5 text-center ${SOFT_CARD}`}>
+                                    <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-approved/10">
                                         <CheckCircle2 className="h-5 w-5 text-approved" />
                                     </span>
                                     <h2 className="mt-3 text-base font-bold text-gray-900">Thank You!</h2>
@@ -1269,15 +1321,15 @@ export default function InspectionReport({
                                         Thank you for trusting {workshopName} with your vehicle service. We hope to see you again soon.
                                     </p>
                                 </div>
-                                <div className="mt-4 space-y-2">
+                                <div className="mt-4 space-y-3">
                                     {settings.era_phone && (
-                                        <a href={`tel:${settings.era_phone.replace(/[^\d+]/g, '')}`} className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 min-h-[44px]">
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
+                                        <a href={`tel:${settings.era_phone.replace(/[^\d+]/g, '')}`} className="flex min-h-[56px] items-center gap-3 rounded-3xl bg-vw-blue p-4 text-sm text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
                                                 <Phone className="h-4 w-4" />
                                             </span>
                                             <span>
-                                                <span className="block font-medium text-gray-900">Emergency Road Assist (ERA)</span>
-                                                <span className="font-mono text-xs text-vw-grey">{settings.era_phone}</span>
+                                                <span className="block font-semibold text-white">Emergency Road Assist (ERA)</span>
+                                                <span className="text-xs tabular-nums text-white/80">{settings.era_phone}</span>
                                             </span>
                                         </a>
                                     )}
@@ -1286,14 +1338,14 @@ export default function InspectionReport({
                                             href={bookingWaHref}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-3 rounded-md border border-vw-grey/15 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:bg-vw-blue/[0.03] hover:text-vw-blue"
+                                            className="flex min-h-[56px] items-center gap-3 rounded-3xl bg-vw-blue p-4 text-sm text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90"
                                         >
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                                <MessageCircle className="h-4 w-4" />
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
+                                                <WhatsAppIcon className="h-5 w-5" />
                                             </span>
                                             <span>
-                                                <span className="block font-medium text-gray-900">Book your next service</span>
-                                                <span className="text-xs text-vw-grey">Chat with us on WhatsApp</span>
+                                                <span className="block font-semibold text-white">Book your next service</span>
+                                                <span className="text-xs text-white/80">Chat with us on WhatsApp</span>
                                             </span>
                                         </a>
                                     )}
@@ -1302,7 +1354,7 @@ export default function InspectionReport({
                                             href={settings.survey_form_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-vw-blue px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-vw-blue/90"
+                                            className="flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-vw-blue px-4 text-sm font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90"
                                         >
                                             Share Your Feedback
                                             <ExternalLink className="h-3.5 w-3.5" />
@@ -1313,139 +1365,103 @@ export default function InspectionReport({
                         </>
                     )}
 
-                    <Separator className="my-8" />
+                    <div className="my-6" />
 
-                    {order.status === 'invoice_preparation' && waHref && (
-                        <section>
-                            <div className="flex flex-col items-start justify-between gap-3 rounded-md border border-vw-blue/20 bg-vw-blue/5 px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
-                                <div>
-                                    <span className="inline-block rounded-sm bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
-                                        Ready for Pickup
-                                    </span>
-                                    <p className="mt-1.5 text-sm font-semibold text-gray-900">Pay, then upload your receipt</p>
-                                    <p className="mt-0.5 text-xs text-vw-grey">Have questions? Reach out to your service advisor.</p>
-                                </div>
-                                <a
-                                    href={waHref}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex min-h-[44px] w-full shrink-0 items-center justify-center gap-1.5 rounded-md bg-vw-blue px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-vw-blue/90 sm:w-auto sm:min-h-0"
-                                >
-                                    <MessageCircle className="h-3.5 w-3.5" />
-                                    Contact SA
-                                </a>
-                            </div>
-                        </section>
-                    )}
-
-                    <Separator className="my-8" />
-
-                    {/* Contact SA — kriteria #10: foto SA yang diupload admin, dengan fallback inisial. */}
-                    <section className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                        <div>
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Contact</h2>
-                            <div className="mt-2 flex items-center gap-3">
-                                <Avatar className="h-12 w-12 shrink-0">
+                    {/* Contact SA — foto SA yang diupload admin, dengan fallback inisial. */}
+                    <section>
+                        <div className={`p-4 ${SOFT_CARD}`}>
+                            <div className="flex items-center gap-3">
+                                <Avatar className="h-11 w-11 shrink-0">
                                     <AvatarImage
                                         src={serviceAdvisor.photo_path ? `/storage/${serviceAdvisor.photo_path}` : undefined}
                                         alt={serviceAdvisor.name}
                                         className="object-cover"
                                     />
-                                    <AvatarFallback className="bg-vw-blue text-sm font-bold text-white">
+                                    <AvatarFallback className="bg-vw-blue text-xs font-bold text-white">
                                         {initials(serviceAdvisor.name)}
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="min-w-0">
-                                    <p className="truncate font-medium text-gray-900">{serviceAdvisor.name}</p>
-                                    <p className="text-sm text-vw-grey">Service Advisor</p>
+                                    <p className="truncate text-sm font-bold text-gray-900">{serviceAdvisor.name}</p>
+                                    <p className="truncate text-xs text-vw-grey">Service Advisor</p>
                                 </div>
                             </div>
-
-                            <div className="mt-3 space-y-2">
-                                {serviceAdvisor.phone && (
-                                    <a
-                                        href={waHref}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
-                                    >
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                            <MessageCircle className="h-4 w-4" />
-                                        </span>
-                                        <span className="truncate">WhatsApp <span className="font-mono">{serviceAdvisor.phone}</span></span>
-                                    </a>
-                                )}
-                                <a
-                                    href={`mailto:${serviceAdvisor.email}`}
-                                    className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-vw-blue hover:text-vw-blue"
-                                >
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                        <Mail className="h-4 w-4" />
-                                    </span>
-                                    <span className="min-w-0 break-all font-mono text-xs">{serviceAdvisor.email}</span>
-                                </a>
-                            </div>
+                            {(waHref || serviceAdvisor.email) && (
+                                <div className={`mt-4 grid gap-2 ${waHref && serviceAdvisor.email ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                    {waHref && (
+                                        <a
+                                            href={waHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-vw-blue px-3 text-xs font-semibold text-white transition hover:bg-vw-blue/90"
+                                        >
+                                            <WhatsAppIcon className="h-4 w-4" />
+                                            WhatsApp
+                                        </a>
+                                    )}
+                                    {serviceAdvisor.email && (
+                                        <a
+                                            href={`mailto:${serviceAdvisor.email}`}
+                                            className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-vw-grey-light px-3 text-xs font-semibold text-gray-900 transition hover:bg-vw-grey/20"
+                                        >
+                                            <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+                                            Email
+                                        </a>
+                                    )}
+                                </div>
+                            )}
                         </div>
+                    </section>
 
-                        {/* Location — kriteria #11: dirapikan, embed diprioritaskan kalau ada. */}
-                        <div>
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-vw-grey">Location</h2>
-                            <div className="mt-2 flex items-start gap-2.5 rounded-md border border-vw-grey/15 px-3 py-2.5">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-vw-grey-light">
-                                    <MapPin className="h-4 w-4" />
-                                </span>
-                                <p className="min-w-0 text-sm text-gray-700">{settings.address ?? '[Address]'}</p>
-                            </div>
+                    <div className="my-6" />
 
-                            {settings.google_maps_embed_url && (
+                    {/* Workshop location — alamat menimpa peta; tombol aksi hanya tampil kalau datanya ada. */}
+                    <section className={`p-5 ${SOFT_CARD}`}>
+                        <h2 className="text-base font-bold text-gray-900">Workshop location</h2>
+                        <div className="relative mt-3 overflow-hidden rounded-2xl bg-vw-grey-light/70">
+                            {settings.google_maps_embed_url ? (
                                 <iframe
                                     src={settings.google_maps_embed_url}
                                     width="100%"
-                                    height="180"
+                                    height="220"
                                     style={{ border: 0 }}
                                     allowFullScreen=""
                                     title="Workshop location map"
                                     loading="lazy"
                                     referrerPolicy="strict-origin-when-cross-origin"
-                                    className="mt-3 w-full rounded-md border border-vw-grey/15"
+                                    className="block w-full"
                                 />
+                            ) : (
+                                <div className="h-44 w-full" aria-hidden="true" />
                             )}
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {settings.google_maps_url && (
-                                    <a
-                                        href={settings.google_maps_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
-                                    >
-                                        <MapPin className="h-3.5 w-3.5" />
-                                        Open in Maps
-                                    </a>
-                                )}
-                                {settings.website_url && (
-                                    <a
-                                        href={settings.website_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-grey px-4 py-2 text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
-                                    >
-                                        <Globe className="h-3.5 w-3.5" />
-                                        Visit Website
-                                    </a>
-                                )}
-                                {bookingWaHref && (
-                                    <a
-                                        href={bookingWaHref}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-vw-blue px-4 py-2 text-xs font-semibold text-vw-blue hover:bg-vw-blue hover:text-white"
-                                    >
-                                        <MessageCircle className="h-3.5 w-3.5" />
-                                        Book a service
-                                    </a>
-                                )}
+                            <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-xl bg-white px-3 py-2.5 shadow-md ring-1 ring-black/[0.04]">
+                                <MapPin className="h-4 w-4 shrink-0 text-vw-blue" aria-hidden="true" />
+                                <p className="min-w-0 text-xs font-semibold text-gray-900">{settings.address ?? '[Address]'}</p>
                             </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            {settings.google_maps_url && (
+                                <a href={settings.google_maps_url} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-vw-grey/30 px-4 text-xs font-semibold text-gray-900 transition hover:bg-vw-grey-light">
+                                    <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Open in Maps
+                                </a>
+                            )}
+                            {settings.website_url && (
+                                <a href={settings.website_url} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-vw-grey/30 px-4 text-xs font-semibold text-gray-900 transition hover:bg-vw-grey-light">
+                                    <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Visit Website
+                                </a>
+                            )}
+                            {bookingWaHref && (
+                                <a href={bookingWaHref} target="_blank" rel="noopener noreferrer"
+                                    className="col-span-2 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-vw-blue px-4 text-xs font-semibold text-vw-blue transition hover:bg-vw-blue hover:text-white">
+                                    <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Book a service
+                                </a>
+                            )}
                         </div>
                     </section>
                 </div>
@@ -1458,10 +1474,10 @@ export default function InspectionReport({
                 submit & tidak ada keputusan baru menunggu). */}
             {canDecide && (hasPendingItems || hasDecisionToSubmit) && (
                 <div
-                    className="fixed inset-x-0 bottom-0 z-40 border-t border-vw-grey/15 bg-white/95 backdrop-blur"
+                    className="fixed inset-x-0 bottom-0 z-40 rounded-t-3xl border-t border-vw-grey/15 bg-white/95 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.25)] backdrop-blur"
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
-                    <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-2.5 sm:px-10 lg:px-16 xl:max-w-4xl xl:px-24">
+                    <div className="mx-auto flex max-w-3xl items-center gap-3 px-5 py-3 sm:px-8 xl:max-w-4xl">
                         <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-semibold text-gray-800">
                                 {decidedItemsList.length} of {items.length} decided
@@ -1475,7 +1491,7 @@ export default function InspectionReport({
                             type="button"
                             onClick={() => setShowModal(true)}
                             disabled={!hasDecisionToSubmit}
-                            className="inline-flex min-h-[42px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-vw-blue px-4 text-xs font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90 disabled:cursor-not-allowed disabled:bg-vw-grey/30 disabled:text-vw-grey disabled:shadow-none"
+                            className="inline-flex min-h-[48px] shrink-0 items-center justify-center gap-1.5 rounded-full bg-vw-blue px-6 text-sm font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90 disabled:cursor-not-allowed disabled:bg-vw-grey/30 disabled:text-vw-grey disabled:shadow-none"
                         >
                             <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
                             {hasDecisionToSubmit ? `Submit (${decidedThisRound.length})` : 'Submit'}
@@ -1527,13 +1543,13 @@ export default function InspectionReport({
                         </div>
                     </div>
 
-                    <ul className="mt-4 max-h-52 space-y-2 overflow-y-auto pr-1">
+                    <ul className="-mx-1 mt-4 max-h-52 space-y-2.5 overflow-y-auto px-1 pb-2 pt-1">
                         {decidedThisRound.map((item) => {
                             const ok = item.status === 'approved';
                             return (
                                 <li
                                     key={item.id}
-                                    className="flex items-center gap-3 rounded-lg border border-vw-grey/15 bg-white px-3 py-2.5 shadow-sm"
+                                    className="flex items-center gap-3 rounded-2xl bg-white px-3.5 py-3 ring-1 ring-black/[0.04] shadow-[0_10px_30px_-16px_rgba(22,27,89,0.22)]"
                                 >
                                     <span
                                         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${ok ? 'bg-approved text-white' : 'bg-vw-grey/15 text-vw-grey'}`}
@@ -1554,31 +1570,35 @@ export default function InspectionReport({
                     </ul>
 
                     {decidedApprovedItems.length > 0 && (
-                        <div className="mt-4 space-y-2 rounded-xl bg-vw-grey-light/70 p-4 text-sm text-vw-grey">
-                            {decidedDiscount > 0 && (
-                                <>
-                                    <div className="flex items-center justify-between">
-                                        <span>Price before discount</span>
-                                        <Rupiah value={decidedListTotal} className="text-gray-700" />
-                                    </div>
-                                    <div className="flex items-center justify-between font-medium text-approved">
-                                        <span>Discount</span>
-                                        <span className="whitespace-nowrap">
-                                            −<Rupiah value={decidedDiscount} />
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                            <div className="flex items-center justify-between">
-                                <span>Subtotal</span>
-                                <Rupiah value={decidedApprovedSubtotal} className="text-gray-700" />
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span>VAT ({vatPercent}%)</span>
-                                <Rupiah value={decidedApprovedTotal - decidedApprovedSubtotal} className="text-gray-700" />
-                            </div>
-                            <div className="flex items-center justify-between border-t border-vw-grey/20 pt-3">
-                                <span className="text-xs font-bold uppercase tracking-wider">Total (this submission)</span>
+                        <div className={`mt-4 p-5 ${SOFT_CARD}`}>
+                            <h3 className="text-base font-bold text-gray-900">Summary</h3>
+                            <dl className="mt-4 space-y-3 text-sm">
+                                {decidedDiscount > 0 && (
+                                    <>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <dt className="text-vw-grey">Price before discount</dt>
+                                            <dd className="font-semibold text-gray-900"><Rupiah value={decidedListTotal} /></dd>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <dt className="text-vw-grey">Discount</dt>
+                                            <dd className="whitespace-nowrap font-semibold text-approved">−<Rupiah value={decidedDiscount} /></dd>
+                                        </div>
+                                    </>
+                                )}
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-vw-grey">Subtotal</dt>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={decidedApprovedSubtotal} /></dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-vw-grey">VAT ({vatPercent}%)</dt>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={decidedApprovedTotal - decidedApprovedSubtotal} /></dd>
+                                </div>
+                            </dl>
+
+                            <div className="my-4 border-t border-dashed border-vw-grey/30" />
+
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-bold text-gray-900">Total (this submission)</span>
                                 <Rupiah value={decidedApprovedTotal} className="text-2xl font-bold text-vw-blue" />
                             </div>
                         </div>

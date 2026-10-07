@@ -25,10 +25,10 @@ export default function LinkExpired({ settings, serviceAdvisor }) {
             <Head title="Link Expired" />
             <div className="flex min-h-screen items-center justify-center px-6">
                 <div className="w-full max-w-sm text-center">
-                    <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-vw-blue/10 text-vw-blue">
+                    <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-vw-blue/10 text-vw-blue ring-8 ring-vw-blue/5">
                         <Link2Off className="h-7 w-7" aria-hidden="true" />
                     </span>
-                    <h1 className="mt-4 text-xl font-bold text-gray-900">This link is no longer active</h1>
+                    <h1 className="mt-5 text-xl font-bold text-vw-blue">This link is no longer active</h1>
                     <p className="mt-2 text-sm leading-relaxed text-gray-600">
                         {waHref
                             ? `Message ${serviceAdvisor?.name ?? workshopName} on WhatsApp and we will send you a new report link.`
@@ -40,7 +40,7 @@ export default function LinkExpired({ settings, serviceAdvisor }) {
                             href={waHref}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg bg-vw-blue px-5 text-sm font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90"
+                            className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-vw-blue px-5 text-sm font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90"
                         >
                             <MessageCircle className="h-4 w-4" aria-hidden="true" />
                             Request a new link

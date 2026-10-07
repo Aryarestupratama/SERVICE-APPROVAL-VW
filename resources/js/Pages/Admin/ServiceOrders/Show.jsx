@@ -50,14 +50,12 @@ import {
     ArrowRight,
     ArrowLeft,
     Plus,
-    Pencil,
     Trash2,
     RotateCcw,
     Copy,
     Check,
     FileText,
     PlayCircle,
-    Eye,
     Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -251,6 +249,50 @@ function IconActionButton({ icon: Icon, label, onClick, tone = 'default' }) {
             </TooltipTrigger>
             <TooltipContent>{label}</TooltipContent>
         </Tooltip>
+    );
+}
+
+// Tombol teks "Edit" / "Delete" — pengganti ikon pensil & tempat sampah.
+// Edit: outline netral. Delete: outline merah (token `urgent`), tidak solid
+// supaya tidak menyaingi tombol View di baris yang sama. `label` jadi
+// aria-label (mis. "Delete invoice") karena teks tombol cuma satu kata.
+function TextActionButton({ text, label, onClick, tone = 'default', className }) {
+    return (
+        <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClick}
+            aria-label={label}
+            className={cn(
+                className,
+                tone === 'danger' &&
+                    'border-urgent/40 text-urgent hover:border-urgent hover:bg-urgent/10 hover:text-urgent'
+            )}
+        >
+            {text}
+        </Button>
+    );
+}
+
+// Tombol "View" (teks saja, tanpa ikon) — satu komponen untuk semua aksi lihat
+// (item, estimation form, invoice, receipt). Gaya SAMA dengan tombol
+// "Preview Inspection Video": Button variant default, size sm.
+// Selalu <button> yang membuka modal, bukan link href. `label` dipakai
+// sebagai aria-label supaya pembaca layar tahu apa yang dilihat.
+function ViewButton({ label, onClick, disabled = false, className }) {
+    return (
+        <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            className={className}
+        >
+            View
+        </Button>
     );
 }
 
@@ -459,17 +501,12 @@ function ItemReceiptRow({ item, canEditItems, onView, onEdit, onDelete, onReopen
                     )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                    <IconActionButton icon={Eye} label="View item" onClick={onView} />
+                    <ViewButton label="View item" onClick={onView} />
                     {canEditItems && item.status !== 'rejected' && (
-                        <IconActionButton icon={Pencil} label="Edit item" onClick={onEdit} />
+                        <TextActionButton text="Edit" label="Edit item" onClick={onEdit} />
                     )}
                     {canEditItems && item.status === 'pending' && (
-                        <IconActionButton
-                            icon={Trash2}
-                            label="Delete item"
-                            onClick={onDelete}
-                            tone="danger"
-                        />
+                        <TextActionButton text="Delete" label="Delete item" tone="danger" onClick={onDelete} />
                     )}
                     {canEditItems && item.status === 'rejected' && (
                         <IconActionButton
@@ -1314,18 +1351,9 @@ export default function Show({
                 {/* Order Overview */}
                 <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                            <Link
-                                href={route('admin.service-orders.index')}
-                                aria-label="Back to service orders"
-                                className="flex h-8 w-8 items-center justify-center rounded-md border border-vw-grey/30 text-vw-grey hover:bg-vw-grey-light"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
-                            </Link>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
-                                Order Overview
-                            </p>
-                        </div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
+                            Order Overview
+                        </p>
                         {/* Delete order — admin-only, dipindah ke header overview
                             karena header lama sudah dihapus. */}
                         {isAdmin && (
@@ -1405,11 +1433,7 @@ export default function Show({
                             <div className="flex items-center gap-1.5">
                                 <p className="text-vw-grey">Customer Complaint</p>
                                 {customerComplaintEditable && !isEditingComplaint && (
-                                    <IconActionButton
-                                        icon={Pencil}
-                                        label="Edit complaint"
-                                        onClick={() => setIsEditingComplaint(true)}
-                                    />
+                                    <TextActionButton text="Edit" label="Edit complaint" onClick={() => setIsEditingComplaint(true)} />
                                 )}
                             </div>
                             {customerComplaintEditable && isEditingComplaint ? (
@@ -1685,7 +1709,7 @@ export default function Show({
                             </div>
                         </div>
                     ) : (
-                        <div className="grid flex-1 min-h-0 lg:grid-cols-[1.7fr_1fr] lg:gap-4">
+                        <div className="grid flex-1 min-h-0 lg:grid-cols-[1.1fr_1fr] lg:gap-4">
                             {/* Kiri — daftar item, hanya grup aktif */}
                             <div className="h-full min-h-[10rem] overflow-y-auto border-b border-vw-grey/10 px-4 py-3 lg:border-b-0 lg:border-r lg:pr-5">
                                 <div className="space-y-2">
@@ -1709,7 +1733,7 @@ export default function Show({
                             <div className="h-full overflow-y-auto bg-vw-grey-light/20 px-4 py-3 lg:px-5">
                               <div className="flex flex-col gap-3">
                                 {/* Breakdown grup yang lagi aktif (dari backend) */}
-                                <div className="space-y-0.5 text-xs">
+                                <div className="space-y-1 text-sm">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-vw-grey">
                                         {GROUP_LABEL[currentGroupTab]} Breakdown
                                     </p>
@@ -1745,18 +1769,13 @@ export default function Show({
                                             Estimation Form — {GROUP_LABEL[currentGroupTab]}
                                         </p>
                                         {hasEstimationFile && (
-                                            <button
-    type="button"
-    className="text-sm text-blue-600 underline"
-    onClick={() =>
-        setPreviewFile({
-            title: `Estimation Form — ${GROUP_LABEL[currentGroupTab]}`,
-            url: `/storage/${estimationDoc.pdf_path}`,
-        })
-    }
->
-    View file
-</button>
+                                            <ViewButton label="View estimation form" onClick={() =>
+                                                    setPreviewFile({
+                                                        title: `Estimation Form — ${GROUP_LABEL[currentGroupTab]}`,
+                                                        url: `/storage/${estimationDoc.pdf_path}`,
+                                                    })
+                                                }
+                                            />
                                         )}
                                     </div>
 
@@ -1974,11 +1993,7 @@ export default function Show({
                                             <div className="flex items-center gap-1">
                                                 <span className="text-vw-grey">Inspection Fee</span>
                                                 {inspectionFeeEditable && (
-                                                    <IconActionButton
-                                                        icon={Pencil}
-                                                        label="Edit inspection fee"
-                                                        onClick={() => setIsEditingFee(true)}
-                                                    />
+                                                    <TextActionButton text="Edit" label="Edit inspection fee" onClick={() => setIsEditingFee(true)} />
                                                 )}
                                             </div>
                                             <span className="text-gray-900">
@@ -2075,22 +2090,14 @@ export default function Show({
                                                     </p>
                                                 )}
                                             </div>
-                                            <IconActionButton
-    icon={Eye}
-    label="View invoice"
-    onClick={() =>
+                                            <ViewButton className="text-xs" label="View invoice" onClick={() =>
         setPreviewFile({
             title: 'Invoice PDF',
             url: `/storage/${invoice.file_path}`,
         })
     }
 />
-                                            <IconActionButton
-                                                icon={Trash2}
-                                                label="Delete invoice"
-                                                tone="danger"
-                                                onClick={handleDeleteInvoice}
-                                            />
+                                            <TextActionButton className="text-xs" text="Delete" label="Delete invoice" tone="danger" onClick={handleDeleteInvoice} />
                                         </>
                                     ) : (
                                         <p className="text-sm text-vw-grey">
@@ -2173,10 +2180,7 @@ export default function Show({
                                                         <span className="text-sm text-gray-900">Receipt</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <IconActionButton
-    icon={Eye}
-    label="View customer receipt"
-    onClick={() =>
+                                                        <ViewButton className="text-xs" label="View customer receipt" onClick={() =>
         setPreviewFile({
             title: 'Customer Receipt',
             url: `/storage/${order.customer_payment_receipt.file_path}`,
@@ -2203,22 +2207,14 @@ export default function Show({
                                                         <span className="text-sm text-gray-900">Receipt</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <IconActionButton
-    icon={Eye}
-    label="View staff receipt"
-    onClick={() =>
+                                                        <ViewButton className="text-xs" label="View staff receipt" onClick={() =>
         setPreviewFile({
             title: 'Staff Receipt',
             url: `/storage/${order.staff_payment_receipt.file_path}`,
         })
     }
 />
-                                                        <IconActionButton
-                                                            icon={Trash2}
-                                                            label="Delete staff receipt"
-                                                            tone="danger"
-                                                            onClick={handleDeleteStaffReceipt}
-                                                        />
+                                                        <TextActionButton className="text-xs" text="Delete" label="Delete staff receipt" tone="danger" onClick={handleDeleteStaffReceipt} />
                                                     </div>
                                                 </div>
                                             ) : (
@@ -2228,19 +2224,19 @@ export default function Show({
                                             )}
                                             <form
                                                 onSubmit={handleStaffReceiptUpload}
-                                                className="space-y-1.5 pt-0.5"
+                                                className="grid grid-cols-4 items-center gap-2 pt-0.5"
                                             >
                                                 <Input
                                                     type="file"
                                                     accept=".pdf,.jpg,.jpeg,.png"
                                                     aria-label="Upload staff receipt"
-                                                    className="h-9 text-xs"
+                                                    className="col-span-3 h-9 min-w-0 text-xs"
                                                     onChange={handleStaffReceiptChange}
                                                 />
                                                 <Button
                                                     type="submit"
                                                     size="sm"
-                                                    className="w-full"
+                                                    className="col-span-1 w-full whitespace-nowrap px-2 text-xs"
                                                     disabled={
                                                         staffReceiptForm.processing ||
                                                         !staffReceiptForm.data.receipt
@@ -2334,11 +2330,7 @@ export default function Show({
                                                 </div>
                                             </div>
                                             {canEditPayment && (
-                                                <IconActionButton
-                                                    icon={Pencil}
-                                                    label="Edit invoice details"
-                                                    onClick={() => setIsEditingPaymentDetails(true)}
-                                                />
+                                                <TextActionButton className="text-xs" text="Edit" label="Edit invoice details" onClick={() => setIsEditingPaymentDetails(true)} />
                                             )}
                                         </div>
                                     )}
@@ -2371,7 +2363,7 @@ export default function Show({
                                                             Download the receipt
                                                         </span>
                                                     </div>
-                                                    <div className="w-44 shrink-0">
+                                                    <div className="w-48 shrink-0">
                                                         {order.customer_payment_receipt ||
                                                         order.staff_payment_receipt ? (
                                                             <a
@@ -2382,7 +2374,7 @@ export default function Show({
                                                                     ).file_path
                                                                 }`}
                                                                 download
-                                                                className="block w-full rounded-md border border-vw-grey px-3 py-1.5 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
+                                                                className="block w-full whitespace-nowrap rounded-md border border-vw-grey px-3 py-1.5 text-center text-xs font-semibold text-vw-grey hover:bg-vw-grey hover:text-white"
                                                             >
                                                                 Download Receipt
                                                             </a>
@@ -2391,7 +2383,7 @@ export default function Show({
                                                                 type="button"
                                                                 variant="outline"
                                                                 size="sm"
-                                                                className="w-full"
+                                                                className="w-full whitespace-nowrap text-xs"
                                                                 disabled
                                                             >
                                                                 Download Receipt
@@ -2408,12 +2400,12 @@ export default function Show({
                                                             Copy the message
                                                         </span>
                                                     </div>
-                                                    <div className="w-44 shrink-0">
+                                                    <div className="w-48 shrink-0">
                                                         <Button
                                                             type="button"
                                                             variant="outline"
                                                             size="sm"
-                                                            className="w-full"
+                                                            className="w-full whitespace-nowrap text-xs"
                                                             onClick={handleCopyMessage}
                                                             disabled={!canReportToCashier}
                                                         >
@@ -2438,7 +2430,7 @@ export default function Show({
                                                             Open the group, paste the message, and attach the receipt manually
                                                         </span>
                                                     </div>
-                                                    <div className="w-44 shrink-0">
+                                                    <div className="w-48 shrink-0">
                                                         {canReportToCashier ? (
                                                             <button
                                                                 type="button"
@@ -2448,7 +2440,7 @@ export default function Show({
                                                                         'wa_cashier_tab'
                                                                     )
                                                                 }
-                                                                className="block w-full rounded-md bg-vw-blue px-3 py-1.5 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
+                                                                className="block w-full whitespace-nowrap rounded-md bg-vw-blue px-3 py-1.5 text-center text-xs font-semibold text-white hover:bg-vw-blue/90"
                                                             >
                                                                 Open Cashier WA Group
                                                             </button>
@@ -2456,7 +2448,7 @@ export default function Show({
                                                             <button
                                                                 type="button"
                                                                 disabled
-                                                                className="block w-full cursor-not-allowed rounded-md bg-vw-grey/40 px-3 py-1.5 text-center text-xs font-semibold text-white"
+                                                                className="block w-full cursor-not-allowed whitespace-nowrap rounded-md bg-vw-grey/40 px-3 py-1.5 text-center text-xs font-semibold text-white"
                                                             >
                                                                 Open Cashier WA Group
                                                             </button>
@@ -2561,7 +2553,9 @@ export default function Show({
             </Dialog>
 
             {/* Preview File Dialog — receipt, invoice & estimation form dibuka di sini (bukan tab baru).
-                PDF lewat viewer bawaan browser, gambar lewat <img>. Link "Open
+                PDF lewat viewer bawaan browser (panel thumbnail kiri disembunyikan lewat
+                fragment URL `#navpanes=0`, lebar halaman pas dengan dialog), gambar
+                lewat <img>. Link "Open
                 in new tab" jadi cadangan (mis. browser mobile yang hanya
                 menampilkan halaman pertama PDF di dalam iframe). */}
             <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
@@ -2578,7 +2572,7 @@ export default function Show({
                             />
                         ) : (
                             <iframe
-                                src={previewFile.url}
+                                src={`${previewFile.url}#navpanes=0&pagemode=none&view=FitH`}
                                 title={previewFile.title}
                                 className="h-[75vh] w-full rounded-md border border-vw-grey/15"
                             />
