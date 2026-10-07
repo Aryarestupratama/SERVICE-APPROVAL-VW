@@ -40,8 +40,9 @@ class InspectionItem extends Model
         return [
             'cost_item' => 'integer',
             'cost_labour' => 'integer',
-            'discount_item_percent' => 'integer',
-            'discount_labour_percent' => 'integer',
+            // Kolom DB decimal(5,2): jangan di-cast integer, diskon pecahan (mis. 7.5%) terpotong.
+            'discount_item_percent' => 'float',
+            'discount_labour_percent' => 'float',
             'final_price_snapshot' => 'integer',
             'decided_at' => 'datetime',
         ];
