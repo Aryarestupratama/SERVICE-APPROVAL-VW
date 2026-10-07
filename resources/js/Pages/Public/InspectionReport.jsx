@@ -323,7 +323,7 @@ function ItemDescription({ text }) {
 // sekarang). Dibuat lebih tipis dari versi sebelumnya (padding, ukuran teks,
 // dan tombol dikecilkan) supaya daftar terasa lebih ringkas meski tetap mudah
 // di-tap di mobile.
-function InspectionItemCard({ item, canDecide, itemRef, onDecision, onUndoLocal }) {
+function InspectionItemCard({ item, canDecide, onDecision, onUndoLocal }) {
     const discount = itemDiscountAmount(item);
     const listPrice = itemListPrice(item);
     const showStruckPrice = discount > 0 && listPrice > itemDisplayPrice(item);
@@ -331,7 +331,6 @@ function InspectionItemCard({ item, canDecide, itemRef, onDecision, onUndoLocal 
 
     return (
         <li
-            ref={itemRef}
             className={`relative scroll-mt-24 overflow-hidden rounded-3xl p-4 ring-1 shadow-[0_12px_40px_-16px_rgba(22,27,89,0.22)] transition ${item.status === 'approved' ? 'bg-approved/5 ring-approved/40' : 'bg-white ring-black/[0.04]'}`}
         >
             <div className="flex items-start justify-between gap-3">
@@ -508,11 +507,8 @@ export default function InspectionReport({
     const [undoing, setUndoing] = useState(false);
     // Dokumen yang sedang dibuka di viewer layar penuh: { url, title } atau null.
     const [viewerDoc, setViewerDoc] = useState(null);
-    // Ref tiap kartu item pending (dipakai chip "Jump to next") + cursor untuk
-    // menyiklus urutan lompat kalau tombolnya ditekan berkali-kali.
-    const pendingItemRefs = useRef({});
+    // Ref section item (dipakai banner "Review" untuk scroll ke daftar item).
     const itemsSectionRef = useRef(null);
-    const [jumpCursor, setJumpCursor] = useState(0);
 
     // Kriteria #5: cuma ada 1 video sekarang, tidak ada lagi tab/pilihan part.
     const video = videos?.[0] ?? null;
@@ -529,15 +525,6 @@ export default function InspectionReport({
     const isServerPending = (i) => (serverStatusById.get(i.id) ?? i.status) === 'pending';
     const orderedItems = [...items].sort((a, b) => Number(!isServerPending(a)) - Number(!isServerPending(b)));
 
-    // Chip "Jump to next" — pengganti chip lompat-per-grup (grouping sengaja
-    // tidak dipakai). Menyiklus ke item pending berikutnya tiap kali ditekan.
-    const handleJumpToPending = () => {
-        if (pendingItems.length === 0) return;
-        const target = pendingItems[jumpCursor % pendingItems.length];
-        const node = pendingItemRefs.current[target.id];
-        if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setJumpCursor((c) => (c + 1) % pendingItems.length);
-    };
     const isLocked = !canDecide || !hasPendingItems;
 
     // Keputusan lokal yang belum disubmit = item yang ID-nya tercatat di
@@ -751,6 +738,9 @@ export default function InspectionReport({
     // daftar item menciut jadi accordion. Status lain: urutan tidak berubah.
     const isInvoiceStage = order.status === 'invoice_preparation';
     const showThankYouSection = THANK_YOU_VISIBLE_STATUSES.includes(order.status);
+    // Tahap invoice & completed: daftar item tidak lagi jadi fokus, jadi dilipat
+    // dalam accordion (default tertutup). Order summary tetap terlihat.
+    const collapseItems = isInvoiceStage || order.status === 'completed';
 
     const BANK_ACCOUNTS = [
         { bank: 'Bank Mandiri', holder: 'PT Wahana Wirawan', number: '1240012993409', logo: '/images/banks/mandiri.png' },
@@ -965,9 +955,6 @@ export default function InspectionReport({
                             canDecide={canDecide}
                             onDecision={handleDecision}
                             onUndoLocal={handleCancelDecision}
-                            itemRef={(el) => {
-                                if (el) pendingItemRefs.current[item.id] = el;
-                            }}
                         />
                     ))}
                 </ul>
@@ -1163,8 +1150,7 @@ export default function InspectionReport({
                         SENGAJA DILEPAS — customer awam tidak familiar dengan istilah grup
                         internal itu. Sebagai gantinya: item pending selalu naik ke atas
                         (orderedItems), kartu pending dibuat tipis+ringkas, item yang sudah
-                        diputuskan menciut jadi 1 baris (DecidedItemRow), chip "Jump to next"
-                        membantu lompat antar item pending, dan ada sticky bottom bar (progress
+                        diputuskan menciut jadi 1 baris (DecidedItemRow), dan ada sticky bottom bar (progress
                         + total + tombol Submit) supaya customer tidak perlu scroll ke bawah. */}
                     <section ref={itemsSectionRef} className="scroll-mt-20">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1192,22 +1178,7 @@ export default function InspectionReport({
                             </p>
                         )}
 
-                        {/* Chip "Jump to next" — bantu customer lompat antar item pending
-                            tanpa perlu grouping (grouping sengaja dilewati, lihat catatan
-                            di bagian atas file). Cuma tampil kalau item pending > 1, karena
-                            kalau cuma 1 item pending tidak ada gunanya lompat kemana-mana. */}
-                        {canDecide && pendingItems.length > 1 && (
-                            <button
-                                type="button"
-                                onClick={handleJumpToPending}
-                                className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-vw-blue/25 bg-vw-blue/5 px-3 py-1.5 text-xs font-semibold text-vw-blue transition hover:bg-vw-blue/10"
-                            >
-                                <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
-                                Jump to next ({pendingItems.length} waiting)
-                            </button>
-                        )}
-
-                        {isInvoiceStage ? (
+                        {collapseItems ? (
                             <Accordion type="single" collapsible className="mt-4">
                                 <AccordionItem value="items" className={`px-4 ${SOFT_CARD}`}>
                                     <AccordionTrigger className="min-h-[48px] text-sm font-semibold text-gray-900">
