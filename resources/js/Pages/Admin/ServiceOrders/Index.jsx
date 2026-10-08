@@ -229,8 +229,8 @@ function buildColumns({ isAdmin, onRequestDelete }) {
     return [
         {
             accessorKey: 'created_at',
-            header: 'Created At',
-            meta: { label: 'Created At' },
+            header: 'WO Date',
+            meta: { label: 'WO Date' },
             cell: ({ row }) => (
                 <span className="text-muted-foreground">{formatDate(row.original.created_at)}</span>
             ),
@@ -343,7 +343,7 @@ function buildColumns({ isAdmin, onRequestDelete }) {
 const filterDefs = [
     {
         key: 'created_at',
-        label: 'Created At',
+        label: 'WO Date',
         type: 'date',
         presetOptions: DATE_PRESETS,
     },
