@@ -41,12 +41,10 @@ export default function Edit({ settings }) {
         address: settings?.address ?? '',
         phone: settings?.phone ?? '',
         google_maps_url: settings?.google_maps_url ?? '',
-        google_maps_embed_url: settings?.google_maps_embed_url ?? '',
         website_url: settings?.website_url ?? '',
         ppn_percent: settings?.ppn_percent ?? '11',
         era_phone: settings?.era_phone ?? '',
         booking_whatsapp_phone: settings?.booking_whatsapp_phone ?? '',
-        survey_form_url: settings?.survey_form_url ?? '',
         logo: null,
         hero_image: null,
         _method: 'put',
@@ -106,9 +104,9 @@ export default function Edit({ settings }) {
     // Field mana yang errornya ada di tab mana — dipakai buat kasih titik merah
     // di TabsTrigger kalau user submit dan ada error di tab yang lagi ditutup.
     const tabHasError = {
-        general: ['workshop_name', 'address', 'phone', 'google_maps_url', 'google_maps_embed_url', 'website_url']
+        general: ['workshop_name', 'address', 'phone', 'google_maps_url', 'website_url']
             .some((f) => errors[f]),
-        tax_thankyou: ['ppn_percent', 'era_phone', 'booking_whatsapp_phone', 'survey_form_url']
+        tax_thankyou: ['ppn_percent', 'era_phone', 'booking_whatsapp_phone']
             .some((f) => errors[f]),
         branding: ['logo', 'hero_image'].some((f) => errors[f]),
     };
@@ -201,26 +199,6 @@ export default function Edit({ settings }) {
                                     {errors.google_maps_url && (
                                         <p className="text-sm text-urgent">{errors.google_maps_url}</p>
                                     )}
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="google_maps_embed_url">
-                                        Google Maps Embed URL <span className="text-vw-grey">(optional)</span>
-                                    </Label>
-                                    <Input
-                                        id="google_maps_embed_url"
-                                        value={data.google_maps_embed_url}
-                                        onChange={(e) => setData('google_maps_embed_url', e.target.value)}
-                                        placeholder="https://www.google.com/maps/embed?pb=..."
-                                    />
-                                    {errors.google_maps_embed_url && (
-                                        <p className="text-sm text-urgent">{errors.google_maps_embed_url}</p>
-                                    )}
-                                    <p className="text-xs text-vw-grey">
-                                        The "src" URL from Google Maps' Embed HTML code, used to show an
-                                        interactive map on the public report page. Leave empty to show a
-                                        link-only map.
-                                    </p>
                                 </div>
 
                                 <div className="space-y-1.5">
@@ -323,19 +301,6 @@ export default function Edit({ settings }) {
                                             </p>
                                         )}
                                     </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="survey_form_url">Survey Form URL</Label>
-                                    <Input
-                                        id="survey_form_url"
-                                        value={data.survey_form_url}
-                                        onChange={(e) => setData('survey_form_url', e.target.value)}
-                                        placeholder="https://forms.gle/..."
-                                    />
-                                    {errors.survey_form_url && (
-                                        <p className="text-sm text-urgent">{errors.survey_form_url}</p>
-                                    )}
                                 </div>
                             </CardContent>
                         </Card>

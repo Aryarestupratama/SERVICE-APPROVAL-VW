@@ -13,14 +13,12 @@ class Setting extends Model
         'address',
         'phone',
         'google_maps_url',
-        'google_maps_embed_url',
         'website_url',
         'ppn_percent',
 
         // Thank You section (Revisi Besar #2, poin 9)
         'era_phone',
         'booking_whatsapp_phone',
-        'survey_form_url',
     ];
 
     protected function casts(): array

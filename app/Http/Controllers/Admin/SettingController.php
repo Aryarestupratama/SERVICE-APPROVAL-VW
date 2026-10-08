@@ -26,8 +26,6 @@ class SettingController extends Controller
             'address' => ['required', 'string'],
             'phone' => ['required', 'string', 'max:30'],
             'google_maps_url' => ['required', 'url', 'starts_with:http://,https://', 'max:500'],
-            // Nilai ini dipakai sebagai src iframe di halaman publik: hanya embed resmi Google Maps.
-            'google_maps_embed_url' => ['nullable', 'url', 'starts_with:https://www.google.com/maps/embed', 'max:1000'],
             'website_url' => ['nullable', 'url', 'starts_with:http://,https://', 'max:500'],
             'ppn_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'logo' => ['nullable', 'image', 'max:2048'],
@@ -36,9 +34,7 @@ class SettingController extends Controller
             // Thank You section (Revisi Besar #2, poin 9)
             'era_phone' => ['nullable', 'string', 'max:30'],
             'booking_whatsapp_phone' => ['nullable', 'string', 'max:30'],
-            'survey_form_url' => ['nullable', 'url', 'starts_with:http://,https://', 'max:500'],
         ], [
-            'google_maps_embed_url.starts_with' => 'Use the embed link from Google Maps (Share → Embed a map). It must start with https://www.google.com/maps/embed',
             '*.starts_with' => 'The link must start with http:// or https://',
         ]);
 
@@ -49,13 +45,11 @@ class SettingController extends Controller
             'address' => $validated['address'],
             'phone' => $validated['phone'],
             'google_maps_url' => $validated['google_maps_url'],
-            'google_maps_embed_url' => $validated['google_maps_embed_url'] ?? null,
             'website_url' => $validated['website_url'] ?? null,
             'ppn_percent' => $validated['ppn_percent'],
 
             'era_phone' => $validated['era_phone'] ?? null,
             'booking_whatsapp_phone' => $this->normalizeWaPhone($validated['booking_whatsapp_phone'] ?? null),
-            'survey_form_url' => $validated['survey_form_url'] ?? null,
         ]);
 
         $oldLogoPath = null;
