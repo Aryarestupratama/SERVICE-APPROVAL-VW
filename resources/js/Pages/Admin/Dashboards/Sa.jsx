@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { router, Head, Link } from '@inertiajs/react';
+import { router, Head, Link, usePage } from '@inertiajs/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { DataTable } from '@/Components/DataTable/DataTable';
@@ -60,6 +60,13 @@ const filterDefs = [
 const emptyPeriodFilter = { mode: 'preset', preset: 'all', from: '', to: '' };
 
 export default function Sa({ saStats, summary, filters }) {
+    // Daftar Work In Process / Completed hanya memuat order milik SA yang login (FR-035), dan
+    // server memaksa filter ke ID sendiri. Jadi tombol pintasan hanya ditampilkan di baris
+    // milik sendiri; admin melihat tombol di semua baris.
+    const { auth } = usePage().props;
+    const authUserId = auth.user.id;
+    const isAdmin = auth.user.role === 'admin';
+
     const [activeFilters, setActiveFilters] = useState(() => ({
         period: filters?.period_mode === 'range'
             ? { mode: 'range', preset: 'all', from: filters?.period_from ?? '', to: filters?.period_to ?? '' }
@@ -198,9 +205,13 @@ export default function Sa({ saStats, summary, filters }) {
                 meta: { label: 'Actions' },
                 // Reuse Admin/ServiceOrders/Index.jsx lewat query filter service_advisor_id
                 // (didukung ServiceOrderController::index dan dibawa terus oleh Index.jsx).
-                cell: ({ row }) => (
+                cell: ({ row }) => {
+                    // SA lain: tidak ada tombol (daftar tujuan hanya memuat order milik sendiri).
+                    if (!isAdmin && row.original.id !== authUserId) return null;
+
                     // "Orders" di tabel ini mencakup semua status, sedangkan Service Orders kini dipecah
                     // menjadi dua daftar (FR-026), jadi disediakan tautan ke masing-masing.
+                    return (
                     <div className="flex flex-wrap gap-2">
                         <Button asChild variant="outline" size="sm">
                             <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id, group: 'in_process' })}>
@@ -213,10 +224,11 @@ export default function Sa({ saStats, summary, filters }) {
                             </Link>
                         </Button>
                     </div>
-                ),
+                    );
+                },
             },
         ],
-        []
+        [isAdmin, authUserId]
     );
 
     const table = useDataTable({ data: saStats, columns });
