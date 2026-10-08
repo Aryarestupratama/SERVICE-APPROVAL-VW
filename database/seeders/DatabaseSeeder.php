@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             SettingsSeeder::class,
             UserSeeder::class,
             DemoDataSeeder::class,
+            FuasDemoSeeder::class,
         ]);
     }
 }
