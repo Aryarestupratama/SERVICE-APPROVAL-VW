@@ -199,11 +199,20 @@ export default function Sa({ saStats, summary, filters }) {
                 // Reuse Admin/ServiceOrders/Index.jsx lewat query filter service_advisor_id
                 // (didukung ServiceOrderController::index dan dibawa terus oleh Index.jsx).
                 cell: ({ row }) => (
-                    <Button asChild variant="outline" size="sm">
-                        <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id })}>
-                            View Orders
-                        </Link>
-                    </Button>
+                    // "Orders" di tabel ini mencakup semua status, sedangkan Service Orders kini dipecah
+                    // menjadi dua daftar (FR-026), jadi disediakan tautan ke masing-masing.
+                    <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline" size="sm">
+                            <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id, group: 'in_process' })}>
+                                In Process
+                            </Link>
+                        </Button>
+                        <Button asChild variant="outline" size="sm">
+                            <Link href={route('admin.service-orders.index', { service_advisor_id: row.original.id, group: 'completed' })}>
+                                Completed
+                            </Link>
+                        </Button>
+                    </div>
                 ),
             },
         ],

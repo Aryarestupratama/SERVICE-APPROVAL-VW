@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { motion, MotionConfig } from 'framer-motion';
 import {
@@ -12,6 +13,7 @@ import {
     Wrench,
     Upload, 
     Link2,
+    ChevronDown,
 } from 'lucide-react';
 import {
     SidebarProvider,
@@ -25,9 +27,14 @@ import {
     SidebarMenu,
     SidebarMenuItem,
     SidebarMenuButton,
+    SidebarMenuSub,
+    SidebarMenuSubItem,
+    SidebarMenuSubButton,
     SidebarTrigger,
     SidebarInset,
+    useSidebar,
 } from '@/Components/ui/sidebar';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/Components/ui/collapsible';
 
 // Chief technician tidak punya akses ke halaman-halaman ini (route-nya role:admin,service_advisor),
 // jadi menunya juga tidak ditampilkan — bukan link yang berujung 403.
@@ -37,7 +44,17 @@ const MAIN_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard', icon: LayoutDashboard },
     { label: 'SA Performance', href: route('admin.dashboards.sa-performance'), routeName: 'admin.dashboards.sa-performance', icon: TrendingUp, roles: MANAGER_ROLES },
     { label: 'Part Performance', href: route('admin.dashboards.part-performance'), routeName: 'admin.dashboards.part-performance', icon: Wrench, roles: MANAGER_ROLES },
-    { label: 'Service Orders', href: route('admin.service-orders.index'), routeName: 'admin.service-orders.*', icon: ClipboardList, roles: MANAGER_ROLES },
+    // Dropdown (FR-026): daftar yang sama dipakai dua kali lewat param `group`.
+    {
+        label: 'Service Orders',
+        routeName: 'admin.service-orders.*',
+        icon: ClipboardList,
+        roles: MANAGER_ROLES,
+        children: [
+            { label: 'Work In Process', href: route('admin.service-orders.index', { group: 'in_process' }), group: 'in_process' },
+            { label: 'Work Completed', href: route('admin.service-orders.index', { group: 'completed' }), group: 'completed' },
+        ],
+    },
 ];
 
 const MASTER_DATA_ITEMS = [
@@ -70,10 +87,79 @@ function initials(name) {
         .toUpperCase();
 }
 
+// Menu dengan sub-menu. Dibuka otomatis saat halaman aktif berada di dalamnya; tombol induk
+// memakai aria-expanded (CollapsibleTrigger) sehingga dapat dioperasikan keyboard (RULE-062).
+function NavDropdown({ item }) {
+    const { group } = usePage().props;
+    const { state, isMobile } = useSidebar();
+    const parentActive = route().current(item.routeName);
+    const [open, setOpen] = useState(Boolean(parentActive));
+
+    useEffect(() => {
+        if (parentActive) setOpen(true);
+    }, [parentActive]);
+
+    // Sub-menu aktif hanya di halaman daftar; di halaman detail hanya induknya yang ditandai.
+    const isChildActive = (child) =>
+        route().current('admin.service-orders.index') && (group === 'completed' ? 'completed' : 'in_process') === child.group;
+
+    // Saat sidebar diciutkan ke ikon, sub-menu tersembunyi: ikon langsung menuju sub-menu pertama.
+    if (state === 'collapsed' && !isMobile) {
+        return (
+            <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={parentActive} tooltip={item.label}>
+                    <Link href={item.children[0].href} aria-current={parentActive ? 'page' : undefined}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                    </Link>
+                </SidebarMenuButton>
+            </SidebarMenuItem>
+        );
+    }
+
+    return (
+        <Collapsible asChild open={open} onOpenChange={setOpen} className="group/collapsible">
+            <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                    <SidebarMenuButton isActive={parentActive} tooltip={item.label}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                        <ChevronDown
+                            className="ml-auto h-4 w-4 transition-transform motion-reduce:transition-none group-data-[state=open]/collapsible:rotate-180"
+                            aria-hidden="true"
+                        />
+                    </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                    <SidebarMenuSub>
+                        {item.children.map((child) => {
+                            const active = isChildActive(child);
+
+                            return (
+                                <SidebarMenuSubItem key={child.href}>
+                                    <SidebarMenuSubButton asChild isActive={active} className="h-9">
+                                        <Link href={child.href} aria-current={active ? 'page' : undefined}>
+                                            <span>{child.label}</span>
+                                        </Link>
+                                    </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                            );
+                        })}
+                    </SidebarMenuSub>
+                </CollapsibleContent>
+            </SidebarMenuItem>
+        </Collapsible>
+    );
+}
+
 function NavGroup({ items, layoutId }) {
     return (
         <SidebarMenu>
             {items.map((item) => {
+                if (item.children) {
+                    return <NavDropdown key={item.label} item={item} />;
+                }
+
                 const isActive = route().current(item.routeName);
 
                 return (

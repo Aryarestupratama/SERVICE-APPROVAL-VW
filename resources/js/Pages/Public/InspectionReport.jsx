@@ -91,7 +91,7 @@ const GROUP_LABEL = {
 // Label pendek dipakai di stepper mode mobile (kriteria mobile-responsive
 // TODO #2) supaya tidak sempit/tumpang tindih di layar sempit (~320-375px).
 const STATUS_STEPS = [
-    { key: 'work_in_progress', label: 'In Progress', shortLabel: 'Progress', icon: Wrench, description: 'Our technicians are working on your vehicle.' },
+    { key: 'work_in_progress', label: 'Work In Process', shortLabel: 'Process', icon: Wrench, description: 'Our technicians are working on your vehicle.' },
     { key: 'quality_control', label: 'Quality Control', shortLabel: 'QC', icon: ShieldCheck, description: 'Your vehicle is being checked and washed before handover.' },
     { key: 'invoice_preparation', label: 'Invoice', shortLabel: 'Invoice', icon: Receipt, description: 'Your invoice is ready. Please review it and proceed with payment.' },
     { key: 'completed', label: 'Completed', shortLabel: 'Done', icon: BadgeCheck, description: 'Your service is complete. Thank you for choosing us.' },

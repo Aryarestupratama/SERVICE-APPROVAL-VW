@@ -92,7 +92,7 @@ const STATUS_VARIANT = {
 
 const STATUS_LABEL = {
     appointment: 'Appointment',
-    work_in_progress: 'Work In Progress',
+    work_in_progress: 'Work In Process',
     quality_control: 'Quality Control',
     invoice_preparation: 'Invoice Preparation',
     completed: 'Completed',
@@ -1330,7 +1330,7 @@ export default function Show({
                 <details open className="group rounded-lg border border-vw-grey/15 bg-white">
                     <summary className="flex min-h-[48px] cursor-pointer list-none items-center gap-3 px-4 py-2 text-sm [&::-webkit-details-marker]:hidden">
                         <Link
-                            href={route('admin.service-orders.index')}
+                            href={route('admin.service-orders.index', { group: order.status === 'completed' ? 'completed' : 'in_process' })}
                             aria-label="Back to service orders"
                             onClick={(e) => e.stopPropagation()}
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-vw-grey/30 text-vw-grey hover:bg-vw-grey-light"
@@ -1845,7 +1845,7 @@ export default function Show({
                                     ) : (
                                         <p className="text-xs text-vw-grey">
                                             Estimation forms can only be uploaded or changed while
-                                            the order is at Appointment or Work In Progress.
+                                            the order is at Appointment or Work In Process.
                                         </p>
                                     )}
 

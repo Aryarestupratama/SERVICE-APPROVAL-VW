@@ -85,7 +85,19 @@ class ServiceOrderController extends Controller
         // berhalangan. Filter `service_advisor_id` di bawah tetap ada, tapi
         // itu filter EKSPLISIT dari user (mis. tombol "View Orders" di
         // Dashboard SA) — bukan pembatasan otomatis berdasar siapa yang login.
+        // Menu Work In Process / Work Completed (FR-026, API-011): `group` = in_process (semua
+        // status selain completed, termasuk all_rejected_cancelled) atau completed. Nilai lain
+        // dianggap in_process. Filter `status` hanya berlaku bila statusnya termasuk group ini,
+        // supaya URL yang tidak konsisten tidak menghasilkan daftar kosong tanpa penjelasan.
+        $group = $request->query('group') === 'completed' ? 'completed' : 'in_process';
+        $statusInGroup = filled($request->status)
+            && (($group === 'completed') === ($request->status === ServiceOrder::STATUS_COMPLETED));
+
         $query
+            ->when($group === 'completed',
+                fn ($q) => $q->where('service_orders.status', ServiceOrder::STATUS_COMPLETED),
+                fn ($q) => $q->where('service_orders.status', '!=', ServiceOrder::STATUS_COMPLETED)
+            )
             ->when($request->search, fn ($q, $search) =>
                 $q->where(function ($q2) use ($search) {
                     $q2->where('work_order_number', 'like', "%{$search}%")
@@ -97,7 +109,7 @@ class ServiceOrderController extends Controller
                         );
                 })
             )
-            ->when($request->status, fn ($q, $status) =>
+            ->when($statusInGroup ? $request->status : null, fn ($q, $status) =>
                 $q->where('status', $status)
             )
             ->when($request->items_approval_status, fn ($q, $status) =>
@@ -156,15 +168,22 @@ class ServiceOrderController extends Controller
             $query->latest('service_orders.created_at');
         }
 
+        $filters = $request->only([
+            'status', 'items_approval_status', 'service_advisor_id',
+            'date_from', 'date_to',
+            'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
+            'sort_by', 'sort_dir',
+        ]);
+
+        if (! $statusInGroup) {
+            unset($filters['status']);
+        }
+
         return Inertia::render('Admin/ServiceOrders/Index', [
             'orders' => $query->paginate(20)->withQueryString(),
             'search' => $request->search,
-            'filters' => $request->only([
-                'status', 'items_approval_status', 'service_advisor_id',
-                'date_from', 'date_to',
-                'grand_total_field', 'grand_total_value', 'grand_total_from', 'grand_total_to',
-                'sort_by', 'sort_dir',
-            ]),
+            'group' => $group,
+            'filters' => $filters,
         ]);
     }
 
@@ -620,7 +639,7 @@ class ServiceOrderController extends Controller
         }
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'Item can only be reopened while status is Appointment or Work In Progress.');
+            return back()->with('error', 'Item can only be reopened while status is Appointment or Work In Process.');
         }
 
         if ($inspectionItem->status !== 'rejected') {
@@ -655,7 +674,7 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'Item can only be added while status is Appointment or Work In Progress.');
+            return back()->with('error', 'Item can only be added while status is Appointment or Work In Process.');
         }
 
         $validated = $request->validate([
@@ -695,7 +714,7 @@ class ServiceOrderController extends Controller
         }
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'Item can only be changed while status is Appointment or Work In Progress.');
+            return back()->with('error', 'Item can only be changed while status is Appointment or Work In Process.');
         }
 
         // CHANGED: previously approved items were fully blocked (isLocked()).
@@ -767,7 +786,7 @@ class ServiceOrderController extends Controller
         }
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'Item can only be deleted while status is Appointment or Work In Progress.');
+            return back()->with('error', 'Item can only be deleted while status is Appointment or Work In Process.');
         }
 
         if ($inspectionItem->isLocked()) {
@@ -791,7 +810,7 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'The estimation form can only be changed while status is Appointment or Work In Progress.');
+            return back()->with('error', 'The estimation form can only be changed while status is Appointment or Work In Process.');
         }
 
         $validated = $request->validate([
@@ -841,7 +860,7 @@ class ServiceOrderController extends Controller
         }
 
         if (!in_array($serviceOrder->status, self::ITEM_EDITABLE_STATUSES, true)) {
-            return back()->with('error', 'The estimation form can only be deleted while status is Appointment or Work In Progress.');
+            return back()->with('error', 'The estimation form can only be deleted while status is Appointment or Work In Process.');
         }
 
         if ($estimationDocument->pdf_path) {
@@ -1000,6 +1019,9 @@ class ServiceOrderController extends Controller
             abort(403, 'Only admin can delete a service order.');
         }
 
+        // Kembali ke daftar tempat order ini berada (Work In Process / Work Completed).
+        $redirectGroup = $serviceOrder->status === ServiceOrder::STATUS_COMPLETED ? 'completed' : 'in_process';
+
         $serviceOrder->load([
             'videos',
             'estimationDocuments',
@@ -1046,7 +1068,7 @@ class ServiceOrderController extends Controller
         });
 
         return redirect()
-            ->route('admin.service-orders.index')
+            ->route('admin.service-orders.index', ['group' => $redirectGroup])
             ->with('success', 'Service order permanently deleted.');
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Link, router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
@@ -23,11 +23,23 @@ import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPane
 
 const STATUS_LABEL = {
     appointment: 'Appointment',
-    work_in_progress: 'Work in Progress',
+    work_in_progress: 'Work In Process',
     quality_control: 'Quality Control',
     invoice_preparation: 'Invoice Preparation',
     completed: 'Completed',
     all_rejected_cancelled: 'Rejected & Cancelled',
+};
+
+// Dua menu Service Orders (FR-026): param `group` dikirim di setiap request (RULE-025).
+// in_process = semua status selain completed; completed = hanya completed.
+const GROUP_STATUSES = {
+    in_process: ['appointment', 'work_in_progress', 'quality_control', 'invoice_preparation', 'all_rejected_cancelled'],
+    completed: ['completed'],
+};
+
+const GROUP_TITLE = {
+    in_process: 'Work In Process',
+    completed: 'Work Completed',
 };
 
 const STATUS_VARIANT = {
@@ -340,19 +352,20 @@ function buildColumns({ isAdmin, onRequestDelete }) {
 // sebelumnya field 'grand_total_field' selalu default 'estimate' aktif terus
 // tanpa benar-benar dipakai user sebagai filter aktif. Sisa filter cuma
 // Status & Items Approval.
-const filterDefs = [
+const buildFilterDefs = (group) => [
     {
         key: 'created_at',
         label: 'WO Date',
         type: 'date',
         presetOptions: DATE_PRESETS,
     },
-    {
+    // Group Work Completed hanya berisi satu status, jadi filter status tidak diperlukan.
+    ...(group === 'completed' ? [] : [{
         key: 'status',
         label: 'Status',
         type: 'select',
-        options: Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
-    },
+        options: GROUP_STATUSES[group].map((value) => ({ value, label: STATUS_LABEL[value] })),
+    }]),
     {
         key: 'items_approval_status',
         label: 'Items Approval',
@@ -361,8 +374,11 @@ const filterDefs = [
     },
 ];
 
-export default function Index({ orders, search, filters }) {
+export default function Index({ orders, search, filters, group }) {
     const { auth } = usePage().props;
+    const currentGroup = group === 'completed' ? 'completed' : 'in_process';
+    const pageTitle = GROUP_TITLE[currentGroup];
+    const filterDefs = useMemo(() => buildFilterDefs(currentGroup), [currentGroup]);
     const isAdmin = auth?.user?.role === 'admin';
 
     const [searchTerm, setSearchTerm] = useState(search ?? '');
@@ -432,6 +448,7 @@ export default function Index({ orders, search, filters }) {
                 status: activeFilters.status || undefined,
                 items_approval_status: activeFilters.items_approval_status || undefined,
                 service_advisor_id: saFilter || undefined,
+                group: currentGroup,
                 ...resolveDateRange(activeFilters.created_at),
                 sort_by: activeSort?.id || undefined,
                 sort_dir: activeSort ? (activeSort.desc ? 'desc' : 'asc') : undefined,
@@ -443,7 +460,7 @@ export default function Index({ orders, search, filters }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters, sorting, saFilter]);
+    }, [searchTerm, activeFilters, sorting, saFilter, currentGroup]);
 
     const { date_from: activeDateFrom, date_to: activeDateTo } = resolveDateRange(activeFilters.created_at);
     const hasDateFilter = Boolean(activeDateFrom || activeDateTo);
@@ -461,8 +478,8 @@ export default function Index({ orders, search, filters }) {
     };
 
     return (
-        <AdminLayout title="Service Orders">
-            <Head title="Service Orders" />
+        <AdminLayout title={pageTitle}>
+            <Head title={pageTitle} />
             {saFilter && (
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-vw-blue/20 bg-vw-blue/[0.06] px-3 py-2 text-sm">
                     <span>
@@ -474,8 +491,9 @@ export default function Index({ orders, search, filters }) {
                     </Button>
                 </div>
             )}
+            {currentGroup === 'in_process' && (
             <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
-                {[{ value: '', label: 'All' }, ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))].map((opt) => {
+                {[{ value: '', label: 'All' }, ...GROUP_STATUSES[currentGroup].map((value) => ({ value, label: STATUS_LABEL[value] }))].map((opt) => {
                     const active = activeFilters.status === opt.value;
                     return (
                         <button
@@ -494,6 +512,7 @@ export default function Index({ orders, search, filters }) {
                     );
                 })}
             </div>
+            )}
             <DataTable
                 table={table}
                 links={orders.links}

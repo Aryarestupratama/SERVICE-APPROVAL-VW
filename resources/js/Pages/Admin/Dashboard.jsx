@@ -18,7 +18,7 @@ import {
 
 const STATUS_LABELS = {
     appointment: 'Appointment',
-    work_in_progress: 'Work in Progress',
+    work_in_progress: 'Work In Process',
     quality_control: 'Quality Control',
     invoice_preparation: 'Invoice Preparation',
     completed: 'Completed',
@@ -290,7 +290,7 @@ export default function Dashboard({
                         </CardTitle>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Orders stuck &gt; {stuckThresholdDays} days in Work in Progress (waiting for parts) or Invoice Preparation (waiting for pickup).
+                        Orders stuck &gt; {stuckThresholdDays} days in Work In Process (waiting for parts) or Invoice Preparation (waiting for pickup).
                     </p>
                     {attentionTotal > actionItems.length && (
                         <p className="text-xs text-muted-foreground">
@@ -400,7 +400,7 @@ export default function Dashboard({
                 {Object.entries(STATUS_LABELS).map(([key, label]) => (
                     <Link
                         key={key}
-                        href={route('admin.service-orders.index', { status: key })}
+                        href={route('admin.service-orders.index', { status: key, group: key === 'completed' ? 'completed' : 'in_process' })}
                         className="block rounded-lg transition-colors hover:ring-1 hover:ring-primary/40"
                     >
                     <Card>
