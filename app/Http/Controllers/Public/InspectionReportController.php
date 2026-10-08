@@ -65,7 +65,6 @@ class InspectionReportController extends Controller
                 'address' => $settings->address,
                 'phone' => $settings->phone,
                 'google_maps_url' => $settings->google_maps_url,
-                'google_maps_embed_url' => $settings->google_maps_embed_url,
                 'website_url' => $settings->website_url,
                 'ppn_percent' => (float) $settings->ppn_percent,
 
@@ -74,7 +73,6 @@ class InspectionReportController extends Controller
                 // supaya controller tidak perlu tahu logika kondisional ini.
                 'era_phone' => $settings->era_phone,
                 'booking_whatsapp_phone' => $settings->booking_whatsapp_phone,
-                'survey_form_url' => $settings->survey_form_url,
             ],
             'order' => [
                 'id' => $serviceOrder->id,
@@ -100,7 +98,6 @@ class InspectionReportController extends Controller
             ],
             'serviceAdvisor' => [
                 'name' => $serviceOrder->serviceAdvisor->name,
-                'email' => $serviceOrder->serviceAdvisor->email,
                 'phone' => $serviceOrder->serviceAdvisor->phone,
                 'photo_path' => $serviceOrder->serviceAdvisor->photo_path,
             ],

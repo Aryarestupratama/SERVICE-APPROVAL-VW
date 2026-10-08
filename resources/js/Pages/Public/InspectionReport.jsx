@@ -1,7 +1,7 @@
 import PublicLayout from '@/Layouts/PublicLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Phone, MessageCircle, FileText, CheckCircle2, ExternalLink, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Upload, ChevronRight, ChevronDown, ArrowDown, Copy, MapPin, Globe, Landmark, Mail } from 'lucide-react';
+import { Phone, MessageCircle, FileText, CheckCircle2, Wrench, ShieldCheck, Receipt, BadgeCheck, Check, X, Clock, Undo2, Tag, ClipboardCheck, Loader2, AlertTriangle, Upload, ChevronRight, ChevronDown, ArrowDown, Copy, MapPin, Globe, Landmark } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarImage, AvatarFallback } from '@/Components/ui/avatar';
 import { Progress } from '@/Components/ui/progress';
@@ -1320,17 +1320,6 @@ export default function InspectionReport({
                                             </span>
                                         </a>
                                     )}
-                                    {settings.survey_form_url && (
-                                        <a
-                                            href={settings.survey_form_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-vw-blue px-4 text-sm font-semibold text-white shadow-md shadow-vw-blue/25 transition hover:bg-vw-blue/90"
-                                        >
-                                            Share Your Feedback
-                                            <ExternalLink className="h-3.5 w-3.5" />
-                                        </a>
-                                    )}
                                 </div>
                             </section>
                         </>
@@ -1357,8 +1346,8 @@ export default function InspectionReport({
                                     <p className="truncate text-xs text-vw-grey">Service Advisor</p>
                                 </div>
                             </div>
-                            {(waHref || serviceAdvisor.email) && (
-                                <div className={`mt-4 grid gap-2 ${waHref && serviceAdvisor.email ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {waHref && (
+                                <div className="mt-4 grid grid-cols-1 gap-2">
                                     {waHref && (
                                         <a
                                             href={waHref}
@@ -1370,15 +1359,6 @@ export default function InspectionReport({
                                             WhatsApp
                                         </a>
                                     )}
-                                    {serviceAdvisor.email && (
-                                        <a
-                                            href={`mailto:${serviceAdvisor.email}`}
-                                            className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-vw-grey-light px-3 text-xs font-semibold text-gray-900 transition hover:bg-vw-grey/20"
-                                        >
-                                            <Mail className="h-3.5 w-3.5" aria-hidden="true" />
-                                            Email
-                                        </a>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -1386,29 +1366,12 @@ export default function InspectionReport({
 
                     <div className="my-6" />
 
-                    {/* Workshop location — alamat menimpa peta; tombol aksi hanya tampil kalau datanya ada. */}
+                    {/* Workshop location — alamat teks; tombol aksi hanya tampil kalau datanya ada. Peta embed dihapus (FR-023). */}
                     <section className={`p-5 ${SOFT_CARD}`}>
                         <h2 className="text-base font-bold text-gray-900">Workshop location</h2>
-                        <div className="relative mt-3 overflow-hidden rounded-2xl bg-vw-grey-light/70">
-                            {settings.google_maps_embed_url ? (
-                                <iframe
-                                    src={settings.google_maps_embed_url}
-                                    width="100%"
-                                    height="220"
-                                    style={{ border: 0 }}
-                                    allowFullScreen=""
-                                    title="Workshop location map"
-                                    loading="lazy"
-                                    referrerPolicy="strict-origin-when-cross-origin"
-                                    className="block w-full"
-                                />
-                            ) : (
-                                <div className="h-44 w-full" aria-hidden="true" />
-                            )}
-                            <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-xl bg-white px-3 py-2.5 shadow-md ring-1 ring-black/[0.04]">
-                                <MapPin className="h-4 w-4 shrink-0 text-vw-blue" aria-hidden="true" />
-                                <p className="min-w-0 text-xs font-semibold text-gray-900">{settings.address ?? '[Address]'}</p>
-                            </div>
+                        <div className="mt-3 flex items-start gap-3 rounded-2xl bg-vw-grey-light/70 px-3 py-3">
+                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-vw-blue" aria-hidden="true" />
+                            <p className="min-w-0 text-xs font-semibold text-gray-900">{settings.address ?? '[Address]'}</p>
                         </div>
 
                         <div className="mt-3 grid grid-cols-2 gap-2">
