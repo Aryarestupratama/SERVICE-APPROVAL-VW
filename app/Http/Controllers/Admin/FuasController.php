@@ -114,6 +114,17 @@ class FuasController extends Controller
     }
 
     /**
+     * API-024. Jumlah order yang butuh aksi untuk badge menu; dipoll ringan (RULE-044).
+     * Lingkup per role dihitung di FuasStatusService (FR-032).
+     */
+    public function actionCount(Request $request): JsonResponse
+    {
+        return response()->json([
+            'count' => $this->fuasStatus->actionCountFor($request->user()),
+        ]);
+    }
+
+    /**
      * API-020. Idempotent: membuat baris FUAS + feedback_token bila belum ada dan
      * mengembalikan URL feedback. Hanya saat tombol kirim aktif (To Send / Reminder Due).
      * Mengembalikan JSON (dipanggil lewat fetch dari modal FUAS, TASK-030), bukan redirect.

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\FuasStatusService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,6 +38,10 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
+            ],
+            // Badge reminder FUAS (FR-030): satu COUNT ringan, hanya untuk admin / SA yang login.
+            'fuas' => fn () => [
+                'action_count' => app(FuasStatusService::class)->actionCountFor($request->user()),
             ],
             // Notifikasi in-app (follow-up reminder & escalation) — cuma
             // di-load kalau user sedang login, biar halaman publik/guest

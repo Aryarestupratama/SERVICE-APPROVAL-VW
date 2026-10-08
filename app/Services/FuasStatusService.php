@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderFuas;
+use App\Models\User;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -108,6 +109,29 @@ class FuasStatusService
     public function canSend(?string $status): bool
     {
         return $status === self::TO_SEND || $status === self::REMINDER_DUE;
+    }
+
+    /**
+     * Jumlah order yang butuh aksi (To Send + Reminder Due) untuk badge menu FUAS (FR-030).
+     * Admin: semua order; SA: hanya order miliknya; role lain / belum login: 0 tanpa query.
+     * Memakai applyList() supaya aturan tetap satu tempat (RULE-036); satu COUNT ringan (RULE-044).
+     */
+    public function actionCountFor(?User $user, ?DateTimeInterface $now = null): int
+    {
+        if ($user === null || ! in_array($user->role, ['admin', 'service_advisor'], true)) {
+            return 0;
+        }
+
+        $query = ServiceOrder::query()
+            ->leftJoin('service_order_fuas as f', 'f.service_order_id', '=', 'service_orders.id');
+
+        $this->applyList($query, self::LIST_IN_PROCESS, [self::TO_SEND, self::REMINDER_DUE], $now ?? now());
+
+        if ($user->role === 'service_advisor') {
+            $query->where('service_orders.service_advisor_id', $user->id);
+        }
+
+        return $query->count();
     }
 
     /** Daftar tempat status ini tampil; null bila tidak masuk FUAS. */

@@ -62,8 +62,9 @@ const MAIN_NAV_ITEMS = [
         routeName: 'admin.fuas.*',
         icon: MessageSquareText,
         roles: MANAGER_ROLES,
+        badgeKey: 'fuas',
         children: [
-            { label: 'FUAS In Process', href: route('admin.fuas.in-process'), routeName: 'admin.fuas.in-process' },
+            { label: 'FUAS In Process', href: route('admin.fuas.in-process'), routeName: 'admin.fuas.in-process', badgeKey: 'fuas' },
             { label: 'FUAS Completed', href: route('admin.fuas.completed'), routeName: 'admin.fuas.completed' },
         ],
     },
@@ -99,11 +100,88 @@ function initials(name) {
         .toUpperCase();
 }
 
+// Badge reminder FUAS (FR-030): jumlah order To Send + Reminder Due. Nilai awal dari shared prop
+// (selalu segar tiap navigasi), lalu dipoll ringan tiap 5 detik (OQ-A5: realtime). Polling berhenti
+// saat tab tidak aktif (RULE-044). Gagal poll sengaja senyap: badge hanya penanda pendamping,
+// poll berikutnya mencoba lagi.
+const FUAS_POLL_INTERVAL_MS = 5000;
+
+function useFuasActionCount(enabled) {
+    const serverCount = usePage().props.fuas?.action_count ?? 0;
+    const [count, setCount] = useState(serverCount);
+
+    useEffect(() => {
+        setCount(serverCount);
+    }, [serverCount]);
+
+    useEffect(() => {
+        if (!enabled) return undefined;
+
+        let intervalId;
+
+        const check = async () => {
+            try {
+                const res = await fetch(route('admin.fuas.action-count'), {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (typeof data.count === 'number') setCount(data.count);
+            } catch {
+                // Silent by design.
+            }
+        };
+
+        const start = (immediate) => {
+            clearInterval(intervalId);
+            if (immediate) check();
+            intervalId = setInterval(check, FUAS_POLL_INTERVAL_MS);
+        };
+        const stop = () => clearInterval(intervalId);
+
+        const handleVisibility = () => {
+            if (document.visibilityState === 'hidden') {
+                stop();
+            } else {
+                start(true); // kembali ke tab: segarkan dulu
+            }
+        };
+
+        // Saat halaman baru dimuat, nilai dari server sudah segar: tidak perlu cek langsung.
+        if (document.visibilityState !== 'hidden') start(false);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            stop();
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, [enabled]);
+
+    return count;
+}
+
+// Lencana jumlah. Teks amber-700 di atas latar amber-50 (kontras, RULE-060); angka tetap terbaca
+// pembaca layar lewat teks sr-only.
+function CountBadge({ count, className = '' }) {
+    if (!count) return null;
+
+    return (
+        <span
+            className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-50 px-1.5 text-[11px] font-semibold tabular-nums text-amber-700 ${className}`}
+        >
+            {count > 99 ? '99+' : count}
+            <span className="sr-only"> orders need action</span>
+        </span>
+    );
+}
+
 // Menu dengan sub-menu. Dibuka otomatis saat halaman aktif berada di dalamnya; tombol induk
 // memakai aria-expanded (CollapsibleTrigger) sehingga dapat dioperasikan keyboard (RULE-062).
-function NavDropdown({ item }) {
+function NavDropdown({ item, badges }) {
     const { group } = usePage().props;
     const { state, isMobile } = useSidebar();
+    const parentBadge = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
     const parentActive = route().current(item.routeName);
     const [open, setOpen] = useState(Boolean(parentActive));
 
@@ -121,10 +199,11 @@ function NavDropdown({ item }) {
     if (state === 'collapsed' && !isMobile) {
         return (
             <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={parentActive} tooltip={item.label}>
+                <SidebarMenuButton asChild isActive={parentActive} tooltip={item.label} className="relative">
                     <Link href={item.children[0].href} aria-current={parentActive ? 'page' : undefined}>
                         <item.icon />
                         <span>{item.label}</span>
+                        <CountBadge count={parentBadge} className="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]" />
                     </Link>
                 </SidebarMenuButton>
             </SidebarMenuItem>
@@ -138,6 +217,7 @@ function NavDropdown({ item }) {
                     <SidebarMenuButton isActive={parentActive} tooltip={item.label}>
                         <item.icon />
                         <span>{item.label}</span>
+                        {!open && <CountBadge count={parentBadge} className="ml-1" />}
                         <ChevronDown
                             className="ml-auto h-4 w-4 transition-transform motion-reduce:transition-none group-data-[state=open]/collapsible:rotate-180"
                             aria-hidden="true"
@@ -154,6 +234,7 @@ function NavDropdown({ item }) {
                                     <SidebarMenuSubButton asChild isActive={active} className="h-9">
                                         <Link href={child.href} aria-current={active ? 'page' : undefined}>
                                             <span>{child.label}</span>
+                                            {child.badgeKey && <CountBadge count={badges[child.badgeKey] ?? 0} className="ml-auto" />}
                                         </Link>
                                     </SidebarMenuSubButton>
                                 </SidebarMenuSubItem>
@@ -166,12 +247,12 @@ function NavDropdown({ item }) {
     );
 }
 
-function NavGroup({ items, layoutId }) {
+function NavGroup({ items, layoutId, badges = {} }) {
     return (
         <SidebarMenu>
             {items.map((item) => {
                 if (item.children) {
-                    return <NavDropdown key={item.label} item={item} />;
+                    return <NavDropdown key={item.label} item={item} badges={badges} />;
                 }
 
                 const isActive = route().current(item.routeName);
@@ -211,6 +292,8 @@ export default function AdminLayout({ children, title, headerActions }) {
     const visible = (items) => items.filter((item) => !item.roles || item.roles.includes(role));
 
     const mainItems = visible(MAIN_NAV_ITEMS);
+    // Chief technician tidak punya menu FUAS: tidak perlu polling.
+    const fuasCount = useFuasActionCount(MANAGER_ROLES.includes(role));
     const masterDataItems = visible(
         isAdmin ? [...MASTER_DATA_ITEMS, ...MASTER_DATA_ADMIN_ONLY_ITEMS] : MASTER_DATA_ITEMS
     );
@@ -259,7 +342,7 @@ export default function AdminLayout({ children, title, headerActions }) {
 
                 <SidebarContent>
                     <SidebarGroup>
-                        <NavGroup items={mainItems} layoutId="active-nav-indicator" />
+                        <NavGroup items={mainItems} layoutId="active-nav-indicator" badges={{ fuas: fuasCount }} />
                     </SidebarGroup>
 
                     {masterDataItems.length > 0 && (

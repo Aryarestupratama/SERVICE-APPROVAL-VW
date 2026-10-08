@@ -32,6 +32,7 @@ export function DataTable({
     // isFiltered: true kalau search/filter sedang aktif — pesan kosongnya jadi "tidak ada hasil",
     // bukan "belum ada data". paginationMeta: { from, to, total } dari paginator Laravel (opsional).
     isFiltered = false,
+    rowClassName, // opsional: (rowData) => string, kelas tambahan per baris (mis. menyorot baris yang butuh aksi)
     onRowClick, // opsional: klik area kosong baris = buka detail (klik link/tombol di dalam baris tidak ikut terpicu)
     filteredEmptyMessage = 'No results match your search or filters.',
     paginationMeta,
@@ -87,7 +88,7 @@ export function DataTable({
                             table.getRowModel().rows.map((row) => (
                                 <TableRow
                                     key={row.id}
-                                    className={`transition-colors hover:bg-vw-grey-light/60 ${onRowClick ? 'cursor-pointer' : ''}`}
+                                    className={`transition-colors hover:bg-vw-grey-light/60 ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName ? rowClassName(row.original) : ''}`}
                                     onClick={
                                         onRowClick
                                             ? (e) => {

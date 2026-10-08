@@ -92,11 +92,21 @@ function greetingNow() {
 function buildMessage({ messageNumber, customerName, vehicleLabel, link }) {
     const greeting = `Selamat ${greetingNow()} Bapak/Ibu ${customerName}`;
 
+    // Setiap elemen = satu baris pesan (sambung dengan \n): teks, link di barisnya sendiri, penutup.
+    // Tanpa titik setelah link supaya tautan di WhatsApp tidak ikut membawa titik.
     if (messageNumber >= 2) {
-        return `${greeting}, kami mengingatkan kembali untuk mengisi formulir feedback terkait kunjungan Anda ke VW PIK melalui link berikut: ${link}. Masukan Anda sangat berarti bagi kami. Terima kasih.`;
+        return [
+            `${greeting}, kami mengingatkan kembali untuk mengisi formulir feedback terkait kunjungan Anda ke VW PIK melalui link berikut:`,
+            link,
+            'Masukan Anda sangat berarti bagi kami. Terima kasih.',
+        ].join('\n');
     }
 
-    return `${greeting}, terima kasih telah mempercayakan perawatan ${vehicleLabel} Anda kepada VW PIK. Kami ingin mendengar pengalaman Anda. Mohon kesediaannya mengisi formulir feedback singkat melalui link berikut: ${link}. Terima kasih.`;
+    return [
+        `${greeting}, terima kasih telah mempercayakan perawatan ${vehicleLabel} Anda kepada VW PIK. Kami ingin mendengar pengalaman Anda. Mohon kesediaannya mengisi formulir feedback singkat melalui link berikut:`,
+        link,
+        'Kami ucapkan terima kasih atas perhatiannya dan telah mempercayakan service di VW Audi PIK.',
+    ].join('\n');
 }
 
 // Pesan error menurut status HTTP (RULE-041, RULE-042).
@@ -417,6 +427,8 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
                 isLoading={isLoading}
                 isFiltered={Boolean(searchTerm || activeFilters.status || activeFilters.service_advisor_id)}
                 paginationMeta={{ from: orders.from, to: orders.to, total: orders.total }}
+                // Baris yang butuh aksi (To Send / Reminder Due) disorot (FR-030); status tetap dari server.
+                rowClassName={(order) => (order.fuas.can_send ? 'bg-amber-50/70' : '')}
                 onRowClick={(order) => router.visit(route('admin.service-orders.show', order.id))}
                 searchSlot={
                     <DataTableSearchInput

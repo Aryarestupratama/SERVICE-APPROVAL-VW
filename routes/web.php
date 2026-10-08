@@ -84,6 +84,10 @@ Route::middleware(['auth', 'verified'])
             Route::get('fuas/completed', [FuasController::class, 'index'])
                 ->defaults('scope', 'completed')
                 ->name('fuas.completed');
+            // Badge menu FUAS (API-024): dipoll tiap 5 detik saat tab aktif, jadi throttle longgar.
+            Route::get('fuas/action-count', [FuasController::class, 'actionCount'])
+                ->middleware('throttle:120,1')
+                ->name('fuas.action-count');
             Route::post('service-orders/{serviceOrder}/fuas/prepare', [FuasController::class, 'prepare'])
                 ->name('service-orders.fuas.prepare');
             Route::post('service-orders/{serviceOrder}/fuas/confirm-sent', [FuasController::class, 'confirmSent'])
