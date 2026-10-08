@@ -76,6 +76,7 @@ class InspectionReportController extends Controller
             ],
             'order' => [
                 'id' => $serviceOrder->id,
+                'work_order_number' => $serviceOrder->work_order_number,
                 'status' => $serviceOrder->status,
                 'items_approval_status' => $serviceOrder->items_approval_status,
                 'personal_message' => $serviceOrder->personal_message,

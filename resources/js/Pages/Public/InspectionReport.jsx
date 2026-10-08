@@ -504,6 +504,9 @@ export default function InspectionReport({
     // Pembatalan keputusan yang SUDAH disubmit ke server (item yang masih lokal
     // langsung di-undo tanpa konfirmasi, lihat handleCancelDecision).
     const [undoTarget, setUndoTarget] = useState(null);
+    // Aksi massal terakhir (Approve all / Reject all): { decision, ids }. Dipakai tombol Cancel
+    // supaya customer tidak perlu membatalkan item satu per satu.
+    const [bulkAction, setBulkAction] = useState(null);
     const [undoing, setUndoing] = useState(false);
     // Dokumen yang sedang dibuka di viewer layar penuh: { url, title } atau null.
     const [viewerDoc, setViewerDoc] = useState(null);
@@ -628,6 +631,42 @@ export default function InspectionReport({
         setItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, status: decision } : item)));
     };
 
+    // Approve all / Reject all (FR-024): hanya MENGISI pilihan di layar untuk item yang masih
+    // pending. Tidak menyimpan ke server; customer tetap harus lewat modal dan menekan Submit.
+    // Pakai jalur yang sama dengan handleDecision (localDecisions), jadi Change/Undo, total,
+    // dan peringatan pembatalan order (willCancelOrder) ikut bekerja tanpa logika baru.
+    // Item dari aksi massal yang MASIH berupa pilihan lokal dengan keputusan yang sama. Item yang
+    // sudah diubah manual (Change) atau sudah di-Submit otomatis keluar dari daftar ini.
+    const bulkUndoIds = bulkAction
+        ? bulkAction.ids.filter((id) => localDecisions.get(id) === bulkAction.decision)
+        : [];
+
+    const handleCancelBulk = () => {
+        if (bulkUndoIds.length === 0) return;
+        const ids = new Set(bulkUndoIds);
+        setLocalDecisions((prev) => {
+            const next = new Map(prev);
+            ids.forEach((id) => next.delete(id));
+            return next;
+        });
+        setItems((prev) => prev.map((item) => (ids.has(item.id) ? { ...item, status: 'pending' } : item)));
+        setBulkAction(null);
+        toast(`${ids.size} ${ids.size === 1 ? 'item' : 'items'} back to pending.`);
+    };
+
+    const handleDecideAll = (decision) => {
+        const targetIds = new Set(items.filter((item) => item.status === 'pending').map((item) => item.id));
+        if (targetIds.size === 0) return;
+        setBulkAction({ decision, ids: [...targetIds] });
+        setLocalDecisions((prev) => {
+            const next = new Map(prev);
+            targetIds.forEach((id) => next.set(id, decision));
+            return next;
+        });
+        setItems((prev) => prev.map((item) => (targetIds.has(item.id) ? { ...item, status: decision } : item)));
+        toast(`${targetIds.size} ${targetIds.size === 1 ? 'item' : 'items'} marked as ${decision}. Press Submit to confirm.`);
+    };
+
     // Batalkan keputusan: boleh selama status order masih Appointment / Work In
     // Progress (= canDecide). Begitu masuk Quality Control, tombolnya hilang.
     // - Keputusan yang belum disubmit (masih lokal): langsung dikembalikan ke pending.
@@ -703,6 +742,7 @@ export default function InspectionReport({
                     if (flashFailed(page)) { setShowModal(false); return; }
                     setShowModal(false);
                     toast.success('Your decisions have been sent.');
+                    setBulkAction(null);
                     // Bersihkan localDecisions untuk item yang barusan disubmit — kalau
                     // tidak dibersihkan, entri lama ini bisa memicu bug yang sama lagi
                     // kalau item ini di-reopen admin di kemudian hari (lihat catatan
@@ -725,7 +765,11 @@ export default function InspectionReport({
         );
     };
 
-    const waHref = serviceAdvisor.phone ? `https://wa.me/${toWaDigits(serviceAdvisor.phone)}` : null;
+    // Pesan WhatsApp ke SA berbahasa Indonesia (RULE-010, FR-025); nomor dinormalisasi ke 62xxx (RULE-013).
+    const saMessage = `Halo, saya ${customer.name}. Mohon dihubungi oleh Service Advisor karena saya ingin berdiskusi lebih lanjut mengenai estimasi dan kendaraan saya${order.work_order_number ? ` (No. WO: ${order.work_order_number})` : ''}. Terima kasih.`;
+    const waHref = serviceAdvisor.phone
+        ? `https://wa.me/${toWaDigits(serviceAdvisor.phone)}?text=${encodeURIComponent(saMessage)}`
+        : null;
     const bookingWaHref = settings.booking_whatsapp_phone
         ? `https://wa.me/${toWaDigits(settings.booking_whatsapp_phone)}`
         : null;
@@ -1163,6 +1207,44 @@ export default function InspectionReport({
                             </span>
                         </div>
 
+                        {canDecide && hasPendingItems && (
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleDecideAll('approved')}
+                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-approved/60 bg-white px-3 text-[13px] font-semibold text-approved transition hover:bg-approved/10 active:bg-approved/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-approved focus-visible:ring-offset-2"
+                                >
+                                    <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
+                                    Approve all
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleDecideAll('rejected')}
+                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-gray-400 bg-white px-3 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100 active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
+                                >
+                                    <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
+                                    Reject all
+                                </button>
+                            </div>
+                        )}
+
+                        {canDecide && bulkUndoIds.length > 0 && (
+                            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-vw-grey-light px-3.5 py-1.5">
+                                <p role="status" className="min-w-0 text-[13px] font-medium text-gray-700">
+                                    {bulkUndoIds.length} {bulkUndoIds.length === 1 ? 'item' : 'items'} marked as{' '}
+                                    {bulkAction.decision === 'approved' ? 'approved' : 'rejected'}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelBulk}
+                                    className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 rounded-full border border-vw-grey/30 bg-white px-4 text-[13px] font-semibold text-gray-700 transition hover:bg-vw-grey-light active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
+                                >
+                                    <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Cancel
+                                </button>
+                            </div>
+                        )}
+
                         {isLocked && !hasPendingItems && (
                             <p className="mt-3 rounded-lg bg-vw-grey-light px-3.5 py-2 text-[13px] font-medium text-gray-700">
                                 {canDecide && canUndoSubmitted
@@ -1347,18 +1429,19 @@ export default function InspectionReport({
                                 </div>
                             </div>
                             {waHref && (
-                                <div className="mt-4 grid grid-cols-1 gap-2">
-                                    {waHref && (
-                                        <a
-                                            href={waHref}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-vw-blue px-3 text-xs font-semibold text-white transition hover:bg-vw-blue/90"
-                                        >
-                                            <WhatsAppIcon className="h-4 w-4" />
-                                            WhatsApp
-                                        </a>
-                                    )}
+                                <div className="mt-4">
+                                    <p className="text-xs text-gray-600">
+                                        If you would like your Service Advisor to contact you, please click the button below.
+                                    </p>
+                                    <a
+                                        href={waHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl bg-vw-blue px-3 text-sm font-semibold text-white transition hover:bg-vw-blue/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vw-blue focus-visible:ring-offset-2"
+                                    >
+                                        <WhatsAppIcon className="h-4 w-4" />
+                                        Send Message
+                                    </a>
                                 </div>
                             )}
                         </div>
