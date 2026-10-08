@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\CustomerVehicleImportController;
 use App\Http\Controllers\Admin\VehicleCustomerController; 
 use App\Http\Controllers\Admin\ServiceOrderController;
+use App\Http\Controllers\Admin\FuasController;
 
 use App\Http\Controllers\Public\InspectionReportController;
 
@@ -74,6 +75,13 @@ Route::middleware(['auth', 'verified'])
             ->name('dashboard.in-progress-feed');
 
         Route::middleware('role:admin,service_advisor')->group(function () {
+            // FUAS (API-020, API-021): akses SA dibatasi ke order miliknya di FuasController
+            // (FR-032), bukan oleh middleware role.
+            Route::post('service-orders/{serviceOrder}/fuas/prepare', [FuasController::class, 'prepare'])
+                ->name('service-orders.fuas.prepare');
+            Route::post('service-orders/{serviceOrder}/fuas/confirm-sent', [FuasController::class, 'confirmSent'])
+                ->name('service-orders.fuas.confirm-sent');
+
             Route::get('dashboards/sa-performance', [DashboardSaController::class, 'index'])
                 ->name('dashboards.sa-performance');
 

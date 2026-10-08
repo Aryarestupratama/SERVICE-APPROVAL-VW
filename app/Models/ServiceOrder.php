@@ -141,6 +141,12 @@ class ServiceOrder extends Model
         return $this->hasMany(InspectionItem::class);
     }
 
+    // Pelacak FUAS (satu baris per order, dibuat lazily; lihat FuasStatusService).
+    public function fuas(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ServiceOrderFuas::class);
+    }
+
     public function estimationDocuments(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(ServiceOrderEstimationDocument::class);
