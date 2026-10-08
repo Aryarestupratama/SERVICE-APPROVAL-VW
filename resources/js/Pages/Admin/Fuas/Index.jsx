@@ -3,7 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
-import { Ban, CircleCheck, Clock, Send, TriangleAlert } from 'lucide-react';
+import { Ban, CircleCheck, Clock, Eye, Send, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     AlertDialog,
@@ -15,6 +15,14 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/Components/ui/alert-dialog';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/Components/ui/dialog';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
@@ -140,11 +148,19 @@ function StatusBadge({ status }) {
 
 // Kolom Action: tombol aktif hanya saat To Send / Reminder Due. Keterangan tombol disabled
 // selalu terlihat, bukan hanya tooltip (FR-029).
-function FuasAction({ order, isBusy, onSend }) {
+function FuasAction({ order, isBusy, onSend, onView }) {
     const { status, can_send: canSend, window_end_at: windowEndAt } = order.fuas;
 
+    // FR-034: jawaban customer dibuka lewat modal; SA hanya melihat order miliknya (daftar sudah dibatasi).
     if (status === 'feedback_received') {
-        return <span className="text-muted-foreground">—</span>;
+        if (!order.feedback) return <span className="text-muted-foreground">—</span>;
+
+        return (
+            <Button type="button" size="sm" variant="outline" onClick={() => onView(order)}>
+                <Eye aria-hidden="true" />
+                View Feedback
+            </Button>
+        );
     }
 
     const hasPhone = Boolean(toWaDigits(order.vehicle?.customer?.phone));
@@ -182,7 +198,7 @@ function FuasAction({ order, isBusy, onSend }) {
 }
 
 // RULE-011: kolom dengan closure state dibungkus useMemo; actions tidak bisa disort/disembunyikan.
-function buildColumns({ busyId, onSend }) {
+function buildColumns({ busyId, onSend, onView }) {
     return [
         {
             accessorKey: 'status_changed_at',
@@ -237,10 +253,112 @@ function buildColumns({ busyId, onSend }) {
             enableSorting: false,
             enableHiding: false,
             cell: ({ row }) => (
-                <FuasAction order={row.original} isBusy={busyId === row.original.id} onSend={onSend} />
+                <FuasAction order={row.original} isBusy={busyId === row.original.id} onSend={onSend} onView={onView} />
             ),
         },
     ];
+}
+
+// Modal View Feedback (FR-034, SCR-017): jawaban satu customer, hanya baca. Isi teks ditampilkan
+// apa adanya (bahasa customer), label di sekitarnya berbahasa Inggris (RULE-010).
+function ScoreRow({ label, hint, value }) {
+    return (
+        <div className="flex items-start justify-between gap-4">
+            <div>
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground">{hint}</p>
+            </div>
+            <p className="whitespace-nowrap text-lg font-semibold tabular-nums text-vw-blue">
+                {value ?? '—'} <span className="text-sm font-normal text-muted-foreground">/ 10</span>
+            </p>
+        </div>
+    );
+}
+
+function TextAnswer({ label, value, emptyText }) {
+    return (
+        <div>
+            <p className="text-sm font-medium">{label}</p>
+            {value ? (
+                <p className="mt-1 whitespace-pre-wrap break-words rounded-md bg-vw-grey-light/60 p-3 text-sm">{value}</p>
+            ) : (
+                <p className="mt-1 text-sm text-muted-foreground">{emptyText}</p>
+            )}
+        </div>
+    );
+}
+
+function FeedbackDialog({ order, onClose }) {
+    const feedback = order?.feedback;
+    const customerName = order?.vehicle?.customer?.name;
+    const vehicle = order?.vehicle;
+    const categories = feedback?.suggestion_categories ?? [];
+
+    return (
+        <Dialog open={order !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent className="max-h-[85vh] overflow-y-auto">
+                {feedback && (
+                    <>
+                        <DialogHeader>
+                            <DialogTitle>Customer Feedback</DialogTitle>
+                            <DialogDescription>
+                                {order.work_order_number}
+                                {customerName && <> · {customerName}</>}
+                                {vehicle && <> · {vehicle.brand} {vehicle.model} ({vehicle.plate_number})</>}
+                                <br />
+                                Submitted {formatDateTime(feedback.submitted_at)}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <ScoreRow
+                                label="Satisfaction"
+                                hint="How satisfied the customer is with the service and the staff"
+                                value={feedback.satisfaction_score}
+                            />
+                            <ScoreRow
+                                label="Likelihood to recommend"
+                                hint="How likely the customer is to recommend the dealer to friends or colleagues"
+                                value={feedback.recommend_score}
+                            />
+                            <TextAnswer
+                                label="Any problems with the car after service?"
+                                value={feedback.vehicle_issue_note}
+                                emptyText="No answer."
+                            />
+                            <TextAnswer
+                                label="Suggestions and feedback"
+                                value={feedback.suggestion}
+                                emptyText="The customer left no suggestion."
+                            />
+                            <div>
+                                <p className="text-sm font-medium">Suggestion categories</p>
+                                {categories.length > 0 ? (
+                                    <ul className="mt-1 flex flex-wrap gap-2">
+                                        {categories.map((name) => (
+                                            <li key={name}>
+                                                <Badge variant="outline" className="border-vw-blue/30 bg-vw-blue/10 text-vw-blue">
+                                                    {name}
+                                                </Badge>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="mt-1 text-sm text-muted-foreground">No category selected.</p>
+                                )}
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" className="min-h-[36px]" onClick={onClose}>
+                                Close
+                            </Button>
+                        </DialogFooter>
+                    </>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
 }
 
 function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvisors }) {
@@ -264,6 +382,9 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
     const [busyId, setBusyId] = useState(null);
     const [pending, setPending] = useState(null);
     const [confirming, setConfirming] = useState(false);
+
+    // View Feedback (FR-034): baris yang sedang dibuka di modal.
+    const [viewing, setViewing] = useState(null);
 
     const handleSend = async (order) => {
         if (busyId !== null) return;
@@ -326,7 +447,7 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
         });
     };
 
-    const columns = useMemo(() => buildColumns({ busyId, onSend: handleSend }), [busyId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const columns = useMemo(() => buildColumns({ busyId, onSend: handleSend, onView: setViewing }), [busyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const table = useDataTable({
         data: orders.data,
@@ -418,7 +539,7 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
             <p className="mb-3 text-sm text-muted-foreground">
                 {currentScope === 'in_process'
                     ? 'Completed orders appear here 4 days after completion. Send the feedback form to the customer via WhatsApp (up to 2 messages).'
-                    : 'Orders where the customer sent feedback, or where no feedback came after the 2nd message.'}
+                    : 'Orders where the customer sent feedback, or where no feedback came after the 2nd message. Use View Feedback to read the customer\'s answers.'}
             </p>
             <DataTable
                 table={table}
@@ -448,6 +569,8 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
                     />
                 }
             />
+
+            <FeedbackDialog order={viewing} onClose={() => setViewing(null)} />
 
             <AlertDialog
                 open={pending !== null}

@@ -232,6 +232,34 @@ class FuasController extends Controller
                 // Kapan jendela 1 hari berakhir (reminder tersedia / link tertutup).
                 'window_end_at' => $lastSentAt ? $this->fuasStatus->windowEnd($lastSentAt)->format(DATE_ATOM) : null,
             ],
+            // Jawaban customer (FR-034): hanya bila sudah mengisi. Baris ini sudah terbatas per role
+            // oleh daftar (SA = order miliknya), jadi tidak ada jalur baca terpisah.
+            'feedback' => $this->presentFeedback($fuas),
+        ];
+    }
+
+    /**
+     * Jawaban form feedback untuk modal View Feedback (FR-034). Null bila customer belum mengisi.
+     * Tanpa feedback_token; kategori dikirim sebagai label tampilan.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function presentFeedback(?ServiceOrderFuas $fuas): ?array
+    {
+        if ($fuas === null || $fuas->submitted_at === null) {
+            return null;
+        }
+
+        return [
+            'submitted_at' => $fuas->submitted_at->toIso8601String(),
+            'satisfaction_score' => $fuas->satisfaction_score,
+            'recommend_score' => $fuas->recommend_score,
+            'vehicle_issue_note' => $fuas->vehicle_issue_note,
+            'suggestion' => $fuas->suggestion,
+            'suggestion_categories' => collect($fuas->suggestion_categories ?? [])
+                ->map(fn ($key) => ServiceOrderFuas::CATEGORIES[$key] ?? $key)
+                ->values()
+                ->all(),
         ];
     }
 
