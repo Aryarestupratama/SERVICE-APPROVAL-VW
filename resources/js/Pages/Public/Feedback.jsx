@@ -50,6 +50,37 @@ const initials = (name) =>
 const prefersReducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+// Ilustrasi hero (TASK-037): gambar JPG di public/images/feedback/ (latar putih polos) dipasang di
+// panel putih di atas hero navy, sehingga tidak ada kotak putih yang menyala di atas latar gelap.
+// Rasio 16:9 dipesan lewat aspect-video agar tata letak tidak bergeser saat gambar dimuat.
+// Bila file belum ada / gagal dimuat, kembali ke SVG lama (dekoratif).
+function HeroIllustration({ src, Fallback }) {
+    const [failed, setFailed] = useState(false);
+
+    if (failed) {
+        return (
+            <div className="mt-4 flex h-36 items-center justify-center">
+                <Fallback />
+            </div>
+        );
+    }
+
+    return (
+        <div className="mx-auto mt-4 w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-sm">
+            <img
+                src={src}
+                alt=""
+                width={1600}
+                height={900}
+                decoding="async"
+                fetchPriority="high"
+                onError={() => setFailed(true)}
+                className="aspect-video w-full object-contain"
+            />
+        </div>
+    );
+}
+
 function Hero({ workshopName, children }) {
     return (
         <header className="rounded-b-[32px] bg-gradient-to-b from-vw-blue to-vw-blue/85 px-5 pb-14 pt-5 text-white">
@@ -66,7 +97,7 @@ function Hero({ workshopName, children }) {
                         <p className="text-xs text-white/80">Feedback Service</p>
                     </div>
                 </div>
-                <div className="mt-4 flex h-36 items-center justify-center">{children}</div>
+                {children}
             </div>
         </header>
     );
@@ -286,7 +317,7 @@ function FeedbackForm({ token, customer, vehicle, categories, settings }) {
 
             <form onSubmit={submit} noValidate className="min-h-dvh bg-white pb-32">
                 <Hero workshopName={settings.workshop_name}>
-                    <FeedbackIllustration />
+                    <HeroIllustration src="/images/feedback/feedback.jpg" Fallback={FeedbackIllustration} />
                 </Hero>
 
                 <div className="mx-auto -mt-8 max-w-xl px-4">
@@ -480,7 +511,7 @@ function ThankYou({ settings }) {
             </Head>
             <div className="min-h-dvh bg-white pb-12">
                 <Hero workshopName={settings.workshop_name}>
-                    <ThankYouIllustration />
+                    <HeroIllustration src="/images/feedback/thank-you.jpg" Fallback={ThankYouIllustration} />
                 </Hero>
                 <div className="mx-auto -mt-8 max-w-xl px-4">
                     <div className="rounded-3xl border border-border bg-white p-6 shadow-sm">
