@@ -248,7 +248,9 @@ class FuasStatusService
     }
 
     /**
-     * Link feedback aktif bila sudah dikirim minimal sekali, belum diisi, dan bukan
+     * Link feedback aktif sejak barisnya ada (dibuat saat SA menekan "Send via WhatsApp"),
+     * walau konfirmasi "Yes" belum ditekan, supaya customer yang membuka link lebih cepat
+     * dari SA tidak melihat \"ditutup\". Tertutup bila sudah diisi, atau bila
      * (sent_count = 2 dan jendela terakhir sudah lewat). Dipakai halaman publik (TASK-032).
      */
     public function isFeedbackLinkActive(
@@ -257,7 +259,7 @@ class FuasStatusService
         ?DateTimeInterface $submittedAt,
         DateTimeInterface $now,
     ): bool {
-        if ($sentCount < 1 || $submittedAt !== null) {
+        if ($submittedAt !== null) {
             return false;
         }
 
