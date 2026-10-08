@@ -352,13 +352,20 @@ function buildColumns({ isAdmin, onRequestDelete }) {
 // sebelumnya field 'grand_total_field' selalu default 'estimate' aktif terus
 // tanpa benar-benar dipakai user sebagai filter aktif. Sisa filter cuma
 // Status & Items Approval.
-const buildFilterDefs = (group) => [
+const buildFilterDefs = (group, isAdmin, serviceAdvisors) => [
     {
         key: 'created_at',
         label: 'WO Date',
         type: 'date',
         presetOptions: DATE_PRESETS,
     },
+    // Filter SA khusus admin (FR-035); SA otomatis hanya melihat ordernya sendiri di server.
+    ...(isAdmin ? [{
+        key: 'service_advisor_id',
+        label: 'Service Advisor',
+        type: 'select',
+        options: serviceAdvisors.map((sa) => ({ value: String(sa.id), label: sa.name })),
+    }] : []),
     // Group Work Completed hanya berisi satu status, jadi filter status tidak diperlukan.
     ...(group === 'completed' ? [] : [{
         key: 'status',
@@ -374,17 +381,23 @@ const buildFilterDefs = (group) => [
     },
 ];
 
-export default function Index({ orders, search, filters, group }) {
+export default function Index({ orders, search, filters, group, serviceAdvisors = [] }) {
     const { auth } = usePage().props;
     const currentGroup = group === 'completed' ? 'completed' : 'in_process';
     const pageTitle = GROUP_TITLE[currentGroup];
-    const filterDefs = useMemo(() => buildFilterDefs(currentGroup), [currentGroup]);
     const isAdmin = auth?.user?.role === 'admin';
+    const filterDefs = useMemo(
+        () => buildFilterDefs(currentGroup, isAdmin, serviceAdvisors),
+        [currentGroup, isAdmin, serviceAdvisors]
+    );
 
     const [searchTerm, setSearchTerm] = useState(search ?? '');
     const [activeFilters, setActiveFilters] = useState(() => ({
         status: filters?.status ?? '',
         items_approval_status: filters?.items_approval_status ?? '',
+        // Dari panel filter atau link Dashboard SA (?service_advisor_id=…); RULE-025: ikut dikirim
+        // ulang di setiap request. String agar cocok dengan nilai opsi Select.
+        service_advisor_id: filters?.service_advisor_id ? String(filters.service_advisor_id) : '',
         // Preset sudah diterjemahkan jadi tanggal saat request, jadi setelah
         // reload nilainya dipulihkan sebagai rentang Custom dari URL.
         created_at:
@@ -392,9 +405,6 @@ export default function Index({ orders, search, filters, group }) {
                 ? { mode: 'range', preset: 'all', from: filters.date_from ?? '', to: filters.date_to ?? '' }
                 : { ...EMPTY_DATE_FILTER },
     }));
-
-    // Filter dari Dashboard SA (?service_advisor_id=…): dibawa terus di setiap request, bukan hilang saat user mengetik/mengurutkan.
-    const [saFilter, setSaFilter] = useState(filters?.service_advisor_id ?? '');
 
     const [sorting, setSorting] = useState(() =>
         filters?.sort_by
@@ -447,7 +457,7 @@ export default function Index({ orders, search, filters, group }) {
                 search: searchTerm || undefined,
                 status: activeFilters.status || undefined,
                 items_approval_status: activeFilters.items_approval_status || undefined,
-                service_advisor_id: saFilter || undefined,
+                service_advisor_id: activeFilters.service_advisor_id || undefined,
                 group: currentGroup,
                 ...resolveDateRange(activeFilters.created_at),
                 sort_by: activeSort?.id || undefined,
@@ -460,7 +470,7 @@ export default function Index({ orders, search, filters, group }) {
             });
         }, 400);
         return () => clearTimeout(timeout);
-    }, [searchTerm, activeFilters, sorting, saFilter, currentGroup]);
+    }, [searchTerm, activeFilters, sorting, currentGroup]);
 
     const { date_from: activeDateFrom, date_to: activeDateTo } = resolveDateRange(activeFilters.created_at);
     const hasDateFilter = Boolean(activeDateFrom || activeDateTo);
@@ -473,6 +483,7 @@ export default function Index({ orders, search, filters, group }) {
         setActiveFilters({
             status: '',
             items_approval_status: '',
+            service_advisor_id: '',
             created_at: { ...EMPTY_DATE_FILTER },
         });
     };
@@ -480,16 +491,10 @@ export default function Index({ orders, search, filters, group }) {
     return (
         <AdminLayout title={pageTitle}>
             <Head title={pageTitle} />
-            {saFilter && (
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-vw-blue/20 bg-vw-blue/[0.06] px-3 py-2 text-sm">
-                    <span>
-                        Showing orders for service advisor{' '}
-                        <strong>{orders.data[0]?.service_advisor?.name ?? `#${saFilter}`}</strong>
-                    </span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setSaFilter('')}>
-                        Show all advisors
-                    </Button>
-                </div>
+            {!isAdmin && (
+                <p className="mb-3 text-sm text-muted-foreground">
+                    You only see the service orders assigned to you.
+                </p>
             )}
             {currentGroup === 'in_process' && (
             <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
@@ -518,7 +523,7 @@ export default function Index({ orders, search, filters, group }) {
                 links={orders.links}
                 emptyMessage="No service orders yet."
                 isLoading={isLoading}
-                isFiltered={Boolean(searchTerm || saFilter || hasDateFilter || activeFilters.status || activeFilters.items_approval_status)}
+                isFiltered={Boolean(searchTerm || activeFilters.service_advisor_id || hasDateFilter || activeFilters.status || activeFilters.items_approval_status)}
                 paginationMeta={{ from: orders.from, to: orders.to, total: orders.total }}
                 onRowClick={(order) => router.visit(route('admin.service-orders.show', order.id))}
                 searchSlot={

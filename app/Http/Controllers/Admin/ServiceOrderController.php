@@ -78,13 +78,14 @@ class ServiceOrderController extends Controller
             ->selectRaw("{$estimateSql} as grand_total_estimate", [$vatPercent])
             ->selectRaw("{$approvedSql} as grand_total_approved");
 
-        // Sengaja TIDAK ada pembatasan `service_advisor_id === $user->id` di
-        // sini — keputusan owner (PROJECT-RULES.md bagian 0, "Akses order"):
-        // semua admin & service advisor boleh akses SEMUA service order,
-        // supaya SA lain bisa backup/handle order kalau SA aslinya
-        // berhalangan. Filter `service_advisor_id` di bawah tetap ada, tapi
-        // itu filter EKSPLISIT dari user (mis. tombol "View Orders" di
-        // Dashboard SA) — bukan pembatasan otomatis berdasar siapa yang login.
+        // Akses daftar (FR-035, keputusan owner 2026-10-08): SA hanya melihat order miliknya di
+        // Work In Process dan Work Completed; admin melihat semua dan dapat memfilter per SA.
+        // Ini hanya membatasi DAFTAR; detail dan aksi order (authorizeAccess) tidak berubah.
+        // Untuk SA, parameter `service_advisor_id` dari URL diabaikan (dipaksa ke ID sendiri).
+        $user = $request->user();
+        $isAdmin = $user->role === 'admin';
+        $saId = $isAdmin ? (int) $request->service_advisor_id : (int) $user->id;
+
         // Menu Work In Process / Work Completed (FR-026, API-011): `group` = in_process (semua
         // status selain completed, termasuk all_rejected_cancelled) atau completed. Nilai lain
         // dianggap in_process. Filter `status` hanya berlaku bila statusnya termasuk group ini,
@@ -115,7 +116,7 @@ class ServiceOrderController extends Controller
             ->when($request->items_approval_status, fn ($q, $status) =>
                 $q->where('items_approval_status', $status)
             )
-            ->when($request->service_advisor_id, fn ($q, $saId) =>
+            ->when($saId > 0, fn ($q) =>
                 $q->where('service_orders.service_advisor_id', $saId)
             )
             // Filter tanggal berdasarkan created_at. Tanggal dari UI (YYYY-MM-DD)
@@ -179,11 +180,29 @@ class ServiceOrderController extends Controller
             unset($filters['status']);
         }
 
+        // SA tidak memakai filter SA: daftar sudah dipaksa ke ordernya sendiri.
+        if (! $isAdmin) {
+            unset($filters['service_advisor_id']);
+        }
+
+        // Pilihan filter SA (khusus admin): semua SA, ditambah admin yang memegang order
+        // (admin bisa membuat order atas namanya sendiri). where() dibungkus (RULE-024).
+        $serviceAdvisors = $isAdmin
+            ? User::query()
+                ->where(fn ($q) => $q
+                    ->where('role', 'service_advisor')
+                    ->orWhereIn('id', ServiceOrder::query()->select('service_advisor_id')->whereNotNull('service_advisor_id'))
+                )
+                ->orderBy('name')
+                ->get(['id', 'name'])
+            : [];
+
         return Inertia::render('Admin/ServiceOrders/Index', [
             'orders' => $query->paginate(20)->withQueryString(),
             'search' => $request->search,
             'group' => $group,
             'filters' => $filters,
+            'serviceAdvisors' => $serviceAdvisors,
         ]);
     }
 
