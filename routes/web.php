@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\ServiceOrderController;
 use App\Http\Controllers\Admin\FuasController;
 
 use App\Http\Controllers\Public\InspectionReportController;
+use App\Http\Controllers\Public\FeedbackController;
 
 // Root: bukan halaman render, cuma gerbang redirect sesuai status auth
 Route::get('/', function () {
@@ -36,6 +37,15 @@ Route::post('/report/{token}/decide', [App\Http\Controllers\Public\InspectionRep
 Route::post('/report/{token}/undo-decision', [InspectionReportController::class, 'undoDecision'])
     ->middleware('throttle:30,1')
     ->name('public.report.undo-decision');
+
+// Feedback FUAS (API-022, API-023): token terpisah dari token inspeksi (RULE-038).
+// POST mengubah data, jadi di-throttle (RULE-043).
+Route::get('/feedback/{token}', [FeedbackController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('public.feedback.show');
+Route::post('/feedback/{token}', [FeedbackController::class, 'submit'])
+    ->middleware('throttle:10,1')
+    ->name('public.feedback.submit');
 
 Route::post('report/{token}/payment-receipt', [InspectionReportController::class, 'uploadPaymentReceipt'])
     ->middleware('throttle:10,1')
