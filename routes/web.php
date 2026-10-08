@@ -77,6 +77,13 @@ Route::middleware(['auth', 'verified'])
         Route::middleware('role:admin,service_advisor')->group(function () {
             // FUAS (API-020, API-021): akses SA dibatasi ke order miliknya di FuasController
             // (FR-032), bukan oleh middleware role.
+            // Daftar FUAS (API-019): satu controller, `scope` dari defaults route.
+            Route::get('fuas/in-process', [FuasController::class, 'index'])
+                ->defaults('scope', 'in_process')
+                ->name('fuas.in-process');
+            Route::get('fuas/completed', [FuasController::class, 'index'])
+                ->defaults('scope', 'completed')
+                ->name('fuas.completed');
             Route::post('service-orders/{serviceOrder}/fuas/prepare', [FuasController::class, 'prepare'])
                 ->name('service-orders.fuas.prepare');
             Route::post('service-orders/{serviceOrder}/fuas/confirm-sent', [FuasController::class, 'confirmSent'])

@@ -14,6 +14,7 @@ import {
     Upload, 
     Link2,
     ChevronDown,
+    MessageSquareText,
 } from 'lucide-react';
 import {
     SidebarProvider,
@@ -53,6 +54,17 @@ const MAIN_NAV_ITEMS = [
         children: [
             { label: 'Work In Process', href: route('admin.service-orders.index', { group: 'in_process' }), group: 'in_process' },
             { label: 'Work Completed', href: route('admin.service-orders.index', { group: 'completed' }), group: 'completed' },
+        ],
+    },
+    // FUAS (Follow Up After Service, FR-027): dua halaman daftar, aktif per nama route.
+    {
+        label: 'FUAS',
+        routeName: 'admin.fuas.*',
+        icon: MessageSquareText,
+        roles: MANAGER_ROLES,
+        children: [
+            { label: 'FUAS In Process', href: route('admin.fuas.in-process'), routeName: 'admin.fuas.in-process' },
+            { label: 'FUAS Completed', href: route('admin.fuas.completed'), routeName: 'admin.fuas.completed' },
         ],
     },
 ];
@@ -101,7 +113,9 @@ function NavDropdown({ item }) {
 
     // Sub-menu aktif hanya di halaman daftar; di halaman detail hanya induknya yang ditandai.
     const isChildActive = (child) =>
-        route().current('admin.service-orders.index') && (group === 'completed' ? 'completed' : 'in_process') === child.group;
+        child.routeName
+            ? route().current(child.routeName)
+            : route().current('admin.service-orders.index') && (group === 'completed' ? 'completed' : 'in_process') === child.group;
 
     // Saat sidebar diciutkan ke ikon, sub-menu tersembunyi: ikon langsung menuju sub-menu pertama.
     if (state === 'collapsed' && !isMobile) {
