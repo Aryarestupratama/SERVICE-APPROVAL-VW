@@ -31,8 +31,9 @@ class FuasController extends Controller
     /**
      * API-019. Daftar FUAS In Process / FUAS Completed (route memberi `scope`).
      * Search, filter, sort, dan pagination di server (RULE-022..025). Status tiap baris
-     * dari FuasStatusService (RULE-036); klien tidak menghitung ulang. SA hanya melihat
-     * order miliknya, admin semua dan dapat memfilter per SA (FR-032).
+     * dari FuasStatusService (RULE-036); klien tidak menghitung ulang. Saat ini hanya admin yang
+     * mengakses (route role:admin, FR-032); kode pembatasan SA ke order miliknya tetap dipertahankan
+     * untuk saat SA dibuka kembali.
      */
     public function index(Request $request, string $scope): Response
     {
@@ -55,7 +56,7 @@ class FuasController extends Controller
         $query = ServiceOrder::query()
             ->select('service_orders.*')
             ->leftJoin('service_order_fuas as f', 'f.service_order_id', '=', 'service_orders.id')
-            ->with(['vehicle.customer:id,name,phone', 'serviceAdvisor:id,name', 'fuas']);
+            ->with(['vehicle.customer:id,name,phone', 'serviceAdvisor:id,name', 'fuas.manuallyCompletedBy:id,name']);
 
         $this->fuasStatus->applyList($query, $list, $status ? [$status] : null, $now);
 
@@ -199,6 +200,50 @@ class FuasController extends Controller
     }
 
     /**
+     * API-025. Admin menutup FUAS sebuah order secara manual (tombol "Done", FR-036): untuk order
+     * completed lama yang follow-up-nya sudah dilakukan di luar sistem. Hanya dari status FUAS
+     * In Process; dalam transaksi dengan lock sehingga klik ganda atau balapan dengan pengiriman
+     * tidak menghasilkan dua pencatatan. Link feedback ikut tertutup (RULE-038). Penolakan lewat
+     * back()->with('error') (RULE-040). Tidak menyentuh sent_count (RULE-037) maupun
+     * service_orders (RULE-035).
+     */
+    public function markDone(Request $request, ServiceOrder $serviceOrder): RedirectResponse
+    {
+        $user = $request->user();
+
+        // Cek awal sebelum membuat baris, supaya order yang belum masuk FUAS tidak meninggalkan baris kosong.
+        if (! $this->fuasStatus->canMarkDone($this->fuasStatus->forOrder($serviceOrder))) {
+            return back()->with('error', 'This order is not in FUAS In Process, so it cannot be marked as done.');
+        }
+
+        $this->firstOrCreateRow($serviceOrder);
+
+        $error = null;
+
+        DB::transaction(function () use ($serviceOrder, $user, &$error) {
+            // Urutan lock selalu order dulu, lalu baris FUAS (sama dengan confirmSent).
+            $order = ServiceOrder::whereKey($serviceOrder->id)->lockForUpdate()->firstOrFail();
+            $fuas = ServiceOrderFuas::where('service_order_id', $order->id)->lockForUpdate()->first();
+
+            if ($fuas === null || ! $this->fuasStatus->canMarkDone($this->fuasStatus->forOrder($order, $fuas, now()))) {
+                $error = 'This order is no longer in FUAS In Process. The list has been refreshed.';
+                return;
+            }
+
+            $fuas->forceFill([
+                'manually_completed_at' => now(),
+                'manually_completed_by' => $user->id,
+            ])->save();
+        });
+
+        if ($error !== null) {
+            return back()->with('error', $error);
+        }
+
+        return back()->with('success', "{$serviceOrder->work_order_number} marked as done and moved to FUAS Completed.");
+    }
+
+    /**
      * Bentuk baris untuk klien. Hanya field yang dibutuhkan (tanpa feedback_token; token baru
      * diberikan lewat prepare saat tombol kirim ditekan). Status dari FuasStatusService.
      *
@@ -228,6 +273,10 @@ class FuasController extends Controller
                 'status' => $status,
                 'sent_count' => (int) ($fuas?->sent_count ?? 0),
                 'can_send' => $this->fuasStatus->canSend($status),
+                // Tombol Done (FR-036): diputuskan server, klien tidak menurunkannya dari status (RULE-036).
+                'can_mark_done' => $this->fuasStatus->canMarkDone($status),
+                'manually_completed_at' => $fuas?->manually_completed_at?->toIso8601String(),
+                'manually_completed_by' => $fuas?->manuallyCompletedBy?->name,
                 'last_sent_at' => $lastSentAt?->toIso8601String(),
                 // Kapan jendela 1 hari berakhir (reminder tersedia / link tertutup).
                 'window_end_at' => $lastSentAt ? $this->fuasStatus->windowEnd($lastSentAt)->format(DATE_ATOM) : null,
@@ -271,12 +320,17 @@ class FuasController extends Controller
     }
 
     /**
-     * Pengecualian khusus FUAS (FR-032): admin semua order; SA hanya order miliknya.
-     * authorizeAccess() di ServiceOrderController sengaja tidak dipakai (meloloskan semua SA).
+     * Pengecualian khusus FUAS (FR-032): admin semua order; SA hanya order miliknya (SA sedang
+     * dinonaktifkan lewat FuasStatusService::ACCESS_ROLES). authorizeAccess() di
+     * ServiceOrderController sengaja tidak dipakai (meloloskan semua SA).
      */
     private function authorizeFuas(Request $request, ServiceOrder $serviceOrder): void
     {
         $user = $request->user();
+
+        if (! in_array($user->role, FuasStatusService::ACCESS_ROLES, true)) {
+            abort(403, 'You do not have access to this service order.');
+        }
 
         if ($user->role === 'admin') {
             return;

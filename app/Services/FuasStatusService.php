@@ -21,19 +21,28 @@ class FuasStatusService
     public const WINDOW_HOURS = 24;           // jeda antar kirim / penutupan link sejak last_sent_at
     public const MAX_SENT = 2;
 
+    /**
+     * Role yang boleh memakai fitur FUAS (menu, daftar, aksi, badge). SA dinonaktifkan sementara
+     * atas permintaan pemilik workshop (FR-032, 2026-10-12): admin merapikan dulu order lama,
+     * baru dibuka kembali untuk SA. Untuk membuka lagi, tambahkan 'service_advisor' di sini dan
+     * di `roles` menu FUAS (AdminLayout.jsx); pembatasan "SA hanya order miliknya" sudah ada.
+     */
+    public const ACCESS_ROLES = ['admin'];
+
     public const TO_SEND = 'to_send';
     public const SENT_1 = 'sent_1';
     public const REMINDER_DUE = 'reminder_due';
     public const SENT_2 = 'sent_2';
     public const NO_FEEDBACK = 'no_feedback';
     public const FEEDBACK_RECEIVED = 'feedback_received';
+    public const DONE = 'done';   // ditutup manual oleh admin (FR-036)
 
     public const LIST_IN_PROCESS = 'in_process';
     public const LIST_COMPLETED = 'completed';
 
     /** Status yang tampil di tiap daftar (Schema.md 5A); urutan = prioritas tampil default. */
     public const IN_PROCESS_STATUSES = [self::REMINDER_DUE, self::TO_SEND, self::SENT_1, self::SENT_2];
-    public const COMPLETED_STATUSES = [self::NO_FEEDBACK, self::FEEDBACK_RECEIVED];
+    public const COMPLETED_STATUSES = [self::NO_FEEDBACK, self::FEEDBACK_RECEIVED, self::DONE];
 
     /**
      * Status FUAS sebuah order, atau null bila belum/tidak masuk FUAS.
@@ -50,11 +59,12 @@ class FuasStatusService
             $fuas?->last_sent_at,
             $fuas?->submitted_at,
             $now ?? new DateTimeImmutable('now'),
+            $fuas?->manually_completed_at,
         );
     }
 
     /**
-     * Inti aturan 7 baris (Schema.md 5A), evaluasi berurutan, berhenti pada kecocokan pertama.
+     * Inti aturan 8 baris (Schema.md 5A), evaluasi berurutan, berhenti pada kecocokan pertama.
      * Murni: hanya bergantung pada argumen, jadi mudah diuji.
      */
     public function resolve(
@@ -64,6 +74,7 @@ class FuasStatusService
         ?DateTimeInterface $lastSentAt,
         ?DateTimeInterface $submittedAt,
         DateTimeInterface $now,
+        ?DateTimeInterface $manuallyCompletedAt = null,
     ): ?string {
         // 1. Belum completed, atau belum 4 x 24 jam: tidak masuk FUAS.
         if ($orderStatus !== ServiceOrder::STATUS_COMPLETED || $statusChangedAt === null) {
@@ -76,6 +87,11 @@ class FuasStatusService
         // 2. Customer sudah mengisi.
         if ($submittedAt !== null) {
             return self::FEEDBACK_RECEIVED;
+        }
+
+        // 2b. Admin menutup FUAS secara manual (FR-036); link feedback ikut tertutup.
+        if ($manuallyCompletedAt !== null) {
+            return self::DONE;
         }
 
         // 3. Belum pernah dikirim.
@@ -105,6 +121,12 @@ class FuasStatusService
             ->modify('+' . self::WINDOW_HOURS . ' hours');
     }
 
+    /** Tombol "Done" (FR-036) tersedia pada semua status FUAS In Process. */
+    public function canMarkDone(?string $status): bool
+    {
+        return $status !== null && in_array($status, self::IN_PROCESS_STATUSES, true);
+    }
+
     /** Tombol "Send via WhatsApp" aktif hanya pada To Send dan Reminder Due. */
     public function canSend(?string $status): bool
     {
@@ -113,12 +135,13 @@ class FuasStatusService
 
     /**
      * Jumlah order yang butuh aksi (To Send + Reminder Due) untuk badge menu FUAS (FR-030).
-     * Admin: semua order; SA: hanya order miliknya; role lain / belum login: 0 tanpa query.
+     * Hanya role di ACCESS_ROLES (saat ini admin: semua order); SA dinonaktifkan sementara, role lain /
+     * belum login: 0 tanpa query. Bila SA dibuka lagi, hanya order miliknya yang dihitung.
      * Memakai applyList() supaya aturan tetap satu tempat (RULE-036); satu COUNT ringan (RULE-044).
      */
     public function actionCountFor(?User $user, ?DateTimeInterface $now = null): int
     {
-        if ($user === null || ! in_array($user->role, ['admin', 'service_advisor'], true)) {
+        if ($user === null || ! in_array($user->role, self::ACCESS_ROLES, true)) {
             return 0;
         }
 
@@ -186,7 +209,7 @@ class FuasStatusService
     }
 
     /**
-     * Ekspresi urutan prioritas (Reminder Due, To Send, Sent (1), Sent (2), No Feedback, Feedback Received).
+     * Ekspresi urutan prioritas (Reminder Due, To Send, Sent (1), Sent (2), No Feedback, Feedback Received, Done).
      *
      * @return array{0: string, 1: list<string>} [sql, bindings]
      */
@@ -194,7 +217,7 @@ class FuasStatusService
     {
         $order = [
             self::REMINDER_DUE, self::TO_SEND, self::SENT_1, self::SENT_2,
-            self::NO_FEEDBACK, self::FEEDBACK_RECEIVED,
+            self::NO_FEEDBACK, self::FEEDBACK_RECEIVED, self::DONE,
         ];
 
         $sql = 'CASE';
@@ -209,17 +232,19 @@ class FuasStatusService
     }
 
     /**
-     * Kondisi SQL satu status, mengikuti urutan evaluasi resolve() (baris 2-7; baris 1 = eligible di applyList).
+     * Kondisi SQL satu status, mengikuti urutan evaluasi resolve() (baris 2-7, termasuk 2b; baris 1 = eligible di applyList).
      *
      * @return array{0: string, 1: list<string>} [sql, bindings]
      */
     public function sqlCondition(string $status, DateTimeInterface $now): array
     {
         $windowCutoff = $this->cutoff($now, self::WINDOW_HOURS);
-        $notSubmitted = 'f.submitted_at IS NULL';
+        // Belum diisi customer DAN belum ditutup manual (baris 2 dan 2b resolve() menang lebih dulu).
+        $notSubmitted = 'f.submitted_at IS NULL AND f.manually_completed_at IS NULL';
 
         return match ($status) {
             self::FEEDBACK_RECEIVED => ['f.submitted_at IS NOT NULL', []],
+            self::DONE => ['f.submitted_at IS NULL AND f.manually_completed_at IS NOT NULL', []],
             self::TO_SEND => ["{$notSubmitted} AND COALESCE(f.sent_count, 0) <= 0", []],
             self::SENT_1 => [
                 "{$notSubmitted} AND f.sent_count = 1 AND f.last_sent_at IS NOT NULL AND f.last_sent_at > ?",
@@ -251,15 +276,17 @@ class FuasStatusService
      * Link feedback aktif sejak barisnya ada (dibuat saat SA menekan "Send via WhatsApp"),
      * walau konfirmasi "Yes" belum ditekan, supaya customer yang membuka link lebih cepat
      * dari SA tidak melihat \"ditutup\". Tertutup bila sudah diisi, atau bila
-     * (sent_count = 2 dan jendela terakhir sudah lewat). Dipakai halaman publik (TASK-032).
+     * (sent_count = 2 dan jendela terakhir sudah lewat), atau bila admin menutup FUAS manual
+     * ("Done", FR-036). Dipakai halaman publik (TASK-032).
      */
     public function isFeedbackLinkActive(
         int $sentCount,
         ?DateTimeInterface $lastSentAt,
         ?DateTimeInterface $submittedAt,
         DateTimeInterface $now,
+        ?DateTimeInterface $manuallyCompletedAt = null,
     ): bool {
-        if ($submittedAt !== null) {
+        if ($submittedAt !== null || $manuallyCompletedAt !== null) {
             return false;
         }
 

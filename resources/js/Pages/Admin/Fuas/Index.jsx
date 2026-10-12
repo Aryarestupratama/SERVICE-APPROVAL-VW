@@ -3,7 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
-import { Ban, CircleCheck, Clock, Eye, Send, TriangleAlert } from 'lucide-react';
+import { Ban, CircleCheck, Clock, Eye, Send, SquareCheckBig, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     AlertDialog,
@@ -41,6 +41,7 @@ const STATUS_LABEL = {
     sent_2: 'Sent (2)',
     no_feedback: 'No Feedback',
     feedback_received: 'Feedback Received',
+    done: 'Done',
 };
 
 // Gaya badge (Design 4A): tidak hanya warna, selalu ada ikon + teks (RULE-060).
@@ -51,6 +52,8 @@ const STATUS_STYLE = {
     sent_2: { Icon: Clock, className: 'border-vw-grey/30 bg-gray-50 text-gray-700' },
     no_feedback: { Icon: Ban, className: 'border-vw-grey/30 bg-gray-50 text-gray-600' },
     feedback_received: { Icon: CircleCheck, className: 'border-approved/30 bg-approved/10 text-approved' },
+    // Ditutup manual oleh admin (FR-036): biru, supaya beda dari Feedback Received (hijau).
+    done: { Icon: SquareCheckBig, className: 'border-vw-blue/30 bg-vw-blue/10 text-vw-blue' },
 };
 
 const GROUP_TITLE = {
@@ -148,8 +151,25 @@ function StatusBadge({ status }) {
 
 // Kolom Action: tombol aktif hanya saat To Send / Reminder Due. Keterangan tombol disabled
 // selalu terlihat, bukan hanya tooltip (FR-029).
-function FuasAction({ order, isBusy, onSend, onView }) {
-    const { status, can_send: canSend, window_end_at: windowEndAt } = order.fuas;
+function FuasAction({ order, isBusy, onSend, onView, onDone }) {
+    const {
+        status,
+        can_send: canSend,
+        can_mark_done: canMarkDone,
+        window_end_at: windowEndAt,
+        manually_completed_at: doneAt,
+        manually_completed_by: doneBy,
+    } = order.fuas;
+
+    // FR-036: sudah ditutup manual, tidak ada aksi lagi; tampilkan siapa dan kapan.
+    if (status === 'done') {
+        return (
+            <span className="text-xs text-muted-foreground">
+                Marked done {formatDate(doneAt)}
+                {doneBy && <> by {doneBy}</>}
+            </span>
+        );
+    }
 
     // FR-034: jawaban customer dibuka lewat modal; SA hanya melihat order miliknya (daftar sudah dibatasi).
     if (status === 'feedback_received') {
@@ -177,17 +197,31 @@ function FuasAction({ order, isBusy, onSend, onView }) {
 
     return (
         <div className="flex flex-col items-start gap-1">
-            <Button
-                type="button"
-                size="sm"
-                variant={canSend ? 'default' : 'outline'}
-                disabled={!canSend || !hasPhone || isBusy}
-                aria-describedby={note ? noteId : undefined}
-                onClick={() => onSend(order)}
-            >
-                <Send aria-hidden="true" />
-                {isBusy ? 'Preparing...' : 'Send via WhatsApp'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={canSend ? 'default' : 'outline'}
+                    disabled={!canSend || !hasPhone || isBusy}
+                    aria-describedby={note ? noteId : undefined}
+                    onClick={() => onSend(order)}
+                >
+                    <Send aria-hidden="true" />
+                    {isBusy ? 'Preparing...' : 'Send via WhatsApp'}
+                </Button>
+                {canMarkDone && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isBusy}
+                        onClick={() => onDone(order)}
+                    >
+                        <SquareCheckBig aria-hidden="true" />
+                        Done
+                    </Button>
+                )}
+            </div>
             {note && (
                 <span id={noteId} className="text-xs text-muted-foreground">
                     {note}
@@ -198,7 +232,7 @@ function FuasAction({ order, isBusy, onSend, onView }) {
 }
 
 // RULE-011: kolom dengan closure state dibungkus useMemo; actions tidak bisa disort/disembunyikan.
-function buildColumns({ busyId, onSend, onView }) {
+function buildColumns({ busyId, onSend, onView, onDone }) {
     return [
         {
             accessorKey: 'status_changed_at',
@@ -253,7 +287,7 @@ function buildColumns({ busyId, onSend, onView }) {
             enableSorting: false,
             enableHiding: false,
             cell: ({ row }) => (
-                <FuasAction order={row.original} isBusy={busyId === row.original.id} onSend={onSend} onView={onView} />
+                <FuasAction order={row.original} isBusy={busyId === row.original.id} onSend={onSend} onView={onView} onDone={onDone} />
             ),
         },
     ];
@@ -386,6 +420,10 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
     // View Feedback (FR-034): baris yang sedang dibuka di modal.
     const [viewing, setViewing] = useState(null);
 
+    // Done (FR-036): baris yang menunggu konfirmasi "Mark as done?" dan status simpan.
+    const [doneTarget, setDoneTarget] = useState(null);
+    const [markingDone, setMarkingDone] = useState(false);
+
     const handleSend = async (order) => {
         if (busyId !== null) return;
 
@@ -447,7 +485,31 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
         });
     };
 
-    const columns = useMemo(() => buildColumns({ busyId, onSend: handleSend, onView: setViewing }), [busyId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Hanya "Mark as done" yang menutup FUAS; "Cancel", Esc, atau menutup modal tidak mengubah apa pun.
+    // Penolakan server (back()->with('error')) diperiksa lewat flash.error (RULE-040).
+    const handleMarkDone = (event) => {
+        event.preventDefault();
+        if (markingDone || !doneTarget) return;
+
+        setMarkingDone(true);
+        router.post(route('admin.service-orders.fuas.mark-done', doneTarget.id), {}, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    toast.error(page.props.flash.error);
+                } else {
+                    toast.success(page.props.flash?.success ?? 'Marked as done.');
+                }
+            },
+            onError: () => toast.error('Could not mark this order as done. Please try again.'),
+            onFinish: () => {
+                setMarkingDone(false);
+                setDoneTarget(null);
+            },
+        });
+    };
+
+    const columns = useMemo(() => buildColumns({ busyId, onSend: handleSend, onView: setViewing, onDone: setDoneTarget }), [busyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const table = useDataTable({
         data: orders.data,
@@ -538,8 +600,8 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
             <Head title={pageTitle} />
             <p className="mb-3 text-sm text-muted-foreground">
                 {currentScope === 'in_process'
-                    ? 'Completed orders appear here 4 days after completion. Send the feedback form to the customer via WhatsApp (up to 2 messages).'
-                    : 'Orders where the customer sent feedback, or where no feedback came after the 2nd message. Use View Feedback to read the customer\'s answers.'}
+                    ? 'Completed orders appear here 4 days after completion. Send the feedback form to the customer via WhatsApp (up to 2 messages), or press Done if the customer was already followed up outside this system.'
+                    : 'Orders where the customer sent feedback, no feedback came after the 2nd message, or an admin marked the follow-up as Done. Use View Feedback to read the customer\'s answers.'}
             </p>
             <DataTable
                 table={table}
@@ -571,6 +633,33 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
             />
 
             <FeedbackDialog order={viewing} onClose={() => setViewing(null)} />
+
+            <AlertDialog
+                open={doneTarget !== null}
+                onOpenChange={(open) => {
+                    // Menutup modal = Cancel. Tidak boleh menutup di tengah penyimpanan.
+                    if (!open && !markingDone) setDoneTarget(null);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Mark this follow-up as done?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {doneTarget?.work_order_number}
+                            {doneTarget?.vehicle?.customer?.name && <> · {doneTarget.vehicle.customer.name}</>}
+                            <br />
+                            The order will move to FUAS Completed and its feedback link will be closed.
+                            This cannot be undone from this page.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={markingDone}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleMarkDone} disabled={markingDone}>
+                            {markingDone ? 'Saving...' : 'Mark as done'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog
                 open={pending !== null}

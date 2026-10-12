@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\CustomerVehicleImportController;
 use App\Http\Controllers\Admin\VehicleCustomerController; 
 use App\Http\Controllers\Admin\ServiceOrderController;
 use App\Http\Controllers\Admin\FuasController;
+use App\Services\FuasStatusService;
 
 use App\Http\Controllers\Public\InspectionReportController;
 use App\Http\Controllers\Public\FeedbackController;
@@ -84,9 +85,10 @@ Route::middleware(['auth', 'verified'])
             ->middleware('throttle:120,1')
             ->name('dashboard.in-progress-feed');
 
-        Route::middleware('role:admin,service_advisor')->group(function () {
-            // FUAS (API-020, API-021): akses SA dibatasi ke order miliknya di FuasController
-            // (FR-032), bukan oleh middleware role.
+        // FUAS (API-019..021, API-024): sementara hanya admin (FR-032, 2026-10-12); daftar role ada
+        // di FuasStatusService::ACCESS_ROLES. Pembatasan SA ke order miliknya tetap ada di
+        // FuasController untuk saat SA dibuka lagi.
+        Route::middleware('role:' . implode(',', FuasStatusService::ACCESS_ROLES))->group(function () {
             // Daftar FUAS (API-019): satu controller, `scope` dari defaults route.
             Route::get('fuas/in-process', [FuasController::class, 'index'])
                 ->defaults('scope', 'in_process')
@@ -102,7 +104,9 @@ Route::middleware(['auth', 'verified'])
                 ->name('service-orders.fuas.prepare');
             Route::post('service-orders/{serviceOrder}/fuas/confirm-sent', [FuasController::class, 'confirmSent'])
                 ->name('service-orders.fuas.confirm-sent');
+        });
 
+        Route::middleware('role:admin,service_advisor')->group(function () {
             Route::get('dashboards/sa-performance', [DashboardSaController::class, 'index'])
                 ->name('dashboards.sa-performance');
 
@@ -235,6 +239,11 @@ Route::middleware(['auth', 'verified'])
             Route::delete('service-orders/{serviceOrder}',
                 [ServiceOrderController::class, 'destroy'])
                 ->name('service-orders.destroy');
+
+            // FUAS "Done" (API-025, FR-036): admin menutup FUAS order lama secara manual.
+            Route::post('service-orders/{serviceOrder}/fuas/mark-done',
+                [FuasController::class, 'markDone'])
+                ->name('service-orders.fuas.mark-done');
         });
     });
 

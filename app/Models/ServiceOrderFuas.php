@@ -31,6 +31,8 @@ class ServiceOrderFuas extends Model
         'last_sent_at',
         'last_sent_by',
         'submitted_at',
+        'manually_completed_at',
+        'manually_completed_by',
         'satisfaction_score',
         'recommend_score',
         'vehicle_issue_note',
@@ -50,6 +52,7 @@ class ServiceOrderFuas extends Model
             'first_sent_at' => 'datetime',
             'last_sent_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'manually_completed_at' => 'datetime',
             'suggestion_categories' => 'array',
         ];
     }
@@ -62,5 +65,10 @@ class ServiceOrderFuas extends Model
     public function lastSentBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'last_sent_by');
+    }
+
+    public function manuallyCompletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manually_completed_by');
     }
 }

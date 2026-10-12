@@ -112,6 +112,7 @@ class FeedbackController extends Controller
             $fuas->last_sent_at,
             $fuas->submitted_at,
             now(),
+            $fuas->manually_completed_at,
         ) ? self::STATE_FORM : self::STATE_CLOSED;
     }
 

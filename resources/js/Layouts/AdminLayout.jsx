@@ -41,6 +41,11 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/Component
 // jadi menunya juga tidak ditampilkan — bukan link yang berujung 403.
 const MANAGER_ROLES = ['admin', 'service_advisor'];
 
+// Menu FUAS sementara hanya untuk admin (FR-032, 2026-10-12): admin merapikan order lama dulu, baru
+// dibuka untuk SA. Harus sama dengan FuasStatusService::ACCESS_ROLES di server; untuk membuka
+// lagi ubah keduanya.
+const FUAS_ROLES = ['admin'];
+
 const MAIN_NAV_ITEMS = [
     { label: 'Dashboard', href: route('admin.dashboard'), routeName: 'admin.dashboard', icon: LayoutDashboard },
     { label: 'SA Performance', href: route('admin.dashboards.sa-performance'), routeName: 'admin.dashboards.sa-performance', icon: TrendingUp, roles: MANAGER_ROLES },
@@ -61,7 +66,7 @@ const MAIN_NAV_ITEMS = [
         label: 'FUAS',
         routeName: 'admin.fuas.*',
         icon: MessageSquareText,
-        roles: MANAGER_ROLES,
+        roles: FUAS_ROLES,
         badgeKey: 'fuas',
         children: [
             { label: 'FUAS In Process', href: route('admin.fuas.in-process'), routeName: 'admin.fuas.in-process', badgeKey: 'fuas' },
@@ -292,8 +297,8 @@ export default function AdminLayout({ children, title, headerActions }) {
     const visible = (items) => items.filter((item) => !item.roles || item.roles.includes(role));
 
     const mainItems = visible(MAIN_NAV_ITEMS);
-    // Chief technician tidak punya menu FUAS: tidak perlu polling.
-    const fuasCount = useFuasActionCount(MANAGER_ROLES.includes(role));
+    // Hanya role yang punya menu FUAS yang memoll badge-nya.
+    const fuasCount = useFuasActionCount(FUAS_ROLES.includes(role));
     const masterDataItems = visible(
         isAdmin ? [...MASTER_DATA_ITEMS, ...MASTER_DATA_ADMIN_ONLY_ITEMS] : MASTER_DATA_ITEMS
     );
