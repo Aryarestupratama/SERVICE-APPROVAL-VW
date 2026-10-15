@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\CustomerVehicleImportController;
 use App\Http\Controllers\Admin\VehicleCustomerController; 
 use App\Http\Controllers\Admin\ServiceOrderController;
 use App\Http\Controllers\Admin\FuasController;
+use App\Http\Controllers\Admin\FuasExportController;
 use App\Services\FuasStatusService;
 
 use App\Http\Controllers\Public\InspectionReportController;
@@ -244,6 +245,12 @@ Route::middleware(['auth', 'verified'])
             Route::post('service-orders/{serviceOrder}/fuas/mark-done',
                 [FuasController::class, 'markDone'])
                 ->name('service-orders.fuas.mark-done');
+
+            // Ekspor feedback FUAS ke Excel untuk CR (API-026, FR-037): admin saja. Throttle ketat
+            // karena membangun file di shared hosting (RULE-043, RULE-044).
+            Route::get('fuas/export', FuasExportController::class)
+                ->middleware('throttle:10,1')
+                ->name('fuas.export');
         });
     });
 

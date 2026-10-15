@@ -3,7 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
-import { Ban, CircleCheck, Clock, Eye, Send, SquareCheckBig, TriangleAlert } from 'lucide-react';
+import { Ban, CircleCheck, Clock, Eye, FileSpreadsheet, Send, SquareCheckBig, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     AlertDialog,
@@ -27,6 +27,7 @@ import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableSearchInput } from '@/Components/DataTable/DataTableSearchInput';
 import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
+import ExportDialog from './ExportDialog';
 
 // Halaman FUAS In Process / FUAS Completed (FR-027..FR-029, SCR-016/017).
 // Status FUAS SELALU dari server (FuasStatusService, RULE-036): klien hanya menampilkan
@@ -420,6 +421,10 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
     // View Feedback (FR-034): baris yang sedang dibuka di modal.
     const [viewing, setViewing] = useState(null);
 
+    // Ekspor Excel untuk CR (FR-037): hanya admin, hanya di FUAS Completed.
+    const [exportOpen, setExportOpen] = useState(false);
+    const canExport = isAdmin && currentScope === 'completed';
+
     // Done (FR-036): baris yang menunggu konfirmasi "Mark as done?" dan status simpan.
     const [doneTarget, setDoneTarget] = useState(null);
     const [markingDone, setMarkingDone] = useState(false);
@@ -596,7 +601,17 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
     const messageNumber = pending ? pending.order.fuas.sent_count + 1 : 1;
 
     return (
-        <AdminLayout title={pageTitle}>
+        <AdminLayout
+            title={pageTitle}
+            headerActions={
+                canExport ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setExportOpen(true)}>
+                        <FileSpreadsheet aria-hidden="true" />
+                        Export to Excel
+                    </Button>
+                ) : null
+            }
+        >
             <Head title={pageTitle} />
             <p className="mb-3 text-sm text-muted-foreground">
                 {currentScope === 'in_process'
@@ -633,6 +648,15 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
             />
 
             <FeedbackDialog order={viewing} onClose={() => setViewing(null)} />
+
+            {canExport && (
+                <ExportDialog
+                    open={exportOpen}
+                    onOpenChange={setExportOpen}
+                    serviceAdvisors={serviceAdvisors}
+                    defaultServiceAdvisorId={filters?.service_advisor_id}
+                />
+            )}
 
             <AlertDialog
                 open={doneTarget !== null}
