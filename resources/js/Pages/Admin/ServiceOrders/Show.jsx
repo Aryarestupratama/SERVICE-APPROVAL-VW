@@ -609,6 +609,10 @@ export default function Show({
 
     // Modal preview Inspection Video (video tidak lagi di-embed memanjang).
     const [videoOpen, setVideoOpen] = useState(false);
+    // Ukuran asli video upload (dibaca dari metadata) supaya frame preview mengikuti orientasinya:
+    // landscape memenuhi lebar dialog, portrait memenuhi tinggi. null = belum dimuat (default 16:9).
+    const [videoSize, setVideoSize] = useState(null);
+    const isPortraitVideo = Boolean(videoSize && videoSize.height > videoSize.width);
 
     // Dialog Upload/Replace Video — dipakai untuk mengisi video pertama kali
     // (order lama yang belum pernah punya video) maupun mengganti video yang
@@ -2468,8 +2472,14 @@ export default function Show({
 
             {/* Inspection Video Dialog — video hanya di-mount saat dialog
                 terbuka, jadi otomatis berhenti diputar begitu ditutup. */}
-            <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
-                <DialogContent className="sm:max-w-3xl">
+            <Dialog
+                open={videoOpen}
+                onOpenChange={(open) => {
+                    setVideoOpen(open);
+                    if (!open) setVideoSize(null);
+                }}
+            >
+                <DialogContent className={isPortraitVideo ? 'sm:max-w-md' : 'sm:max-w-3xl'}>
                     <DialogHeader>
                         <DialogTitle>Inspection Video</DialogTitle>
                     </DialogHeader>
@@ -2489,7 +2499,21 @@ export default function Show({
                                 src={video.video_url}
                                 controls
                                 autoPlay
-                                className="aspect-video w-full rounded-md bg-black"
+                                playsInline
+                                onLoadedMetadata={(e) => {
+                                    const { videoWidth, videoHeight } = e.currentTarget;
+                                    if (videoWidth && videoHeight) {
+                                        setVideoSize({ width: videoWidth, height: videoHeight });
+                                    }
+                                }}
+                                style={videoSize ? { aspectRatio: `${videoSize.width} / ${videoSize.height}` } : undefined}
+                                className={`mx-auto block rounded-md bg-black ${
+                                    videoSize
+                                        ? isPortraitVideo
+                                            ? 'max-h-[70vh] w-auto max-w-full'
+                                            : 'max-h-[70vh] w-full'
+                                        : 'aspect-video w-full'
+                                }`}
                             />
                         ))}
                 </DialogContent>
