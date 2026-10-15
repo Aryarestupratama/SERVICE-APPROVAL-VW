@@ -198,7 +198,8 @@ function NavDropdown({ item, badges }) {
     const isChildActive = (child) =>
         child.routeName
             ? route().current(child.routeName)
-            : route().current('admin.service-orders.index') && (group === 'completed' ? 'completed' : 'in_process') === child.group;
+            // group 'all' (tile Partially Approved di Dashboard SA) bukan salah satu dari dua menu, jadi tidak ada yang ditandai.
+            : route().current('admin.service-orders.index') && group !== 'all' && (group === 'completed' ? 'completed' : 'in_process') === child.group;
 
     // Saat sidebar diciutkan ke ikon, sub-menu tersembunyi: ikon langsung menuju sub-menu pertama.
     if (state === 'collapsed' && !isMobile) {

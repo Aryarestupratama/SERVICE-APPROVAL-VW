@@ -90,13 +90,23 @@ class ServiceOrderController extends Controller
         // status selain completed, termasuk all_rejected_cancelled) atau completed. Nilai lain
         // dianggap in_process. Filter `status` hanya berlaku bila statusnya termasuk group ini,
         // supaya URL yang tidak konsisten tidak menghasilkan daftar kosong tanpa penjelasan.
-        $group = $request->query('group') === 'completed' ? 'completed' : 'in_process';
+        // Khusus admin ada group ketiga `all` (semua status, tanpa pembatasan menu): dipakai tile
+        // "Partially Approved Orders" di Dashboard SA, yang menghitung order dari semua status.
+        // Untuk SA, `all` diabaikan dan dianggap in_process.
+        $requestedGroup = $request->query('group');
+        $group = match (true) {
+            $requestedGroup === 'completed' => 'completed',
+            $requestedGroup === 'all' && $isAdmin => 'all',
+            default => 'in_process',
+        };
         $statusInGroup = filled($request->status)
-            && (($group === 'completed') === ($request->status === ServiceOrder::STATUS_COMPLETED));
+            && ($group === 'all' || (($group === 'completed') === ($request->status === ServiceOrder::STATUS_COMPLETED)));
 
         $query
             ->when($group === 'completed',
-                fn ($q) => $q->where('service_orders.status', ServiceOrder::STATUS_COMPLETED),
+                fn ($q) => $q->where('service_orders.status', ServiceOrder::STATUS_COMPLETED)
+            )
+            ->when($group === 'in_process',
                 fn ($q) => $q->where('service_orders.status', '!=', ServiceOrder::STATUS_COMPLETED)
             )
             ->when($request->search, fn ($q, $search) =>

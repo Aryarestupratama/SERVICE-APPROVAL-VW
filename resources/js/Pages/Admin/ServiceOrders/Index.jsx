@@ -35,11 +35,14 @@ const STATUS_LABEL = {
 const GROUP_STATUSES = {
     in_process: ['appointment', 'work_in_progress', 'quality_control', 'invoice_preparation', 'all_rejected_cancelled'],
     completed: ['completed'],
+    // Khusus admin (tile Partially Approved di Dashboard SA): semua status, tanpa pembatasan menu.
+    all: ['appointment', 'work_in_progress', 'quality_control', 'invoice_preparation', 'all_rejected_cancelled', 'completed'],
 };
 
 const GROUP_TITLE = {
     in_process: 'Work In Process',
     completed: 'Work Completed',
+    all: 'All Service Orders',
 };
 
 const STATUS_VARIANT = {
@@ -383,7 +386,7 @@ const buildFilterDefs = (group, isAdmin, serviceAdvisors) => [
 
 export default function Index({ orders, search, filters, group, serviceAdvisors = [] }) {
     const { auth } = usePage().props;
-    const currentGroup = group === 'completed' ? 'completed' : 'in_process';
+    const currentGroup = ['completed', 'all'].includes(group) ? group : 'in_process';
     const pageTitle = GROUP_TITLE[currentGroup];
     const isAdmin = auth?.user?.role === 'admin';
     const filterDefs = useMemo(

@@ -6,7 +6,7 @@ import { Button } from '@/Components/ui/button';
 import { DataTable } from '@/Components/DataTable/DataTable';
 import { useDataTable } from '@/Components/DataTable/useDataTable';
 import { DataTableFilterPanel } from '@/Components/DataTable/DataTableFilterPanel';
-import { Info } from 'lucide-react';
+import { ArrowRight, Info } from 'lucide-react';
 
 function formatCurrency(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -58,6 +58,43 @@ const filterDefs = [
 ];
 
 const emptyPeriodFilter = { mode: 'preset', preset: 'all', from: '', to: '' };
+
+// Tanggal hari ini di Asia/Jakarta (YYYY-MM-DD), supaya tidak bergeser oleh timezone device (RULE-014).
+function todayInJakarta() {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date());
+}
+
+function shiftDate(iso, { days = 0, years = 0 }) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(Date.UTC(y + years, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+// Filter Period dashboard (basis created_at order) diterjemahkan ke date_from / date_to milik daftar
+// Service Orders, supaya jumlah di tile sama dengan isi daftar yang dibuka dari tile itu.
+function periodToDateParams(period) {
+    if (!period) return {};
+
+    if (period.mode === 'range') {
+        return { date_from: period.from || undefined, date_to: period.to || undefined };
+    }
+
+    const today = todayInJakarta();
+    switch (period.preset) {
+        case '7d':
+            return { date_from: shiftDate(today, { days: -7 }), date_to: today };
+        case '30d':
+            return { date_from: shiftDate(today, { days: -30 }), date_to: today };
+        case '1y':
+            return { date_from: shiftDate(today, { years: -1 }), date_to: today };
+        default:
+            return {};
+    }
+}
 
 export default function Sa({ saStats, summary, filters }) {
     // Daftar Work In Process / Completed hanya memuat order milik SA yang login (FR-035), dan
@@ -233,6 +270,36 @@ export default function Sa({ saStats, summary, filters }) {
 
     const table = useDataTable({ data: saStats, columns });
 
+    // Tile "Partially Approved Orders" menjadi tautan ke daftar Service Orders (semua status, karena
+    // angkanya juga menghitung order yang sudah Completed) dengan filter Items Approval dan periode
+    // yang sama. HANYA admin: SA tidak boleh melihat order SA lain, dan daftar SA dipaksa ke ordernya sendiri.
+    const partiallyApprovedHref = isAdmin
+        ? route('admin.service-orders.index', {
+            group: 'all',
+            items_approval_status: 'partially_approved',
+            ...periodToDateParams(activeFilters.period),
+        })
+        : null;
+
+    const partiallyApprovedBody = (
+        <>
+            <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Partially Approved Orders
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                <p className="text-2xl font-semibold">{summary.partially_approved_order_count}</p>
+                {partiallyApprovedHref && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        View orders
+                        <ArrowRight className="h-3.5 w-3.5 transition-transform motion-reduce:transition-none group-hover:translate-x-0.5" aria-hidden="true" />
+                    </span>
+                )}
+            </CardContent>
+        </>
+    );
+
     return (
         <AdminLayout title="Dashboard - Service Advisor">
 
@@ -252,16 +319,19 @@ export default function Sa({ saStats, summary, filters }) {
                             <p className="text-2xl font-semibold">{summary.approved_order_count}</p>
                         </CardContent>
                     </Card>
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">
-                                Partially Approved Orders
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-2xl font-semibold">{summary.partially_approved_order_count}</p>
-                        </CardContent>
-                    </Card>
+                    {partiallyApprovedHref ? (
+                        <Link
+                            href={partiallyApprovedHref}
+                            aria-label={`Partially Approved Orders: ${summary.partially_approved_order_count}. View these orders.`}
+                            className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                            <Card className="h-full transition-colors group-hover:bg-muted/50">
+                                {partiallyApprovedBody}
+                            </Card>
+                        </Link>
+                    ) : (
+                        <Card>{partiallyApprovedBody}</Card>
+                    )}
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">
