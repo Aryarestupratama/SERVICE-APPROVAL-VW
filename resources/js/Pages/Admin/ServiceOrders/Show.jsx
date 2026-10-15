@@ -57,6 +57,7 @@ import {
     FileText,
     PlayCircle,
     Info,
+    RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePollLastActivity } from '@/hooks/usePollLastActivity';
@@ -568,6 +569,7 @@ export default function Show({
     estimatedGrandTotal,
     customerComplaintEditable,
     inspectionFeeEditable,
+    inspectionLinkExpired,
 }) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === 'admin';
@@ -585,6 +587,7 @@ export default function Show({
             'estimatedGrandTotal',
             'customerComplaintEditable',
             'inspectionFeeEditable',
+            'inspectionLinkExpired',
         ],
         intervalMs: 4000,
     });
@@ -1216,7 +1219,45 @@ export default function Show({
     // link ini tidak relevan lagi jadi disembunyikan (permintaan owner).
     const [reportLinkCopied, setReportLinkCopied] = useState(false);
 
-    const canShareReportLink = order.status === 'work_in_progress';
+    const [linkRenewed, setLinkRenewed] = useState(false);
+
+    // Link boleh dibagikan di work_in_progress, atau setelah SA baru saja
+    // membuat link baru (customer bisa butuh link di status lain, mis.
+    // invoice_preparation untuk upload bukti bayar).
+    const canShareReportLink = order.status === 'work_in_progress' || linkRenewed;
+    const canRenewReportLink =
+        order.status !== 'all_rejected_cancelled' &&
+        (inspectionLinkExpired || order.status === 'work_in_progress');
+
+    const handleRenewReportLink = () => {
+        setConfirmDialog({
+            title: 'Renew report link?',
+            description: (
+                <>
+                    The current link will stop working immediately. A new link valid for 30 days
+                    will be created — send it to the customer again.
+                </>
+            ),
+            confirmLabel: 'Renew Link',
+            destructive: false,
+            onConfirm: () => {
+                router.post(
+                    route('admin.service-orders.renew-report-link', order.id),
+                    {},
+                    {
+                        preserveScroll: true,
+                        onSuccess: (page) => {
+                            if (flashToast(page, 'New report link created')) {
+                                setLinkRenewed(true);
+                            }
+                        },
+                        onError: () => toast.error('Failed to renew link'),
+                        onFinish: closeConfirmDialog,
+                    },
+                );
+            },
+        });
+    };
 
     const reportUrl = order.inspection_token
         ? route('public.inspection-report', order.inspection_token)
@@ -1523,6 +1564,17 @@ export default function Show({
                         {video ? 'Replace Video' : 'Upload Video'}
                     </Button>
 
+                    {canRenewReportLink && (
+                        <Button
+                            type="button"
+                            variant={inspectionLinkExpired ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={handleRenewReportLink}
+                        >
+                            <RefreshCw className="mr-1 h-4 w-4" /> Renew Link
+                        </Button>
+                    )}
+
                     {canShareReportLink && (
                         <Button
                             type="button"
@@ -1541,6 +1593,13 @@ export default function Show({
                                 </>
                             )}
                         </Button>
+                    )}
+
+                    {order.inspection_token_expires_at && order.status !== 'all_rejected_cancelled' && (
+                        <span className={cn('text-xs', inspectionLinkExpired ? 'text-red-600' : 'text-muted-foreground')}>
+                            {inspectionLinkExpired ? 'Link expired on ' : 'Link valid until '}
+                            {formatDate(order.inspection_token_expires_at)}
+                        </span>
                     )}
                 </div>
                     </div>

@@ -73,13 +73,16 @@ class ServiceOrder extends Model
         ];
     }
 
+    // Masa berlaku link publik (hari) — dipakai saat create & renew.
+    public const INSPECTION_LINK_VALID_DAYS = 30;
+
     protected static function booted(): void
     {
         static::creating(function (ServiceOrder $order) {
             if (empty($order->inspection_token)) {
                 $order->inspection_token = Str::random(32);
                 // Default masa berlaku link publik — sesuaikan kalau ada aturan lain
-                $order->inspection_token_expires_at = Carbon::now()->addDays(30);
+                $order->inspection_token_expires_at = Carbon::now()->addDays(self::INSPECTION_LINK_VALID_DAYS);
             }
 
             // status_changed_at diisi juga saat create, supaya order baru
@@ -157,6 +160,26 @@ class ServiceOrder extends Model
     {
         return $this->inspection_token_expires_at !== null
             && $this->inspection_token_expires_at->isPast();
+    }
+
+    // Buat link publik baru (rotasi token + reset masa berlaku). Dipakai saat
+    // customer minta link baru setelah link lama expired. Token lama langsung
+    // tidak valid. Token harus unik terhadap inspection_token lain DAN
+    // feedback_token FUAS (RULE-038 / ADR-013).
+    public function renewInspectionLink(): void
+    {
+        do {
+            $token = Str::random(32);
+        } while (
+            static::where('inspection_token', $token)->exists()
+            || ServiceOrderFuas::where('feedback_token', $token)->exists()
+        );
+
+        $this->update([
+            'inspection_token' => $token,
+            'inspection_token_expires_at' => Carbon::now()->addDays(self::INSPECTION_LINK_VALID_DAYS),
+            'last_activity_at' => now(),
+        ]);
     }
 
     // Helper cek apakah customer_complaint masih boleh diedit di status saat ini.

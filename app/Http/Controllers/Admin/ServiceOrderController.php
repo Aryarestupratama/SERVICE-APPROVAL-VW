@@ -526,6 +526,7 @@ class ServiceOrderController extends Controller
             // Same pattern as above but for inspection_fee — single source
             // of truth in ServiceOrder::isInspectionFeeEditable().
             'inspectionFeeEditable' => $serviceOrder->isInspectionFeeEditable(),
+            'inspectionLinkExpired' => $serviceOrder->isInspectionLinkExpired(),
         ]);
     }
 
@@ -1115,6 +1116,23 @@ class ServiceOrderController extends Controller
         return response()->json([
             'last_activity_at' => optional($serviceOrder->last_activity_at)->toJSON(),
         ]);
+    }
+
+    /**
+     * Buat link laporan publik baru (token baru + masa berlaku baru) saat
+     * customer minta ulang setelah link lama expired. Admin & SA.
+     */
+    public function renewReportLink(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($serviceOrder->status === ServiceOrder::STATUS_ALL_REJECTED_CANCELLED) {
+            return back()->with('error', 'Cannot renew the report link for a cancelled order.');
+        }
+
+        $serviceOrder->renewInspectionLink();
+
+        return back()->with('success', 'New report link created. It is valid for ' . ServiceOrder::INSPECTION_LINK_VALID_DAYS . ' days.');
     }
 
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void

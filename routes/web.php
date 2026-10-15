@@ -173,6 +173,12 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'updateCustomerComplaint'])
                 ->name('service-orders.update-customer-complaint');
 
+            // Buat link laporan publik baru setelah expired (rotasi token +
+            // reset 30 hari). Admin & SA; dikunci backend untuk order cancelled.
+            Route::post('service-orders/{serviceOrder}/renew-report-link', [ServiceOrderController::class, 'renewReportLink'])
+                ->middleware('throttle:10,1')
+                ->name('service-orders.renew-report-link');
+
             // Update inspection_fee (& inspection_fee_note) — editable SA
             // selama status termasuk INSPECTION_FEE_EDITABLE_STATUSES,
             // dikunci backend (isInspectionFeeEditable()). Pola sama dengan
