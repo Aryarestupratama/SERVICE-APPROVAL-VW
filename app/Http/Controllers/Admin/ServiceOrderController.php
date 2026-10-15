@@ -10,6 +10,7 @@ use App\Models\ServiceOrder;
 use App\Models\ServiceOrderEstimationDocument;
 use App\Models\ServiceOrderInvoice;
 use App\Models\ServiceOrderPaymentReceipt;
+use App\Models\ServiceOrderRepairImage;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\CustomerVehicle;
@@ -477,6 +478,152 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Video uploaded successfully.');
     }
 
+    /**
+     * Tambah 1 foto "setelah diperbaiki" (+ deskripsi) ke order yang SUDAH ADA.
+     *
+     * Sama seperti uploadVideo(), sengaja TIDAK digate order.status: SA boleh
+     * menambah/menghapus kapan saja. Yang dibatasi adalah TAMPILANNYA di
+     * halaman customer (hanya saat work_in_progress, lihat
+     * InspectionReportController::show()).
+     *
+     * Batas maks 5 dicek di dalam transaksi dengan lock baris order, supaya
+     * dua request bersamaan tidak sama-sama lolos di hitungan ke-5.
+     */
+    public function storeRepairImage(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        $validated = $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'description' => ['required', 'string', 'max:255'],
+        ], [
+            'image.max' => 'The image may not be larger than 5 MB.',
+            'image.mimes' => 'The image must be a JPG, PNG, or WebP file.',
+        ]);
+
+        $limitReached = false;
+        $storedPath = null;
+
+        try {
+            DB::transaction(function () use ($validated, $request, $serviceOrder, &$limitReached, &$storedPath) {
+                // Kunci baris order selama hitung + simpan.
+                $locked = ServiceOrder::whereKey($serviceOrder->id)->lockForUpdate()->firstOrFail();
+
+                if ($locked->repairImages()->count() >= ServiceOrderRepairImage::MAX_PER_ORDER) {
+                    $limitReached = true;
+                    return;
+                }
+
+                $lastSort = $locked->repairImages()->max('sort_order');
+
+                $storedPath = $request->file('image')->store('repair-images', 'public');
+
+                $locked->repairImages()->create([
+                    'image_path' => $storedPath,
+                    'description' => trim($validated['description']),
+                    'sort_order' => $lastSort === null ? 0 : ((int) $lastSort + 1),
+                    'uploaded_by' => $request->user()->id,
+                ]);
+
+                $locked->touchActivity();
+            });
+        } catch (\Throwable $e) {
+            // Baris DB gagal setelah file tersimpan: jangan tinggalkan file yatim.
+            if ($storedPath) {
+                Storage::disk('public')->delete($storedPath);
+            }
+            throw $e;
+        }
+
+        if ($limitReached) {
+            return back()->withErrors([
+                'image' => 'This order already has ' . ServiceOrderRepairImage::MAX_PER_ORDER . ' repair images. Delete one to add another.',
+            ]);
+        }
+
+        return back()->with('success', 'Repair image added successfully.');
+    }
+
+    /**
+     * Edit deskripsi dan/atau ganti gambar 1 foto perbaikan tanpa hapus lalu
+     * upload ulang. `image` opsional: bila kosong, hanya deskripsi yang
+     * berubah. Penggantian file mengikuti RULE-033: simpan file baru, update
+     * DB, baru hapus file lama. Jumlah foto tidak berubah, jadi batas 5 tidak
+     * relevan di sini.
+     */
+    public function updateRepairImage(Request $request, ServiceOrder $serviceOrder, ServiceOrderRepairImage $repairImage)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($repairImage->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'description' => ['required', 'string', 'max:255'],
+        ], [
+            'image.max' => 'The image may not be larger than 5 MB.',
+            'image.mimes' => 'The image must be a JPG, PNG, or WebP file.',
+        ]);
+
+        $oldPath = $repairImage->image_path;
+        $newPath = null;
+
+        try {
+            DB::transaction(function () use ($request, $validated, $repairImage, &$newPath) {
+                $attributes = ['description' => trim($validated['description'])];
+
+                if ($request->hasFile('image')) {
+                    // File baru disimpan DULU; file lama masih utuh bila gagal.
+                    $newPath = $request->file('image')->store('repair-images', 'public');
+                    $attributes['image_path'] = $newPath;
+                }
+
+                $repairImage->update($attributes);
+            });
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                Storage::disk('public')->delete($newPath);
+            }
+            throw $e;
+        }
+
+        // File lama dihapus HANYA setelah file baru + baris DB berhasil.
+        if ($newPath && $oldPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        $serviceOrder->touchActivity();
+
+        return back()->with('success', 'Repair image updated successfully.');
+    }
+
+    /**
+     * Hapus 1 foto perbaikan. Urutan sesuai RULE-034: baris DB dihapus dulu,
+     * file fisik dihapus SETELAHNYA.
+     */
+    public function deleteRepairImage(Request $request, ServiceOrder $serviceOrder, ServiceOrderRepairImage $repairImage)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if ($repairImage->service_order_id !== $serviceOrder->id) {
+            abort(404);
+        }
+
+        $path = $repairImage->image_path;
+
+        $repairImage->delete();
+
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
+
+        $serviceOrder->touchActivity();
+
+        return back()->with('success', 'Repair image deleted successfully.');
+    }
+
     public function show(Request $request, ServiceOrder $serviceOrder, InspectionItemPricingService $pricingService)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -486,6 +633,7 @@ class ServiceOrderController extends Controller
             'serviceAdvisor',
             'technician',
             'videos',
+            'repairImages',
             'inspectionItems',
             'invoice.uploadedBy',
             'estimationDocuments.uploadedBy',
@@ -1054,11 +1202,16 @@ class ServiceOrderController extends Controller
 
         $serviceOrder->load([
             'videos',
+            'repairImages',
             'estimationDocuments',
             'invoice',
             'customerPaymentReceipt',
             'staffPaymentReceipt',
         ]);
+
+        // Path foto perbaikan dikumpulkan dulu dan file baru dihapus SETELAH
+        // transaksi (baris order + foto) sukses — RULE-034.
+        $repairImagePaths = $serviceOrder->repairImages->pluck('image_path')->filter()->all();
 
         DB::transaction(function () use ($serviceOrder) {
             // Locally uploaded videos (video_source = 'upload') have a physical
@@ -1096,6 +1249,10 @@ class ServiceOrderController extends Controller
             // already been cleaned up manually above.
             $serviceOrder->delete();
         });
+
+        foreach ($repairImagePaths as $repairImagePath) {
+            Storage::disk('public')->delete($repairImagePath);
+        }
 
         return redirect()
             ->route('admin.service-orders.index', ['group' => $redirectGroup])

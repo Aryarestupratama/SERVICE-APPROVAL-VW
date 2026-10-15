@@ -58,9 +58,16 @@ import {
     PlayCircle,
     Info,
     RefreshCw,
+    ImagePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePollLastActivity } from '@/hooks/usePollLastActivity';
+
+// Foto hasil perbaikan: batas harus sama dengan
+// ServiceOrderRepairImage::MAX_PER_ORDER dan aturan `max:5120` di controller.
+const REPAIR_IMAGE_MAX = 5;
+const REPAIR_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const REPAIR_IMAGE_DESCRIPTION_MAX = 255;
 
 const ALLOWED_TRANSITIONS = {
     appointment: ['work_in_progress'],
@@ -646,6 +653,114 @@ export default function Show({
 
     // Modal preview file (receipt) — { title, url } atau null kalau tertutup.
     const [previewFile, setPreviewFile] = useState(null);
+
+    // Foto "setelah diperbaiki" (maks REPAIR_IMAGE_MAX per order). Tidak digate
+    // order.status, sama seperti video; di halaman customer hanya tampil saat
+    // work_in_progress. Dialog tetap terbuka setelah simpan supaya SA bisa
+    // menambah foto berikutnya.
+    const repairImages = order.repair_images ?? [];
+    const repairImageCount = repairImages.length;
+    const repairImageLimitReached = repairImageCount >= REPAIR_IMAGE_MAX;
+    const [repairImagesOpen, setRepairImagesOpen] = useState(false);
+    const repairImageForm = useForm({ image: null, description: '' });
+    const [repairImageInputKey, setRepairImageInputKey] = useState(0);
+    const [repairImageClientError, setRepairImageClientError] = useState('');
+    // Foto yang sedang diedit (null = mode tambah). Form yang sama dipakai untuk
+    // tambah dan edit; saat edit, gambar opsional (kosong = gambar tetap).
+    const [editingRepairImage, setEditingRepairImage] = useState(null);
+    const isEditingRepairImage = editingRepairImage !== null;
+    // Batas 5 foto tercapai dan tidak sedang mengedit: form dikunci (bukan disembunyikan,
+    // supaya ukuran dialog tidak berubah).
+    const repairImageFormLocked = repairImageLimitReached && !isEditingRepairImage;
+
+    const resetRepairImageForm = () => {
+        repairImageForm.reset();
+        repairImageForm.clearErrors();
+        setRepairImageClientError('');
+        // Ganti key supaya <input type="file"> benar-benar kosong lagi.
+        setRepairImageInputKey((k) => k + 1);
+    };
+
+    const closeRepairImagesDialog = () => {
+        setRepairImagesOpen(false);
+        setEditingRepairImage(null);
+        resetRepairImageForm();
+    };
+
+    const startEditRepairImage = (image) => {
+        resetRepairImageForm();
+        setEditingRepairImage(image);
+        repairImageForm.setData('description', image.description ?? '');
+    };
+
+    const cancelEditRepairImage = () => {
+        setEditingRepairImage(null);
+        resetRepairImageForm();
+    };
+
+    const handleRepairImageFileChange = (e) => {
+        const file = e.target.files?.[0] ?? null;
+        repairImageForm.clearErrors('image');
+        setRepairImageClientError('');
+
+        if (file && file.size > REPAIR_IMAGE_MAX_BYTES) {
+            setRepairImageClientError('The image may not be larger than 5 MB.');
+            setRepairImageInputKey((k) => k + 1);
+            repairImageForm.setData('image', null);
+            return;
+        }
+
+        repairImageForm.setData('image', file);
+    };
+
+    const handleRepairImageSubmit = () => {
+        const editing = editingRepairImage;
+        const url = editing
+            ? route('admin.service-orders.update-repair-image', [order.id, editing.id])
+            : route('admin.service-orders.store-repair-image', order.id);
+
+        repairImageForm.post(url, {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const ok = flashToast(
+                    page,
+                    editing ? 'Repair image updated successfully.' : 'Repair image added successfully.'
+                );
+                if (ok) {
+                    setEditingRepairImage(null);
+                    resetRepairImageForm();
+                }
+            },
+            onError: () => toast.error('Could not save the image. Please check the form.'),
+        });
+    };
+
+    const handleDeleteRepairImage = (image) => {
+        setConfirmDialog({
+            title: 'Delete this repair image?',
+            description: (
+                <>
+                    The image <strong>{image.description}</strong> will be removed from this order
+                    and the customer will no longer see it.
+                </>
+            ),
+            confirmLabel: 'Delete',
+            destructive: true,
+            onConfirm: () => {
+                if (editingRepairImage?.id === image.id) cancelEditRepairImage();
+                router.delete(
+                    route('admin.service-orders.delete-repair-image', [order.id, image.id]),
+                    {
+                        preserveScroll: true,
+                        onSuccess: (page) => flashToast(page, 'Repair image deleted successfully.'),
+                        onError: () => toast.error('Could not delete the image. Please try again.'),
+                    }
+                );
+                closeConfirmDialog();
+            },
+        });
+    };
 
     // Mode edit inline Customer Complaint (lewat ikon pensil).
     const [isEditingComplaint, setIsEditingComplaint] = useState(false);
@@ -1543,63 +1658,92 @@ export default function Show({
                     PROJECT-RULES 9.4). Tombol Copy Report Link (khusus
                     work_in_progress) ditaruh sebaris di sini karena kartu
                     "Report Link" di kolom kanan sudah tidak ada. */}
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        disabled={!video}
-                        onClick={() => setVideoOpen(true)}
-                    >
-                        <PlayCircle className="mr-1 h-4 w-4" />
-                        {video ? 'Preview Inspection Video' : 'No video uploaded'}
-                    </Button>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-0">
+                    {/* Grup 1 — materi untuk customer: video + foto hasil perbaikan. */}
+                    <div className="space-y-2 lg:pr-6">
+                        <p className="text-xs font-semibold text-vw-grey">Video and photos</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="default"
+                                size="sm"
+                                disabled={!video}
+                                onClick={() => setVideoOpen(true)}
+                            >
+                                <PlayCircle className="mr-1 h-4 w-4" aria-hidden="true" />
+                                {video ? 'Preview Inspection Video' : 'No video uploaded'}
+                            </Button>
 
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setVideoUploadOpen(true)}
-                    >
-                        {video ? 'Replace Video' : 'Upload Video'}
-                    </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setVideoUploadOpen(true)}
+                            >
+                                {video ? 'Replace Video' : 'Upload Video'}
+                            </Button>
 
-                    {canRenewReportLink && (
-                        <Button
-                            type="button"
-                            variant={inspectionLinkExpired ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={handleRenewReportLink}
-                        >
-                            <RefreshCw className="mr-1 h-4 w-4" /> Renew Link
-                        </Button>
-                    )}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setRepairImagesOpen(true)}
+                            >
+                                <ImagePlus className="mr-1 h-4 w-4" aria-hidden="true" />
+                                {repairImageCount > 0
+                                    ? `Repair Images (${repairImageCount}/${REPAIR_IMAGE_MAX})`
+                                    : 'Add Image'}
+                            </Button>
+                        </div>
+                    </div>
 
-                    {canShareReportLink && (
-                        <Button
-                            type="button"
-                            variant="default"
-                            size="sm"
-                            onClick={handleCopyReportLink}
-                            disabled={!reportUrl}
-                        >
-                            {reportLinkCopied ? (
-                                <>
-                                    <Check className="mr-1 h-4 w-4" /> Copied!
-                                </>
-                            ) : (
-                                <>
-                                    <Copy className="mr-1 h-4 w-4" /> Copy Report Link & Message
-                                </>
+                    {/* Grup 2 — link laporan ke customer. Disembunyikan bila tidak ada
+                        aksi maupun info masa berlaku yang relevan di status ini. */}
+                    {(canRenewReportLink ||
+                        canShareReportLink ||
+                        (order.inspection_token_expires_at &&
+                            order.status !== 'all_rejected_cancelled')) && (
+                        <div className="space-y-2 border-t border-vw-grey/15 pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                            <p className="text-xs font-semibold text-vw-grey">Customer link</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {canRenewReportLink && (
+                                    <Button
+                                        type="button"
+                                        variant={inspectionLinkExpired ? 'default' : 'outline'}
+                                        size="sm"
+                                        onClick={handleRenewReportLink}
+                                    >
+                                        <RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> Renew Link
+                                    </Button>
+                                )}
+
+                                {canShareReportLink && (
+                                    <Button
+                                        type="button"
+                                        variant="default"
+                                        size="sm"
+                                        onClick={handleCopyReportLink}
+                                        disabled={!reportUrl}
+                                    >
+                                        {reportLinkCopied ? (
+                                            <>
+                                                <Check className="mr-1 h-4 w-4" aria-hidden="true" /> Copied!
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy className="mr-1 h-4 w-4" aria-hidden="true" /> Copy Report Link & Message
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                            </div>
+                            {order.inspection_token_expires_at && order.status !== 'all_rejected_cancelled' && (
+                                <p className={cn('text-xs', inspectionLinkExpired ? 'text-red-600' : 'text-vw-grey')}>
+                                    {inspectionLinkExpired ? 'Link expired on ' : 'Link valid until '}
+                                    {formatDate(order.inspection_token_expires_at)}
+                                </p>
                             )}
-                        </Button>
-                    )}
-
-                    {order.inspection_token_expires_at && order.status !== 'all_rejected_cancelled' && (
-                        <span className={cn('text-xs', inspectionLinkExpired ? 'text-red-600' : 'text-muted-foreground')}>
-                            {inspectionLinkExpired ? 'Link expired on ' : 'Link valid until '}
-                            {formatDate(order.inspection_token_expires_at)}
-                        </span>
+                        </div>
                     )}
                 </div>
                     </div>
@@ -2630,6 +2774,196 @@ export default function Show({
                             disabled={videoUploadForm.processing || !videoUploadForm.data.file}
                         >
                             {videoUploadForm.processing ? 'Uploading...' : 'Save Video'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Repair Images Dialog — foto "setelah diperbaiki" (maks 5) untuk
+                menunjukkan bahwa kerusakan di video sudah dikerjakan.
+                Tinggi dialog tetap: header, penjelasan, form, dan tombol
+                TIDAK ikut scroll; hanya daftar foto yang scroll di dalam
+                containernya sendiri (tinggi container muat ~3 foto, sisanya
+                di-scroll). Isi form dibuat setinggi tetap di semua mode
+                (tambah / edit / batas penuh) supaya dialog tidak berubah
+                ukuran. Dialog tetap terbuka setelah simpan. */}
+            <Dialog
+                open={repairImagesOpen}
+                onOpenChange={(open) => !open && closeRepairImagesDialog()}
+            >
+                <DialogContent className="flex max-h-[92vh] flex-col gap-4 overflow-hidden sm:max-w-3xl">
+                    <DialogHeader className="shrink-0">
+                        <DialogTitle>Repair Images</DialogTitle>
+                    </DialogHeader>
+
+                    {/* Dua kolom di layar >= md: kiri = penjelasan + form, kanan = daftar
+                        foto (satu-satunya yang scroll). Di layar sempit bertumpuk. */}
+                    <div className="grid min-h-0 shrink gap-5 md:grid-cols-2">
+                    <div className="space-y-4">
+                    <p className="text-sm text-vw-grey">
+                        Add photos that show the problems in the video have been fixed (for example,
+                        the same pipe after it was repaired). You can add up to {REPAIR_IMAGE_MAX}{' '}
+                        images. Customers see them below the video only while the order is Work In
+                        Process. Use Edit to change a description or replace the picture.
+                    </p>
+
+                    {/* Form tambah / edit — posisi tetap, di bawah penjelasan. */}
+                    <div className="space-y-3 rounded-md border border-vw-grey/15 p-3">
+                        <p className="text-sm font-semibold text-gray-900">
+                            {isEditingRepairImage ? 'Edit image' : 'Add image'}
+                        </p>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="repair-image-file">
+                                {isEditingRepairImage ? 'Replace image (optional)' : 'Image'}
+                            </Label>
+                            <Input
+                                key={repairImageInputKey}
+                                id="repair-image-file"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                disabled={repairImageFormLocked}
+                                onChange={handleRepairImageFileChange}
+                            />
+                            {repairImageFormLocked ? (
+                                <p className="min-h-4 text-xs text-amber-700">
+                                    Limit reached. Delete a photo to add another.
+                                </p>
+                            ) : repairImageClientError || repairImageForm.errors.image ? (
+                                <p className="min-h-4 text-xs text-destructive" role="alert">
+                                    {repairImageClientError || repairImageForm.errors.image}
+                                </p>
+                            ) : (
+                                <p className="min-h-4 text-xs text-vw-grey">
+                                    {isEditingRepairImage ? 'Optional. ' : ''}JPG, PNG, or WebP. Max 5 MB.
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="repair-image-description">Description</Label>
+                            <Textarea
+                                id="repair-image-description"
+                                rows={2}
+                                maxLength={REPAIR_IMAGE_DESCRIPTION_MAX}
+                                placeholder="e.g. Exhaust pipe after replacement"
+                                disabled={repairImageFormLocked}
+                                value={repairImageForm.data.description}
+                                onChange={(e) =>
+                                    repairImageForm.setData('description', e.target.value)
+                                }
+                                className="resize-none"
+                            />
+                            <div className="flex items-start justify-between gap-2">
+                                <p className="min-h-4 text-xs text-destructive" role="alert">
+                                    {repairImageForm.errors.description}
+                                </p>
+                                <p className="shrink-0 text-xs tabular-nums text-vw-grey">
+                                    {repairImageForm.data.description.length}/
+                                    {REPAIR_IMAGE_DESCRIPTION_MAX}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    {/* Kolom kanan: tinggi mengikuti kolom kiri (stretch). Daftar di dalamnya
+                        absolute + overflow-y-auto supaya panjang daftar TIDAK menambah tinggi
+                        dialog; di layar sempit tingginya tetap 14rem. */}
+                    <div className="flex min-h-0 flex-col gap-2">
+                        <p className="shrink-0 text-sm font-semibold text-gray-900">
+                            Added images ({repairImageCount}/{REPAIR_IMAGE_MAX})
+                        </p>
+                        <div className="relative h-56 min-h-[14rem] flex-1 rounded-md border border-vw-grey/15">
+                        <div className="absolute inset-0 overflow-y-auto p-2">
+                            {repairImageCount === 0 ? (
+                                <p className="flex h-full items-center justify-center text-sm text-vw-grey">
+                                    No repair images yet.
+                                </p>
+                            ) : (
+                                <ul className="space-y-2">
+                                    {repairImages.map((image) => (
+                                        <li
+                                            key={image.id}
+                                            className={cn(
+                                                'flex items-start gap-3 rounded-md border p-2',
+                                                editingRepairImage?.id === image.id
+                                                    ? 'border-vw-light-blue bg-vw-grey-light/40'
+                                                    : 'border-vw-grey/15'
+                                            )}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setPreviewFile({
+                                                        title: image.description,
+                                                        url: `/storage/${image.image_path}`,
+                                                    })
+                                                }
+                                                aria-label={`View image: ${image.description}`}
+                                                className="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-vw-grey-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vw-light-blue"
+                                            >
+                                                <img
+                                                    src={`/storage/${image.image_path}`}
+                                                    alt=""
+                                                    loading="lazy"
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            </button>
+                                            <p className="min-w-0 flex-1 whitespace-pre-line break-words text-sm text-gray-900">
+                                                {image.description}
+                                            </p>
+                                            <div className="flex shrink-0 flex-col gap-1.5">
+                                                <TextActionButton
+                                                    text="Edit"
+                                                    label={`Edit image: ${image.description}`}
+                                                    onClick={() => startEditRepairImage(image)}
+                                                />
+                                                <TextActionButton
+                                                    text="Delete"
+                                                    label={`Delete image: ${image.description}`}
+                                                    tone="danger"
+                                                    onClick={() => handleDeleteRepairImage(image)}
+                                                />
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <DialogFooter className="shrink-0">
+                        <Button type="button" variant="outline" onClick={closeRepairImagesDialog}>
+                            Close
+                        </Button>
+                        {isEditingRepairImage && (
+                            <Button type="button" variant="outline" onClick={cancelEditRepairImage}>
+                                Cancel Edit
+                            </Button>
+                        )}
+                        <Button
+                            type="button"
+                            onClick={handleRepairImageSubmit}
+                            disabled={
+                                repairImageFormLocked ||
+                                repairImageForm.processing ||
+                                !repairImageForm.data.description.trim() ||
+                                (isEditingRepairImage
+                                    ? !repairImageForm.data.image &&
+                                      repairImageForm.data.description.trim() ===
+                                          (editingRepairImage.description ?? '').trim()
+                                    : !repairImageForm.data.image)
+                            }
+                        >
+                            {repairImageForm.processing
+                                ? 'Uploading...'
+                                : isEditingRepairImage
+                                ? 'Save Changes'
+                                : 'Save Image'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

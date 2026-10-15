@@ -8,6 +8,7 @@ import { Progress } from '@/Components/ui/progress';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/Components/ui/accordion';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/Components/ui/sheet';
 import { usePollLastActivity } from '@/hooks/usePollLastActivity';
+import RepairImageStack from '@/Components/RepairImageStack';
 
 // Viewer PDF/foto layar penuh — di-load lazy (beserta pdf.js) hanya saat customer
 // membuka dokumen, supaya bundle halaman report tetap ringan.
@@ -482,7 +483,7 @@ function initials(name) {
 
 export default function InspectionReport({
     token, settings, order, vehicle, customer, serviceAdvisor, chiefTechnician,
-    videos, items: initialItems, invoice, estimationDocuments, customerPaymentReceipt
+    videos, repairImages, items: initialItems, invoice, estimationDocuments, customerPaymentReceipt
 }) {
     const [items, setItems] = useState(initialItems);
     // BUG FIX: sebelumnya "keputusan lokal yang belum disubmit" dideteksi dengan
@@ -564,7 +565,7 @@ export default function InspectionReport({
     usePollLastActivity({
         url: route('public.report.last-activity', token),
         initialValue: order.last_activity_at,
-        only: ['order', 'items', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'],
+        only: ['order', 'items', 'repairImages', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'],
         intervalMs: 4000,
     });
 
@@ -1187,6 +1188,28 @@ export default function InspectionReport({
                             </div>
                         )}
                     </section>
+
+                    {/* Foto hasil perbaikan — hanya dikirim server saat work_in_progress.
+                        Tanpa foto, seluruh section disembunyikan (bukan "belum ada foto"),
+                        karena fitur ini opsional bagi SA. Tap foto = buka viewer layar penuh. */}
+                    {repairImages?.length > 0 && (
+                        <section className="mt-8" aria-labelledby="repair-results-title">
+                            <h2 id="repair-results-title" className="text-base font-bold text-gray-900">
+                                Repair results
+                            </h2>
+                            <p className="mt-1 text-sm text-vw-grey">
+                                See how the issues shown in the video above have been fixed.
+                            </p>
+                            <RepairImageStack
+                                images={repairImages.map((image) => ({
+                                    id: image.id,
+                                    url: `/storage/${image.image_path}`,
+                                    description: image.description,
+                                }))}
+                                onOpen={setViewerDoc}
+                            />
+                        </section>
+                    )}
 
                     <div className="my-6" />
 

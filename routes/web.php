@@ -195,6 +195,22 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'uploadVideo'])
                 ->name('service-orders.upload-video');
 
+            // Foto "setelah diperbaiki" (maks 5, + deskripsi). Tidak digate
+            // status, sama seperti video; tampil di customer hanya saat
+            // work_in_progress.
+            Route::post('service-orders/{serviceOrder}/repair-images',
+                [ServiceOrderController::class, 'storeRepairImage'])
+                ->name('service-orders.store-repair-image');
+
+            // Edit deskripsi dan/atau ganti gambar (POST karena multipart).
+            Route::post('service-orders/{serviceOrder}/repair-images/{repairImage}',
+                [ServiceOrderController::class, 'updateRepairImage'])
+                ->name('service-orders.update-repair-image');
+
+            Route::delete('service-orders/{serviceOrder}/repair-images/{repairImage}',
+                [ServiceOrderController::class, 'deleteRepairImage'])
+                ->name('service-orders.delete-repair-image');
+
             Route::post('service-orders/{serviceOrder}/estimation-document',
                 [ServiceOrderController::class, 'uploadEstimationDocument'])
                 ->name('service-orders.upload-estimation-document');

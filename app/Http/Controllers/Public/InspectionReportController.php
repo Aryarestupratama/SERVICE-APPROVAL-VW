@@ -17,7 +17,7 @@ class InspectionReportController extends Controller
     public function show(string $token)
     {
         $serviceOrder = ServiceOrder::where('inspection_token', $token)
-            ->with(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'inspectionItems', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'])
+            ->with(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'repairImages', 'inspectionItems', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'])
             ->firstOrFail();
 
         if ($serviceOrder->isInspectionLinkExpired()) {
@@ -55,6 +55,10 @@ class InspectionReportController extends Controller
             ServiceOrder::STATUS_INVOICE_PREPARATION,
             ServiceOrder::STATUS_COMPLETED,
         ], true);
+
+        // Foto hasil perbaikan hanya tampil saat work_in_progress (permintaan
+        // owner), dan dikirim kosong di status lain.
+        $showRepairImages = $serviceOrder->status === ServiceOrder::STATUS_WORK_IN_PROGRESS;
 
         return Inertia::render('Public/InspectionReport', [
             'token' => $token,
@@ -113,6 +117,13 @@ class InspectionReportController extends Controller
                 'video_url' => $video->video_url,
                 'label' => 'Part ' . ($video->sort_order + 1),
             ]),
+            'repairImages' => $showRepairImages
+                ? $serviceOrder->repairImages->map(fn ($image) => [
+                    'id' => $image->id,
+                    'image_path' => $image->image_path,
+                    'description' => $image->description,
+                ])->values()
+                : [],
             'items' => $serviceOrder->inspectionItems->map(fn ($item) => [
                 'id' => $item->id,
                 'name' => $item->name,

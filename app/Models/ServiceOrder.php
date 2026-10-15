@@ -144,6 +144,12 @@ class ServiceOrder extends Model
         return $this->hasMany(InspectionItem::class);
     }
 
+    // Foto hasil perbaikan (maks ServiceOrderRepairImage::MAX_PER_ORDER).
+    public function repairImages(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ServiceOrderRepairImage::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     // Pelacak FUAS (satu baris per order, dibuat lazily; lihat FuasStatusService).
     public function fuas(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
