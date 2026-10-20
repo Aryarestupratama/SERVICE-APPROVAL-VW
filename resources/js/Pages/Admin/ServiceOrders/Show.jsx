@@ -831,6 +831,11 @@ export default function Show({
     const showInvoiceSection = ['quality_control', 'invoice_preparation', 'completed'].includes(order.status);
     const showPaymentSection = ['invoice_preparation', 'completed'].includes(order.status);
     const canEditPayment = order.status === 'invoice_preparation';
+    // Selaras dengan guard server (INVOICE_EDITABLE_STATUSES / RECEIPT_EDITABLE_STATUSES):
+    // invoice hanya diubah saat Quality Control dan Invoice Preparation, bukti bayar staff
+    // hanya saat Invoice Preparation. Di status lain keduanya hanya bisa dilihat.
+    const canEditInvoice = ['quality_control', 'invoice_preparation'].includes(order.status);
+    const canEditReceipt = order.status === 'invoice_preparation';
 
     const docsByGroup = estimationDocsByGroup(order.estimation_documents);
     const vatPercent = Number(settings?.ppn_percent ?? 0);
@@ -2304,7 +2309,9 @@ export default function Show({
         })
     }
 />
-                                            <TextActionButton className="text-xs" text="Delete" label="Delete invoice" tone="danger" onClick={handleDeleteInvoice} />
+                                            {canEditInvoice && (
+                                                <TextActionButton className="text-xs" text="Delete" label="Delete invoice" tone="danger" onClick={handleDeleteInvoice} />
+                                            )}
                                         </>
                                     ) : (
                                         <p className="text-sm text-vw-grey">
@@ -2313,7 +2320,8 @@ export default function Show({
                                     )}
                                 </div>
 
-                                <form
+                                {canEditInvoice && (
+<form
                                     onSubmit={handleInvoiceUpload}
                                     className="flex w-full items-center gap-2 sm:w-auto"
                                 >
@@ -2341,6 +2349,7 @@ export default function Show({
                                             : 'Upload'}
                                     </Button>
                                 </form>
+)}
                             </div>
                             {invoiceForm.errors.invoice_pdf && (
                                 <p className="text-xs text-urgent">{invoiceForm.errors.invoice_pdf}</p>
@@ -2421,7 +2430,9 @@ export default function Show({
         })
     }
 />
-                                                        <TextActionButton className="text-xs" text="Delete" label="Delete staff receipt" tone="danger" onClick={handleDeleteStaffReceipt} />
+                                                        {canEditReceipt && (
+<TextActionButton className="text-xs" text="Delete" label="Delete staff receipt" tone="danger" onClick={handleDeleteStaffReceipt} />
+)}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -2429,7 +2440,8 @@ export default function Show({
                                                     No receipt uploaded yet.
                                                 </p>
                                             )}
-                                            <form
+                                            {canEditReceipt && (
+<form
                                                 onSubmit={handleStaffReceiptUpload}
                                                 className="grid grid-cols-4 items-center gap-2 pt-0.5"
                                             >
@@ -2454,6 +2466,7 @@ export default function Show({
                                                         : 'Upload'}
                                                 </Button>
                                             </form>
+)}
                                         </div>
                                         </div>
                                     </div>

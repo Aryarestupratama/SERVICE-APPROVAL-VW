@@ -30,7 +30,7 @@ function StatusStamp({ status }) {
     const config = {
         pending: { label: 'Waiting', Icon: Clock, cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
         approved: { label: 'Approved', Icon: Check, cls: 'bg-approved/10 text-approved ring-approved/25' },
-        rejected: { label: 'Rejected', Icon: X, cls: 'bg-gray-100 text-gray-700 ring-gray-300' },
+        rejected: { label: 'Rejected', Icon: X, cls: 'bg-urgent/10 text-urgent ring-urgent/25' },
     }[status] ?? { label: status, Icon: Clock, cls: 'bg-vw-grey/10 text-vw-grey ring-vw-grey/25' };
     const { label, Icon, cls } = config;
 
@@ -378,7 +378,7 @@ function InspectionItemCard({ item, canDecide, onDecision, onUndoLocal }) {
                             <button
                                 type="button"
                                 onClick={() => onDecision(item.id, 'rejected')}
-                                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-gray-400 bg-white px-3 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100 active:scale-95"
+                                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full border border-urgent/60 bg-white px-3 text-[13px] font-semibold text-urgent transition hover:bg-urgent/10 active:scale-95"
                             >
                                 <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
                                 Reject
@@ -388,7 +388,7 @@ function InspectionItemCard({ item, canDecide, onDecision, onUndoLocal }) {
                         <>
                             <div
                                 role="status"
-                                className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-white ${item.status === 'approved' ? 'bg-approved' : 'bg-gray-700'}`}
+                                className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-white ${item.status === 'approved' ? 'bg-approved' : 'bg-urgent'}`}
                             >
                                 {item.status === 'approved' ? (
                                     <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
@@ -423,7 +423,7 @@ function DecidedItemRow({ item, canCancel, onCancel }) {
     return (
         <li className="flex items-center gap-3 rounded-2xl bg-white px-3.5 py-3 ring-1 ring-black/[0.04] shadow-[0_10px_30px_-16px_rgba(22,27,89,0.22)]">
             <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-approved text-white' : 'bg-vw-grey/20 text-vw-grey'}`}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-approved text-white' : 'bg-urgent text-white'}`}
             >
                 {isApproved ? <Check className="h-4 w-4" strokeWidth={3} /> : <X className="h-4 w-4" strokeWidth={3} />}
             </span>
@@ -434,7 +434,7 @@ function DecidedItemRow({ item, canCancel, onCancel }) {
                 {isApproved ? (
                     <Rupiah value={itemDisplayPrice(item)} className="mt-0.5 block text-sm font-semibold text-gray-900" />
                 ) : (
-                    <p className="mt-0.5 text-xs font-medium text-gray-600">Rejected</p>
+                    <p className="mt-0.5 text-xs font-medium text-urgent">Rejected</p>
                 )}
             </div>
             {canCancel && (
@@ -1243,7 +1243,7 @@ export default function InspectionReport({
                                 <button
                                     type="button"
                                     onClick={() => handleDecideAll('rejected')}
-                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-gray-400 bg-white px-3 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100 active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
+                                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-urgent/60 bg-white px-3 text-[13px] font-semibold text-urgent transition hover:bg-urgent/10 active:bg-urgent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-urgent focus-visible:ring-offset-2"
                                 >
                                     <X className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
                                     Reject all
@@ -1577,7 +1577,7 @@ export default function InspectionReport({
                             <p className="text-2xl font-bold tabular-nums leading-none">{decidedApprovedItems.length}</p>
                             <p className="mt-1 text-[10px] font-bold uppercase tracking-wider">Approved</p>
                         </div>
-                        <div className="rounded-xl bg-vw-grey/10 px-4 py-3 text-vw-grey">
+                        <div className="rounded-xl bg-urgent/10 px-4 py-3 text-urgent">
                             <p className="text-2xl font-bold tabular-nums leading-none">{decidedRejectedCount}</p>
                             <p className="mt-1 text-[10px] font-bold uppercase tracking-wider">Rejected</p>
                         </div>
@@ -1592,7 +1592,7 @@ export default function InspectionReport({
                                     className="flex items-center gap-3 rounded-2xl bg-white px-3.5 py-3 ring-1 ring-black/[0.04] shadow-[0_10px_30px_-16px_rgba(22,27,89,0.22)]"
                                 >
                                     <span
-                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${ok ? 'bg-approved text-white' : 'bg-vw-grey/15 text-vw-grey'}`}
+                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${ok ? 'bg-approved text-white' : 'bg-urgent text-white'}`}
                                     >
                                         {ok ? <Check className="h-4 w-4" strokeWidth={3} /> : <X className="h-4 w-4" strokeWidth={3} />}
                                     </span>
@@ -1602,7 +1602,7 @@ export default function InspectionReport({
                                     {ok ? (
                                         <Rupiah value={itemDisplayPrice(item)} className="text-sm font-semibold text-gray-900" />
                                     ) : (
-                                        <span className="text-xs font-medium text-vw-grey">Rejected</span>
+                                        <span className="text-xs font-medium text-urgent">Rejected</span>
                                     )}
                                 </li>
                             );

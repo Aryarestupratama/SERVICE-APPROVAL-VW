@@ -22,6 +22,15 @@ class VehicleCustomerImportService
     private const COL_PHONE = 6;
 
     /**
+     * Issue yang membuat baris TIDAK BISA diimpor sama sekali (data wajib
+     * kosong / merk tidak dikenal). Baris dengan issue ini ditandai
+     * `blocking` => true: checkbox dikunci di preview dan di-skip saat commit.
+     * Issue lain (vin_length, duplicate_*, phone_format) masih boleh
+     * diimpor lewat opt-in manual.
+     */
+    public const BLOCKING_ISSUES = ['missing_vin', 'missing_plate', 'invalid_brand', 'missing_name'];
+
+    /**
      * Parse raw rows (array of array, row 0 = header) jadi struktur siap-preview.
      * Baris kosong bawaan Excel (tidak ada vin/plate/primary) di-skip total,
      * tidak masuk hitungan/preview sama sekali (sesuai profiling PROJECT-RULES.md).
@@ -33,7 +42,7 @@ class VehicleCustomerImportService
         $parsed = [];
         $rowId = 0;
 
-        foreach ($dataRows as $excelRowNumber => $row) {
+        foreach ($dataRows as $index => $row) {
             $vin = $this->cell($row, self::COL_VIN);
             $plate = $this->cell($row, self::COL_PLATE);
             $primaryName = $this->cell($row, self::COL_PRIMARY_NAME);
@@ -45,15 +54,15 @@ class VehicleCustomerImportService
 
             $contactNameRaw = $this->cell($row, self::COL_CONTACT_NAME);
             $brandRaw = $this->cell($row, self::COL_BRAND);
-            $phoneRaw = $this->cell($row, self::COL_PHONE);
+            $phoneRaw = (string) $this->cell($row, self::COL_PHONE);
 
-            $vin = strtoupper(trim((string) $vin));
-            $plate = trim((string) $plate);
+            $vin = $this->normalizeVin((string) $vin);
+            $plate = $this->normalizePlate((string) $plate); // RULE-032
             $primaryName = trim((string) $primaryName);
             $contactName = $contactNameRaw !== null ? trim((string) $contactNameRaw) : null;
             $brand = $this->normalizeBrand((string) $brandRaw);
             $model = trim((string) $this->cell($row, self::COL_MODEL));
-            $phoneClean = $this->cleanPhone((string) $phoneRaw);
+            $phoneClean = $this->cleanPhone($phoneRaw);
 
             $model = $this->stripBrandPrefix($model, $brand);
 
@@ -65,13 +74,31 @@ class VehicleCustomerImportService
 
             $issues = [];
 
-            if (strlen($vin) !== 17) {
+            if ($vin === '') {
+                $issues[] = 'missing_vin';
+            } elseif (strlen($vin) !== 17) {
                 $issues[] = 'vin_length';
+            }
+
+            if ($plate === '') {
+                $issues[] = 'missing_plate';
+            }
+
+            if (! in_array($brand, Vehicle::BRANDS, true)) {
+                $issues[] = 'invalid_brand';
+            }
+
+            if ($primaryName === '') {
+                $issues[] = 'missing_name';
+            }
+
+            if ($this->looksScientific($phoneRaw)) {
+                $issues[] = 'phone_format';
             }
 
             $parsed[] = [
                 'row_id' => $rowId++,
-                'excel_row' => $excelRowNumber + 2, // +1 skip header, +1 index->1-based
+                'excel_row' => $index + 2, // +1 skip header, +1 index->1-based
                 'vin' => $vin,
                 'plate_number' => $plate,
                 'brand' => $brand,
@@ -84,22 +111,46 @@ class VehicleCustomerImportService
             ];
         }
 
-        // Tahap 2: deteksi plat duplikat LINTAS baris (butuh full list dulu).
+        // Tahap 2: deteksi VIN & plat duplikat LINTAS baris (butuh full list dulu).
+        // Nilai kosong tidak dihitung — sudah ditandai missing_*.
+        $vinCounts = [];
         $plateCounts = [];
         foreach ($parsed as $row) {
-            $plateCounts[$row['plate_number']] = ($plateCounts[$row['plate_number']] ?? 0) + 1;
+            if ($row['vin'] !== '') {
+                $vinCounts[$row['vin']] = ($vinCounts[$row['vin']] ?? 0) + 1;
+            }
+            if ($row['plate_number'] !== '') {
+                $plateCounts[$row['plate_number']] = ($plateCounts[$row['plate_number']] ?? 0) + 1;
+            }
         }
 
         foreach ($parsed as &$row) {
+            if (($vinCounts[$row['vin']] ?? 0) > 1) {
+                $row['issues'][] = 'duplicate_vin';
+            }
             if (($plateCounts[$row['plate_number']] ?? 0) > 1) {
                 $row['issues'][] = 'duplicate_plate';
             }
+
+            $row['blocking'] = count(array_intersect($row['issues'], self::BLOCKING_ISSUES)) > 0;
             // Default 'included': bersih otomatis true, ada issue butuh opt-in manual.
             $row['included'] = empty($row['issues']);
         }
         unset($row);
 
         return $parsed;
+    }
+
+    /** VIN: huruf besar, tanpa spasi. */
+    private function normalizeVin(string $raw): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', $raw) ?? '');
+    }
+
+    /** Plat: huruf besar tanpa spasi (RULE-032), sama dengan normalisasi di VehicleController. */
+    private function normalizePlate(string $raw): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', $raw) ?? '');
     }
 
     /** AUDI/VW (atau variasi casing lain) → Title Case sesuai Vehicle::BRANDS. */
@@ -111,17 +162,39 @@ class VehicleCustomerImportService
                 return $brand;
             }
         }
-        return $raw; // biarkan apa adanya kalau tidak dikenal — akan gagal validasi saat commit, jelas keliatan di UI.
+        return $raw; // biarkan apa adanya kalau tidak dikenal — ditandai invalid_brand di preview.
     }
 
     /**
      * Buang semua karakter non-digit (termasuk suffix teks seperti " jual").
-     * Normalisasi lanjutan (format 62xxx) tetap ditangani oleh Customer::phone()
+     * Angka Excel yang terbaca float ("628123.0") atau notasi ilmiah
+     * ("6.28123E+12") dikembalikan ke digit penuh dulu. Nomor kosong tetap ''.
+     * Normalisasi lanjutan (format 62xxx) ditangani oleh Customer::phone()
      * mutator saat model disimpan — tidak dobel logic di sini.
      */
     private function cleanPhone(string $raw): string
     {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        if ($this->looksScientific($raw)) {
+            $raw = number_format((float) $raw, 0, '', '');
+        } elseif (preg_match('/^\d+\.0+$/', $raw)) {
+            $raw = preg_replace('/\.0+$/', '', $raw);
+        }
+
         return preg_replace('/\D/', '', $raw) ?? '';
+    }
+
+    /**
+     * Sel telepon berbentuk notasi ilmiah (mis. 6.2812345E+12) artinya Excel
+     * sudah memotong digit — nomor hasil konversi mungkin tidak lengkap.
+     */
+    private function looksScientific(string $raw): bool
+    {
+        return (bool) preg_match('/^\d+(?:\.\d+)?[eE]\+?\d+$/', trim($raw));
     }
 
     /**

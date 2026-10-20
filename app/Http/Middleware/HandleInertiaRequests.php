@@ -43,26 +43,6 @@ class HandleInertiaRequests extends Middleware
             'fuas' => fn () => [
                 'action_count' => app(FuasStatusService::class)->actionCountFor($request->user()),
             ],
-            // Notifikasi in-app (follow-up reminder & escalation) — cuma
-            // di-load kalau user sedang login, biar halaman publik/guest
-            // (login page dll) nggak ikut query notifications tiap request.
-            'notifications' => fn () => $request->user()
-                ? [
-                    'unread_count' => $request->user()->unreadNotifications()->count(),
-                    // Batasi 10 terbaru (dicampur read+unread) biar dropdown
-                    // nggak berat — kalau butuh full history nanti bisa
-                    // dibuatkan halaman terpisah.
-                    'items' => $request->user()->notifications()->latest()->limit(10)->get()
-                        ->map(fn ($n) => [
-                            'id' => $n->id,
-                            'type' => $n->data['type'] ?? null,
-                            'message' => $n->data['message'] ?? '',
-                            'service_order_id' => $n->data['service_order_id'] ?? null,
-                            'read_at' => $n->read_at,
-                            'created_at' => $n->created_at,
-                        ]),
-                ]
-                : ['unread_count' => 0, 'items' => []],
         ];
     }
 }

@@ -49,6 +49,22 @@ class ServiceOrderController extends Controller
         ServiceOrder::STATUS_WORK_IN_PROGRESS,
     ];
 
+    /**
+     * Invoice PDF hanya boleh diunggah/diganti/dihapus saat Quality Control
+     * dan Invoice Preparation (keputusan owner 2026-10-21). Di status lain
+     * invoice hanya dapat dilihat; koreksi setelah completed dilakukan lewat
+     * revert status ke Invoice Preparation.
+     */
+    private const INVOICE_EDITABLE_STATUSES = [
+        ServiceOrder::STATUS_QUALITY_CONTROL,
+        ServiceOrder::STATUS_INVOICE_PREPARATION,
+    ];
+
+    /** Bukti bayar staff hanya saat Invoice Preparation (keputusan owner 2026-10-21). */
+    private const RECEIPT_EDITABLE_STATUSES = [
+        ServiceOrder::STATUS_INVOICE_PREPARATION,
+    ];
+
     public function index(Request $request)
     {
         $vatPercent = (float) \App\Models\Setting::current()->ppn_percent;
@@ -326,80 +342,92 @@ class ServiceOrderController extends Controller
             return back()->withErrors(['vehicle_id' => 'Select an existing vehicle, or fill in new vehicle data.']);
         }
 
-        $serviceOrder = DB::transaction(function () use ($validated, $request) {
-            $customerId = $validated['customer_id']
-                ?? $this->findOrCreateCustomer($validated['new_customer'])->id;
+        // File video disimpan di dalam transaksi; bila transaksi gagal sesudahnya,
+        // file yang sudah tersimpan dibersihkan supaya tidak jadi yatim.
+        $storedVideoPaths = [];
 
-            if ($validated['vehicle_id']) {
-                $vehicleId = $validated['vehicle_id'];
-            } else {
-                $vehicle = Vehicle::create($validated['new_vehicle']);
+        try {
+            $serviceOrder = DB::transaction(function () use ($validated, $request, &$storedVideoPaths) {
+                $customerId = $validated['customer_id']
+                    ?? $this->findOrCreateCustomer($validated['new_customer'])->id;
 
-                CustomerVehicle::create([
-                    'vehicle_id' => $vehicle->id,
-                    'customer_id' => $customerId,
-                    'is_primary' => true,
-                ]);
+                if ($validated['vehicle_id']) {
+                    $vehicleId = $validated['vehicle_id'];
+                } else {
+                    $vehicle = Vehicle::create($validated['new_vehicle']);
 
-                $vehicleId = $vehicle->id;
-            }
-
-           $order = ServiceOrder::create([
-                'vehicle_id' => $vehicleId,
-                'service_advisor_id' => $request->user()->id,
-                'technician_id' => $validated['technician_id'] ?? null,
-                'work_order_number' => $validated['work_order_number'],
-                'status' => ServiceOrder::STATUS_APPOINTMENT,
-                'items_approval_status' => 'pending',
-                'inspection_fee' => $validated['inspection_fee'],
-                'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
-                'personal_message' => $validated['personal_message'] ?? null,
-                'customer_complaint' => $validated['customer_complaint'] ?? null,
-            ]);
-
-            foreach ($validated['inspection_items'] as $item) {
-                $order->inspectionItems()->create([
-                    'name' => $item['name'],
-                    'description' => $item['description'] ?? null,
-                    'cost_item' => $item['cost_item'],
-                    'cost_labour' => $item['cost_labour'],
-                    'discount_item_percent' => $item['discount_item_percent'] ?? 0,
-                    'discount_labour_percent' => $item['discount_labour_percent'] ?? 0,
-                    'group' => $item['group'],
-                    'status' => 'pending',
-                ]);
-            }
-
-            $videosInput = $request->input('videos', []);
-            foreach ($videosInput as $index => $video) {
-                if ($video['video_source'] === 'external_link') {
-                    $order->videos()->create([
-                        'video_url' => $video['video_url'],
-                        'video_source' => 'external_link',
-                        'sort_order' => $index,
-                        'duration_seconds' => null,
+                    CustomerVehicle::create([
+                        'vehicle_id' => $vehicle->id,
+                        'customer_id' => $customerId,
+                        'is_primary' => true,
                     ]);
-                } elseif ($video['video_source'] === 'upload' && $request->hasFile("videos.{$index}.file")) {
-                    $file = $request->file("videos.{$index}.file");
 
-                    $getID3 = new \getID3();
-                    $info = $getID3->analyze($file->getRealPath());
-                    $durationSeconds = isset($info['playtime_seconds'])
-                        ? (int) round($info['playtime_seconds'])
-                        : null;
+                    $vehicleId = $vehicle->id;
+                }
 
-                    $path = $file->store('service-order-videos', 'public');
-                    $order->videos()->create([
-                        'video_url' => Storage::disk('public')->url($path),
-                        'video_source' => 'upload',
-                        'sort_order' => $index,
-                        'duration_seconds' => $durationSeconds,
+               $order = ServiceOrder::create([
+                    'vehicle_id' => $vehicleId,
+                    'service_advisor_id' => $request->user()->id,
+                    'technician_id' => $validated['technician_id'] ?? null,
+                    'work_order_number' => $validated['work_order_number'],
+                    'status' => ServiceOrder::STATUS_APPOINTMENT,
+                    'items_approval_status' => 'pending',
+                    'inspection_fee' => $validated['inspection_fee'],
+                    'inspection_fee_note' => $validated['inspection_fee_note'] ?? null,
+                    'personal_message' => $validated['personal_message'] ?? null,
+                    'customer_complaint' => $validated['customer_complaint'] ?? null,
+                ]);
+
+                foreach ($validated['inspection_items'] as $item) {
+                    $order->inspectionItems()->create([
+                        'name' => $item['name'],
+                        'description' => $item['description'] ?? null,
+                        'cost_item' => $item['cost_item'],
+                        'cost_labour' => $item['cost_labour'],
+                        'discount_item_percent' => $item['discount_item_percent'] ?? 0,
+                        'discount_labour_percent' => $item['discount_labour_percent'] ?? 0,
+                        'group' => $item['group'],
+                        'status' => 'pending',
                     ]);
                 }
-            }
 
-            return $order;
-        });
+                $videosInput = $request->input('videos', []);
+                foreach ($videosInput as $index => $video) {
+                    if ($video['video_source'] === 'external_link') {
+                        $order->videos()->create([
+                            'video_url' => $video['video_url'],
+                            'video_source' => 'external_link',
+                            'sort_order' => $index,
+                            'duration_seconds' => null,
+                        ]);
+                    } elseif ($video['video_source'] === 'upload' && $request->hasFile("videos.{$index}.file")) {
+                        $file = $request->file("videos.{$index}.file");
+
+                        $getID3 = new \getID3();
+                        $info = $getID3->analyze($file->getRealPath());
+                        $durationSeconds = isset($info['playtime_seconds'])
+                            ? (int) round($info['playtime_seconds'])
+                            : null;
+
+                        $path = $file->store('service-order-videos', 'public');
+                        $storedVideoPaths[] = $path;
+                        $order->videos()->create([
+                            'video_url' => Storage::disk('public')->url($path),
+                            'video_source' => 'upload',
+                            'sort_order' => $index,
+                            'duration_seconds' => $durationSeconds,
+                        ]);
+                    }
+                }
+
+                return $order;
+            });
+        } catch (\Throwable $e) {
+            foreach ($storedVideoPaths as $storedPath) {
+                Storage::disk('public')->delete($storedPath);
+            }
+            throw $e;
+        }
 
         return redirect()
             ->route('admin.service-orders.show', $serviceOrder->id)
@@ -425,7 +453,7 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        $validated = $request->validate([
+        $request->validate([
             'file' => [
                 'required',
                 'file',
@@ -435,23 +463,15 @@ class ServiceOrderController extends Controller
             ],
         ]);
 
-        DB::transaction(function () use ($validated, $request, $serviceOrder) {
+        $this->replaceStoredFile($request, 'file', 'service-order-videos', $serviceOrder, function (string $path) use ($request, $serviceOrder) {
             $existing = $serviceOrder->videos()->first();
-            $oldPath = null;
-            if ($existing && $existing->video_source === 'upload' && $existing->video_url) {
-                $oldPath = str_replace(Storage::disk('public')->url(''), '', $existing->video_url);
-            }
-
-            $file = $request->file('file');
+            $oldPath = $existing?->storagePath();
 
             $getID3 = new \getID3();
-            $info = $getID3->analyze($file->getRealPath());
+            $info = $getID3->analyze($request->file('file')->getRealPath());
             $durationSeconds = isset($info['playtime_seconds'])
                 ? (int) round($info['playtime_seconds'])
                 : null;
-
-            // Store the new file FIRST — if this fails, the old file remains intact.
-            $path = $file->store('service-order-videos', 'public');
 
             $newAttributes = [
                 'video_url' => Storage::disk('public')->url($path),
@@ -466,13 +486,7 @@ class ServiceOrderController extends Controller
                 $serviceOrder->videos()->create($newAttributes);
             }
 
-            // Only delete the old physical file AFTER the new file + DB row
-            // are confirmed successful.
-            if ($oldPath) {
-                Storage::disk('public')->delete($oldPath);
-            }
-
-            $serviceOrder->touchActivity();
+            return $oldPath;
         });
 
         return back()->with('success', 'Video uploaded successfully.');
@@ -996,15 +1010,10 @@ class ServiceOrderController extends Controller
             'pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
         ]);
 
-        DB::transaction(function () use ($validated, $request, $serviceOrder) {
-            $existing = $serviceOrder->estimationDocuments()
+        $this->replaceStoredFile($request, 'pdf', 'estimation-documents', $serviceOrder, function (string $path) use ($validated, $request, $serviceOrder) {
+            $oldPath = $serviceOrder->estimationDocuments()
                 ->where('group', $validated['group'])
-                ->first();
-
-            $oldPath = $existing?->pdf_path;
-
-            // Store the new file FIRST — if this fails, the old file remains intact.
-            $path = $request->file('pdf')->store('estimation-documents', 'public');
+                ->value('pdf_path');
 
             ServiceOrderEstimationDocument::updateOrCreate(
                 [
@@ -1018,12 +1027,7 @@ class ServiceOrderController extends Controller
                 ]
             );
 
-            // Only delete the old file AFTER the new file + DB row are confirmed successful.
-            if ($oldPath) {
-                Storage::disk('public')->delete($oldPath);
-            }
-
-            $serviceOrder->touchActivity();
+            return $oldPath;
         });
 
         return back()->with('success', 'Estimation form uploaded successfully.');
@@ -1041,11 +1045,15 @@ class ServiceOrderController extends Controller
             return back()->with('error', 'The estimation form can only be deleted while status is Appointment or Work In Process.');
         }
 
-        if ($estimationDocument->pdf_path) {
-            Storage::disk('public')->delete($estimationDocument->pdf_path);
-        }
+        // RULE-034: baris DB dihapus dulu, file fisik SETELAHNYA.
+        $path = $estimationDocument->pdf_path;
 
         $estimationDocument->delete();
+
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
+
         $serviceOrder->touchActivity();
 
         return back()->with('success', 'Estimation form deleted successfully.');
@@ -1055,15 +1063,16 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        $validated = $request->validate([
+        if (!in_array($serviceOrder->status, self::INVOICE_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The invoice can only be changed while status is Quality Control or Invoice Preparation.');
+        }
+
+        $request->validate([
             'invoice_pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
         ]);
 
-        DB::transaction(function () use ($validated, $request, $serviceOrder) {
-            $existing = $serviceOrder->invoice;
-            $oldPath = $existing?->file_path;
-
-            $path = $request->file('invoice_pdf')->store('invoices', 'public');
+        $this->replaceStoredFile($request, 'invoice_pdf', 'invoices', $serviceOrder, function (string $path) use ($request, $serviceOrder) {
+            $oldPath = $serviceOrder->invoice()->value('file_path');
 
             ServiceOrderInvoice::updateOrCreate(
                 ['service_order_id' => $serviceOrder->id],
@@ -1074,11 +1083,7 @@ class ServiceOrderController extends Controller
                 ]
             );
 
-            if ($oldPath) {
-                Storage::disk('public')->delete($oldPath);
-            }
-
-            $serviceOrder->touchActivity();
+            return $oldPath;
         });
 
         return back()->with('success', 'Invoice PDF uploaded successfully.');
@@ -1088,14 +1093,25 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
+        if (!in_array($serviceOrder->status, self::INVOICE_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The invoice can only be changed while status is Quality Control or Invoice Preparation.');
+        }
+
         $invoice = $serviceOrder->invoice;
 
         if (!$invoice) {
             return back()->with('error', 'There is no invoice to delete.');
         }
 
-        Storage::disk('public')->delete($invoice->file_path);
+        // RULE-034: baris DB dihapus dulu, file fisik SETELAHNYA.
+        $path = $invoice->file_path;
+
         $invoice->delete();
+
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
+
         $serviceOrder->touchActivity();
 
         return back()->with('success', 'Invoice PDF deleted successfully.');
@@ -1123,15 +1139,16 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
-        $validated = $request->validate([
+        if (!in_array($serviceOrder->status, self::RECEIPT_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The payment receipt can only be changed while status is Invoice Preparation.');
+        }
+
+        $request->validate([
             'receipt' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
         ]);
 
-        DB::transaction(function () use ($validated, $request, $serviceOrder) {
-            $existing = $serviceOrder->staffPaymentReceipt;
-            $oldPath = $existing?->file_path;
-
-            $path = $request->file('receipt')->store('payment-receipts', 'public');
+        $this->replaceStoredFile($request, 'receipt', 'payment-receipts', $serviceOrder, function (string $path) use ($request, $serviceOrder) {
+            $oldPath = $serviceOrder->staffPaymentReceipt()->value('file_path');
 
             ServiceOrderPaymentReceipt::updateOrCreate(
                 [
@@ -1145,14 +1162,7 @@ class ServiceOrderController extends Controller
                 ]
             );
 
-            if ($oldPath) {
-                Storage::disk('public')->delete($oldPath);
-            }
-
-            // Tidak eksplisit disebut di daftar PROJECT-RULES.md 12.4 poin 2,
-            // tapi bukti bayar staff juga tampil di halaman ini — disertakan
-            // di sini supaya audit titik perubahan benar-benar menyeluruh.
-            $serviceOrder->touchActivity();
+            return $oldPath;
         });
 
         return back()->with('success', 'Receipt uploaded successfully.');
@@ -1162,14 +1172,25 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
+        if (!in_array($serviceOrder->status, self::RECEIPT_EDITABLE_STATUSES, true)) {
+            return back()->with('error', 'The payment receipt can only be changed while status is Invoice Preparation.');
+        }
+
         $receipt = $serviceOrder->staffPaymentReceipt;
 
         if (!$receipt) {
             return back()->with('error', 'There is no receipt to delete.');
         }
 
-        Storage::disk('public')->delete($receipt->file_path);
+        // RULE-034: baris DB dihapus dulu, file fisik SETELAHNYA.
+        $path = $receipt->file_path;
+
         $receipt->delete();
+
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
+
         $serviceOrder->touchActivity();
 
         return back()->with('success', 'Receipt deleted successfully.');
@@ -1209,49 +1230,28 @@ class ServiceOrderController extends Controller
             'staffPaymentReceipt',
         ]);
 
-        // Path foto perbaikan dikumpulkan dulu dan file baru dihapus SETELAH
-        // transaksi (baris order + foto) sukses — RULE-034.
-        $repairImagePaths = $serviceOrder->repairImages->pluck('image_path')->filter()->all();
+        // Semua path file dikumpulkan dulu; file fisik baru dihapus SETELAH
+        // transaksi (baris order + seluruh turunannya) sukses — RULE-034.
+        // Video 'external_link' tidak punya file (storagePath() = null).
+        $filePaths = array_filter(array_merge(
+            $serviceOrder->videos->map(fn ($video) => $video->storagePath())->all(),
+            $serviceOrder->repairImages->pluck('image_path')->all(),
+            $serviceOrder->estimationDocuments->pluck('pdf_path')->all(),
+            [
+                $serviceOrder->invoice?->file_path,
+                $serviceOrder->customerPaymentReceipt?->file_path,
+                $serviceOrder->staffPaymentReceipt?->file_path,
+            ],
+        ));
 
         DB::transaction(function () use ($serviceOrder) {
-            // Locally uploaded videos (video_source = 'upload') have a physical
-            // file on the 'public' disk. 'external_link' videos (e.g. YouTube)
-            // have no file to delete — their video_url is just an external URL string.
-            foreach ($serviceOrder->videos as $video) {
-                if ($video->video_source === 'upload' && $video->video_url) {
-                    $path = str_replace(Storage::disk('public')->url(''), '', $video->video_url);
-                    Storage::disk('public')->delete($path);
-                }
-            }
-
-            foreach ($serviceOrder->estimationDocuments as $doc) {
-                if ($doc->pdf_path) {
-                    Storage::disk('public')->delete($doc->pdf_path);
-                }
-            }
-
-            if ($serviceOrder->invoice && $serviceOrder->invoice->file_path) {
-                Storage::disk('public')->delete($serviceOrder->invoice->file_path);
-            }
-
-            if ($serviceOrder->customerPaymentReceipt && $serviceOrder->customerPaymentReceipt->file_path) {
-                Storage::disk('public')->delete($serviceOrder->customerPaymentReceipt->file_path);
-            }
-
-            if ($serviceOrder->staffPaymentReceipt && $serviceOrder->staffPaymentReceipt->file_path) {
-                Storage::disk('public')->delete($serviceOrder->staffPaymentReceipt->file_path);
-            }
-
-            // This delete() triggers the DB cascadeOnDelete() for all
-            // hasMany/hasOne relations above (inspection_items, videos,
-            // estimation_documents, invoice, payment_receipts) — their rows are
-            // automatically deleted along with it, and the physical files have
-            // already been cleaned up manually above.
+            // delete() memicu cascadeOnDelete() untuk semua relasi (inspection_items,
+            // videos, estimation_documents, invoice, payment_receipts, repair_images).
             $serviceOrder->delete();
         });
 
-        foreach ($repairImagePaths as $repairImagePath) {
-            Storage::disk('public')->delete($repairImagePath);
+        foreach ($filePaths as $filePath) {
+            Storage::disk('public')->delete($filePath);
         }
 
         return redirect()
@@ -1290,6 +1290,45 @@ class ServiceOrderController extends Controller
         $serviceOrder->renewInspectionLink();
 
         return back()->with('success', 'New report link created. It is valid for ' . ServiceOrder::INSPECTION_LINK_VALID_DAYS . ' days.');
+    }
+
+    /**
+     * Simpan file upload baru dan ganti file lama dengan aman (RULE-033).
+     *
+     * Urutan: (1) di dalam transaksi order dikunci, file baru disimpan, lalu
+     * `$persist($newPath)` menulis baris DB dan MENGEMBALIKAN path file lama
+     * (atau null); (2) HANYA setelah transaksi commit, file lama dihapus.
+     * Bila transaksi gagal, file baru dibersihkan dan file lama tetap utuh,
+     * jadi tidak ada baris DB yang menunjuk ke file yang sudah hilang.
+     * Kunci baris order membuat dua penggantian bersamaan berjalan bergantian,
+     * sehingga path lama yang dibaca selalu yang terkini.
+     *
+     * @param  callable(string): (string|null)  $persist
+     */
+    private function replaceStoredFile(Request $request, string $field, string $directory, ServiceOrder $serviceOrder, callable $persist): void
+    {
+        $newPath = null;
+        $oldPath = null;
+
+        try {
+            DB::transaction(function () use ($request, $field, $directory, $serviceOrder, $persist, &$newPath, &$oldPath) {
+                ServiceOrder::whereKey($serviceOrder->id)->lockForUpdate()->firstOrFail();
+
+                $newPath = $request->file($field)->store($directory, 'public');
+                $oldPath = $persist($newPath);
+
+                $serviceOrder->touchActivity();
+            });
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                Storage::disk('public')->delete($newPath);
+            }
+            throw $e;
+        }
+
+        if ($oldPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
     }
 
     private function authorizeAccess(Request $request, ServiceOrder $serviceOrder): void

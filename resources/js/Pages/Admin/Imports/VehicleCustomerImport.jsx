@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { router, useForm, Head } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -25,9 +25,20 @@ import {
 import { UploadCloud, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const ISSUE_LABELS = {
+    missing_vin: 'Missing VIN',
     vin_length: 'VIN not 17 chars',
+    duplicate_vin: 'Duplicate VIN',
+    missing_plate: 'Missing plate',
     duplicate_plate: 'Duplicate plate',
+    invalid_brand: 'Brand not Audi/VW',
+    missing_name: 'Missing customer name',
+    phone_format: 'Phone may be truncated',
 };
+
+// Baris yang tidak bisa diimpor sama sekali: dikecualikan sejak awal dan
+// checkbox-nya dikunci. Server juga men-skip baris ini saat commit.
+const initialExcluded = (rows) =>
+    new Set((rows ?? []).filter((r) => !r.included || r.blocking).map((r) => r.row_id));
 
 function UploadForm({ hasRows }) {
     const { data, setData, post, processing, errors } = useForm({ file: null });
@@ -36,11 +47,19 @@ function UploadForm({ hasRows }) {
         e.preventDefault();
         post(route('admin.vehicle-customer-import.preview'), {
             forceFormData: true,
-            onSuccess: () => toast.success('File parsed', {
-                description: 'Review the rows below before importing.',
-            }),
-            onError: () => toast.error('Failed to parse file', {
-                description: 'Make sure the file is a valid .xlsx/.xls export.',
+            onSuccess: (page) => {
+                // Server bisa membalas back()->with('error') tanpa melempar validation error.
+                const flashError = page.props.flash?.error;
+                if (flashError) {
+                    toast.error('Nothing to import', { description: flashError });
+                    return;
+                }
+                toast.success('File parsed', {
+                    description: 'Review the rows below before importing.',
+                });
+            },
+            onError: (errs) => toast.error('Failed to parse file', {
+                description: errs?.file ?? 'Make sure the file is a valid .xlsx/.xls export.',
             }),
         });
     };
@@ -99,6 +118,44 @@ function CustomerCell({ row }) {
     );
 }
 
+function FailedRowsAlert({ failedRows, onDismiss }) {
+    return (
+        <div className="space-y-2">
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>{failedRows.length} rows failed to import</AlertTitle>
+                <AlertDescription>
+                    All other rows were saved. Fix the rows below in the Excel file and import them again,
+                    or add them manually.
+                </AlertDescription>
+            </Alert>
+            <div className="overflow-x-auto rounded-lg border border-vw-grey/20 bg-white">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Excel row</TableHead>
+                            <TableHead>Plate</TableHead>
+                            <TableHead>Reason</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {failedRows.map((f, i) => (
+                            <TableRow key={`${f.excel_row}-${i}`}>
+                                <TableCell className="text-xs text-muted-foreground">{f.excel_row}</TableCell>
+                                <TableCell>{f.plate_number}</TableCell>
+                                <TableCell className="text-sm">{f.error}</TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
+            <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={onDismiss}>Dismiss</Button>
+            </div>
+        </div>
+    );
+}
+
 function PreviewTable({ rows, excludedIds, onToggle, showToggle = true }) {
     return (
         <div className="overflow-x-auto rounded-lg border border-vw-grey/20 bg-white">
@@ -123,6 +180,7 @@ function PreviewTable({ rows, excludedIds, onToggle, showToggle = true }) {
                                 <TableCell>
                                     <Checkbox
                                         checked={!excludedIds.has(row.row_id)}
+                                        disabled={row.blocking}
                                         onCheckedChange={() => onToggle(row.row_id)}
                                     />
                                 </TableCell>
@@ -147,27 +205,34 @@ function PreviewTable({ rows, excludedIds, onToggle, showToggle = true }) {
     );
 }
 
-export default function VehicleCustomerImport({ rows }) {
+export default function VehicleCustomerImport({ rows, failedRows }) {
     const hasRows = Array.isArray(rows) && rows.length > 0;
+    const hasFailed = Array.isArray(failedRows) && failedRows.length > 0;
 
     // excludedIds: row_id yang TIDAK akan diimport. Diinisialisasi dari
     // row.included (backend: default true kalau tidak ada issue, false
     // kalau ada issue) — jadi issue rows start OFF, admin opt-in manual.
-    const [excludedIds, setExcludedIds] = useState(() => {
-        if (!hasRows) return new Set();
-        return new Set(rows.filter((r) => !r.included).map((r) => r.row_id));
-    });
+    // Baris `blocking` selalu excluded dan tidak bisa dicentang.
+    const [excludedIds, setExcludedIds] = useState(() => initialExcluded(rows));
     const [committing, setCommitting] = useState(false);
 
-    const { issueRows, cleanRows } = useMemo(() => {
-        if (!hasRows) return { issueRows: [], cleanRows: [] };
+    // Upload ulang menghasilkan `rows` baru dengan row_id mulai dari 0 lagi;
+    // tanpa reset ini pilihan lama menempel ke baris yang salah.
+    useEffect(() => {
+        setExcludedIds(initialExcluded(rows));
+    }, [rows]);
+
+    const { issueRows, cleanRows, blockedCount } = useMemo(() => {
+        if (!hasRows) return { issueRows: [], cleanRows: [], blockedCount: 0 };
         return {
             issueRows: rows.filter((r) => r.issues.length > 0),
             cleanRows: rows.filter((r) => r.issues.length === 0),
+            blockedCount: rows.filter((r) => r.blocking).length,
         };
     }, [rows]);
 
     const toggleRow = (rowId) => {
+        if (rows?.find((r) => r.row_id === rowId)?.blocking) return;
         setExcludedIds((current) => {
             const next = new Set(current);
             next.has(rowId) ? next.delete(rowId) : next.add(rowId);
@@ -183,10 +248,15 @@ export default function VehicleCustomerImport({ rows }) {
             route('admin.vehicle-customer-import.commit'),
             { excluded_row_ids: Array.from(excludedIds) },
             {
-                onSuccess: () => {
-                    toast.success('Import complete', {
-                        description: 'Vehicles and customers have been imported.',
-                    });
+                onSuccess: (page) => {
+                    // Server bisa membalas back()->with('error') (mis. session habis);
+                    // jangan tampilkan toast sukses untuk kasus itu.
+                    const flash = page.props.flash;
+                    if (flash?.error) {
+                        toast.error('Import failed', { description: flash.error });
+                        return;
+                    }
+                    toast.success('Import complete', { description: flash?.success });
                 },
                 onError: () => {
                     toast.error('Import failed', {
@@ -204,10 +274,18 @@ export default function VehicleCustomerImport({ rows }) {
         });
     };
 
+    const handleDismissFailed = () => {
+        router.delete(route('admin.vehicle-customer-import.cancel'), { preserveScroll: true });
+    };
+
     return (
         <AdminLayout title="Import Customer & Vehicle">
             <Head title="Import Customer & Vehicle" />
             <div className="space-y-6">
+                {hasFailed && (
+                    <FailedRowsAlert failedRows={failedRows} onDismiss={handleDismissFailed} />
+                )}
+
                 <UploadForm hasRows={hasRows} />
 
                 {hasRows && (
@@ -225,8 +303,12 @@ export default function VehicleCustomerImport({ rows }) {
                                     <AlertTriangle className="h-4 w-4" />
                                     <AlertTitle>{issueRows.length} rows need manual review</AlertTitle>
                                     <AlertDescription>
-                                        These rows have an unusual VIN length or a duplicate plate number.
+                                        These rows have an unusual VIN length, a duplicate VIN/plate, or a possibly truncated phone.
                                         Check the box to include a row anyway, or leave it unchecked to skip it.
+                                        {blockedCount > 0 && (
+                                            <> {blockedCount} rows have missing or invalid required data (VIN, plate, brand, or name)
+                                            and cannot be imported; fix them in the Excel file.</>
+                                        )}
                                     </AlertDescription>
                                 </Alert>
                                 <PreviewTable rows={issueRows} excludedIds={excludedIds} onToggle={toggleRow} />

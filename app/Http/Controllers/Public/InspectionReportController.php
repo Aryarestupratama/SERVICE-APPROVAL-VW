@@ -407,31 +407,43 @@ class InspectionReportController extends Controller
             'receipt' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
         ]);
 
-        DB::transaction(function () use ($validated, $request, $serviceOrder) {
-            $existing = $serviceOrder->customerPaymentReceipt;
-            $oldPath = $existing?->file_path;
+        // RULE-033: file lama dihapus HANYA setelah transaksi commit; bila gagal,
+        // file baru dibersihkan dan bukti bayar lama tetap utuh.
+        $newPath = null;
+        $oldPath = null;
 
-            // Simpan file baru DULU — kalau ini gagal, bukti bayar lama masih utuh.
-            $path = $request->file('receipt')->store('payment-receipts', 'public');
+        try {
+            DB::transaction(function () use ($request, $serviceOrder, &$newPath, &$oldPath) {
+                // Kunci order: dua upload bersamaan berjalan bergantian.
+                ServiceOrder::whereKey($serviceOrder->id)->lockForUpdate()->firstOrFail();
 
-            ServiceOrderPaymentReceipt::updateOrCreate(
-                [
-                    'service_order_id' => $serviceOrder->id,
-                    'uploader_type' => ServiceOrderPaymentReceipt::UPLOADER_CUSTOMER,
-                ],
-                [
-                    'file_path' => $path,
-                    'uploaded_at' => now(),
-                ]
-            );
+                $oldPath = $serviceOrder->customerPaymentReceipt()->value('file_path');
 
-            // Baru hapus yang lama SETELAH file baru + row DB dipastikan berhasil.
-            if ($oldPath) {
-                Storage::disk('public')->delete($oldPath);
+                $newPath = $request->file('receipt')->store('payment-receipts', 'public');
+
+                ServiceOrderPaymentReceipt::updateOrCreate(
+                    [
+                        'service_order_id' => $serviceOrder->id,
+                        'uploader_type' => ServiceOrderPaymentReceipt::UPLOADER_CUSTOMER,
+                    ],
+                    [
+                        'file_path' => $newPath,
+                        'uploaded_at' => now(),
+                    ]
+                );
+
+                $serviceOrder->touchActivity();
+            });
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                Storage::disk('public')->delete($newPath);
             }
+            throw $e;
+        }
 
-            $serviceOrder->touchActivity();
-        });
+        if ($oldPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
 
         return back()->with('success', 'Payment receipt uploaded.');
     }

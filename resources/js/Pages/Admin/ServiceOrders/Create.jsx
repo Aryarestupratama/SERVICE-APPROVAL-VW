@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useId } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useForm, Head, router } from '@inertiajs/react';
+import { useForm, Head, router, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -246,7 +246,36 @@ function itemSubtotal(item) {
 // (PROJECT-RULES.md bagian 9.4). Ini validasi UX (cepat, di sisi client) —
 // backend tetap jadi sumber kebenaran validasi sebenarnya lewat getID3.
 const MAX_VIDEO_DURATION_SECONDS = 120;
-const DRAFT_KEY = 'service-order-create-draft';
+// Draft form di localStorage (RULE-054, TASK-014): kunci PER PENGGUNA supaya PC
+// bengkel yang dipakai bergantian tidak menampilkan data customer orang lain,
+// dan KEDALUWARSA 24 jam sejak simpan terakhir. File video tidak pernah disimpan.
+const DRAFT_KEY_PREFIX = 'service-order-create-draft';
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+const draftKeyFor = (userId) => `${DRAFT_KEY_PREFIX}:${userId ?? 'anon'}`;
+const isDraftValid = (d) =>
+    !!d &&
+    typeof d === 'object' &&
+    typeof d.savedAt === 'number' &&
+    Date.now() - d.savedAt < DRAFT_TTL_MS &&
+    !!d.data &&
+    typeof d.data === 'object';
+
+// Buang draft kedaluwarsa atau rusak milik SIAPA PUN di perangkat ini, dan kunci
+// lama tanpa id pengguna (versi sebelum TASK-014, bisa berisi data pengguna lain).
+function purgeStaleDrafts() {
+    try {
+        localStorage.removeItem(DRAFT_KEY_PREFIX);
+        Object.keys(localStorage)
+            .filter((k) => k.startsWith(`${DRAFT_KEY_PREFIX}:`))
+            .forEach((k) => {
+                try {
+                    if (!isDraftValid(JSON.parse(localStorage.getItem(k)))) localStorage.removeItem(k);
+                } catch {
+                    localStorage.removeItem(k);
+                }
+            });
+    } catch { /* abaikan */ }
+}
 const normalizeName = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // Baca durasi video (detik) dari sebuah File lewat elemen <video> sementara.
@@ -779,11 +808,17 @@ export default function Create({ customers, vehicles, technicians, brands, group
     }, [data.customer_id, customerMode]);
 
     // --- Draft lokal + penjaga keluar halaman (data form hanya di memori) ---
+    const { auth } = usePage().props;
+    const draftKey = draftKeyFor(auth?.user?.id);
     const [pendingDraft, setPendingDraft] = useState(null);
     useEffect(() => {
+        purgeStaleDrafts();
         try {
-            const raw = localStorage.getItem(DRAFT_KEY);
-            if (raw) setPendingDraft(JSON.parse(raw));
+            const raw = localStorage.getItem(draftKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (isDraftValid(parsed)) setPendingDraft(parsed);
+            }
         } catch { /* abaikan */ }
     }, []);
     useEffect(() => {
@@ -791,7 +826,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
         const t = setTimeout(() => {
             try {
                 const { video, ...rest } = data; // File video tidak bisa disimpan
-                localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                localStorage.setItem(draftKey, JSON.stringify({
                     savedAt: Date.now(), data: rest, customerMode, vehicleMode,
                     feeSaved, feeIncludedChecked, currentStep, maxVisitedStep,
                 }));
@@ -812,7 +847,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
         setPendingDraft(null);
     }
     function discardDraft() {
-        try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ }
+        try { localStorage.removeItem(draftKey); } catch { /* abaikan */ }
         setPendingDraft(null);
     }
     useEffect(() => {
@@ -1097,7 +1132,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
         post(route('admin.service-orders.store'), {
             forceFormData: true, // wajib true karena ada kemungkinan file video
             onSuccess: () => {
-                try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ }
+                try { localStorage.removeItem(draftKey); } catch { /* abaikan */ }
             },
             onError: (freshErrors) => {
                 handleSubmitErrors(freshErrors);
@@ -1196,7 +1231,7 @@ export default function Create({ customers, vehicles, technicians, brands, group
                     <span>
                         You have an unsaved draft from{' '}
                         {new Date(pendingDraft.savedAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.
-                        The video must be attached again.
+                        The video must be attached again. Drafts are kept on this device for 24 hours.
                     </span>
                     <span className="flex gap-2">
                         <Button type="button" size="sm" onClick={restoreDraft}>Restore draft</Button>

@@ -27,6 +27,12 @@ class Customer extends Model
                 // Buang semua karakter selain digit (spasi, strip, kurung, dsb)
                 $digits = preg_replace('/\D/', '', $value);
 
+                // Nomor kosong tetap kosong — jangan dijadikan "62" palsu
+                // (kolom phone NOT NULL, jadi simpan string kosong).
+                if ($digits === '') {
+                    return '';
+                }
+
                 // Normalisasi ke format 62xxx tanpa tanda "+" di depan
                 if (str_starts_with($digits, '0')) {
                     $digits = '62' . substr($digits, 1);
