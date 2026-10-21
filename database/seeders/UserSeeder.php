@@ -10,6 +10,12 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
+        if (User::query()->exists()) {
+            $this->command?->warn('Data user sudah ada. Dilewati.');
+
+            return;
+        }
+
         User::create([
             'name' => 'Mariyono',
             'email' => 'mariyono@vw.co.id',

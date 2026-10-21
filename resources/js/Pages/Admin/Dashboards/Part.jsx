@@ -144,8 +144,8 @@ export default function Part({ partStats, summary, filters }) {
             },
             {
                 accessorKey: 'revenue',
-                header: 'Revenue',
-                meta: { label: 'Revenue', align: 'right' },
+                header: 'Item Revenue',
+                meta: { label: 'Item Revenue', align: 'right' },
                 cell: ({ row }) => <NumCell>{formatCurrency(row.original.revenue)}</NumCell>,
             },
             {
@@ -195,8 +195,8 @@ export default function Part({ partStats, summary, filters }) {
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">
                                 <SummaryLabelWithTooltip
-                                    label="Total Revenue Approved"
-                                    tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied, including VAT."
+                                    label="Total Item Revenue Approved"
+                                    tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied, including VAT. Inspection fee is not included; if the fee was bundled into item prices, it is already counted here."
                                 />
                             </CardTitle>
                         </CardHeader>
@@ -210,8 +210,8 @@ export default function Part({ partStats, summary, filters }) {
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">
                                 <SummaryLabelWithTooltip
-                                    label="Total Revenue Rejected"
-                                    tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied, including VAT."
+                                    label="Total Item Revenue Rejected"
+                                    tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied, including VAT. Inspection fee is not included."
                                 />
                             </CardTitle>
                         </CardHeader>

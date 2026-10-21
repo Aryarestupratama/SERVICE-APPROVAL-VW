@@ -45,6 +45,7 @@ class ServiceOrder extends Model
 
     protected $fillable = [
         'vehicle_id',
+        'customer_id',
         'service_advisor_id',
         'technician_id',
         'work_order_number',
@@ -111,17 +112,12 @@ class ServiceOrder extends Model
         return $this->belongsTo(Vehicle::class);
     }
 
-    // Akses customer selalu lewat vehicle, karena tidak ada FK langsung
+    // Customer order = primary kendaraan SAAT ORDER DIBUAT (TASK-010 / OQ-5). Disimpan di
+    // service_orders.customer_id, jadi mengganti primary kendaraan tidak mengubah order lama.
+    // Bukan lagi lewat vehicle; nama dan telepon tetap dibaca dari customers (edit ikut terbawa).
     public function customer()
     {
-        return $this->hasOneThrough(
-            Customer::class,
-            Vehicle::class,
-            'id',          // FK di vehicles yang mengarah ke... (local key vehicles)
-            'id',          // FK di customers
-            'vehicle_id',  // local key di service_orders
-            'customer_id'  // local key di vehicles
-        );
+        return $this->belongsTo(Customer::class);
     }
 
     public function serviceAdvisor()

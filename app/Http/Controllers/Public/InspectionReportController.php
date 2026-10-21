@@ -17,7 +17,7 @@ class InspectionReportController extends Controller
     public function show(string $token)
     {
         $serviceOrder = ServiceOrder::where('inspection_token', $token)
-            ->with(['vehicle.customer', 'serviceAdvisor', 'technician', 'videos', 'repairImages', 'inspectionItems', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'])
+            ->with(['vehicle', 'customer', 'serviceAdvisor', 'technician', 'videos', 'repairImages', 'inspectionItems', 'invoice', 'estimationDocuments', 'customerPaymentReceipt'])
             ->firstOrFail();
 
         if ($serviceOrder->isInspectionLinkExpired()) {
@@ -99,7 +99,7 @@ class InspectionReportController extends Controller
                 'model' => $serviceOrder->vehicle->model,
             ],
             'customer' => [
-                'name' => $serviceOrder->vehicle->customer->name,
+                'name' => $serviceOrder->customer?->name,
             ],
             'serviceAdvisor' => [
                 'name' => $serviceOrder->serviceAdvisor->name,

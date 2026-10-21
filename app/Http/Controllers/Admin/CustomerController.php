@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\ServiceOrder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -92,8 +93,10 @@ class CustomerController extends Controller
     {
         // Guard aplikasi: pivot customer_vehicle.customer_id adalah cascadeOnDelete dan
         // vehicles.customer_id nullOnDelete, jadi tanpa cek ini kendaraan (dan order-nya)
-        // diam-diam kehilangan customer. Lepas customer dari kendaraan dulu.
-        if ($customer->vehicles()->exists()) {
+        // diam-diam kehilangan customer. Lepas customer dari kendaraan dulu. Order juga merujuk
+        // customer langsung (service_orders.customer_id, TASK-010), jadi customer yang pernah
+        // jadi primary tidak boleh dihapus selama masih ada order atas namanya.
+        if ($customer->vehicles()->exists() || ServiceOrder::where('customer_id', $customer->id)->exists()) {
             return back()->with(
                 'error',
                 'Customer cannot be deleted because they still have related vehicles or service orders.'

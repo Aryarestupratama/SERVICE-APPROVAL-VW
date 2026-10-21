@@ -35,9 +35,4 @@ class Vehicle extends Model
     {
         return $this->hasMany(ServiceOrder::class);
     }
-
-    public function bookings()
-    {
-        return $this->hasMany(Booking::class);
-    }
 }

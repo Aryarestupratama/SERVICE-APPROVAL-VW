@@ -43,12 +43,12 @@ class FeedbackController extends Controller
         ];
 
         if ($state === self::STATE_FORM) {
-            $fuas->load('serviceOrder.vehicle.customer');
+            $fuas->load(['serviceOrder.vehicle', 'serviceOrder.customer']);
             $vehicle = $fuas->serviceOrder?->vehicle;
 
             $props += [
                 'token' => $token,
-                'customer' => ['name' => $vehicle?->customer?->name],
+                'customer' => ['name' => $fuas->serviceOrder?->customer?->name],
                 'vehicle' => $vehicle ? [
                     'brand' => $vehicle->brand,
                     'model' => $vehicle->model,

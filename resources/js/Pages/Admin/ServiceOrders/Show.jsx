@@ -1408,10 +1408,10 @@ export default function Show({
               .join(' ')
         : '-';
 
-    // Nama customer diambil dari relasi vehicle->customer yang terikat ke order ini.
+    // Nama customer diambil dari order->customer (disimpan saat order dibuat, TASK-010).
     // Fallback ke sapaan generik lama kalau data customer belum lengkap (jangan sampai
     // pesan jadi "Selamat Sore ," / nama kosong).
-    const customerName = order.vehicle?.customer?.name;
+    const customerName = order.customer?.name;
     const customerGreetingName = customerName
         ? `Bapak/Ibu ${customerName}`
         : 'Bapak/Ibu Pelanggan VW PIK';
@@ -1470,7 +1470,7 @@ export default function Show({
                         Service Order #{order.work_order_number ?? order.id}
                     </span>
                     <span className="hidden min-w-0 truncate text-sm font-normal text-vw-grey sm:inline">
-                        {[order.vehicle?.plate_number, order.vehicle?.model, order.vehicle?.customer?.name].filter(Boolean).join(' · ')}
+                        {[order.vehicle?.plate_number, order.vehicle?.model, order.customer?.name].filter(Boolean).join(' · ')}
                     </span>
                     <Badge variant={STATUS_VARIANT[order.status] ?? 'default'}>
                         {STATUS_LABEL[order.status] ?? order.status}
@@ -1505,7 +1505,7 @@ export default function Show({
                         <span className="min-w-0 flex-1 truncate">
                             <span className="font-semibold text-gray-900">{order.vehicle?.plate_number ?? '—'}</span>
                             <span className="text-vw-grey">
-                                {' '}· {order.vehicle ? `${order.vehicle.brand} ${order.vehicle.model}` : '—'} · {order.vehicle?.customer?.name ?? '—'} · {order.vehicle?.customer?.phone ?? '—'}
+                                {' '}· {order.vehicle ? `${order.vehicle.brand} ${order.vehicle.model}` : '—'} · {order.customer?.name ?? '—'} · {order.customer?.phone ?? '—'}
                             </span>
                         </span>
                         <span className="shrink-0 text-xs text-gray-600 group-open:hidden">Show details</span>
@@ -1566,13 +1566,13 @@ export default function Show({
                         <div>
                             <p className="text-vw-grey">Name</p>
                             <p className="font-medium text-gray-900">
-                                {order.vehicle?.customer?.name ?? '—'}
+                                {order.customer?.name ?? '—'}
                             </p>
                         </div>
                         <div>
                             <p className="text-vw-grey">Phone</p>
                             <p className="font-medium text-gray-900">
-                                {order.vehicle?.customer?.phone ?? '—'}
+                                {order.customer?.phone ?? '—'}
                             </p>
                         </div>
                         <div>

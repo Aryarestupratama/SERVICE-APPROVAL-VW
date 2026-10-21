@@ -9,6 +9,12 @@ class SettingsSeeder extends Seeder
 {
     public function run(): void
     {
+        if (DB::table('settings')->exists()) {
+            $this->command?->warn('Settings sudah ada. Dilewati.');
+
+            return;
+        }
+
         DB::table('settings')->insert([
             'workshop_name' => 'Volkswagen PIK',
             'logo_path' => null,

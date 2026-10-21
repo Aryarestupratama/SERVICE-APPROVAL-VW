@@ -473,7 +473,7 @@ export default function Dashboard({
                             </CardTitle>
                             <span className="text-sm font-semibold">{formatIDR(totalRevenue)}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground">Amounts in Rp Juta (millions). Approved items incl. VAT on orders completed that day; inspection fee not included.</p>
+                        <p className="text-xs text-muted-foreground">Amounts in Rp Juta (millions). Approved items incl. VAT plus inspection fee (no VAT), on orders completed that day.</p>
                     </CardHeader>
                     <CardContent>
                         <div className="h-48" role="img" aria-label={`Revenue per day, last ${range} days, total ${formatIDR(totalRevenue)}`}>

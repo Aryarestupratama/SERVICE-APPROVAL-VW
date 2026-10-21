@@ -70,7 +70,8 @@ class FuasExportController extends Controller
                 fn ($o) => $o->where('service_advisor_id', $saId)
             ))
             ->with([
-                'serviceOrder.vehicle.customer',
+                'serviceOrder.vehicle',
+                'serviceOrder.customer',
                 'serviceOrder.serviceAdvisor:id,name',
                 'serviceOrder.technician:id,name',
             ])
@@ -137,7 +138,7 @@ class FuasExportController extends Controller
         foreach ($feedbacks as $fuas) {
             $order = $fuas->serviceOrder;
             $vehicle = $order?->vehicle;
-            $customer = $vehicle?->customer;
+            $customer = $order?->customer;
 
             yield [
                 'work_order_number' => $order?->work_order_number,

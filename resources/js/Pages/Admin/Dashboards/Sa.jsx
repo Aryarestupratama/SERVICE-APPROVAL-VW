@@ -182,22 +182,22 @@ export default function Sa({ saStats, summary, filters }) {
                 accessorKey: 'revenue_approved',
                 header: () => (
                     <ColumnHeaderWithTooltip
-                        label="Revenue Approved"
-                        tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied, including VAT."
+                        label="Item Revenue Approved"
+                        tooltip="Total revenue from items approved by the customer — combined Part + Labour, after each discount is applied, including VAT. Inspection fee is not included; if the fee was bundled into item prices, it is already counted here."
                     />
                 ),
-                meta: { label: 'Revenue Approved', align: 'right' },
+                meta: { label: 'Item Revenue Approved', align: 'right' },
                 cell: ({ row }) => <NumCell>{formatCurrency(row.original.revenue_approved)}</NumCell>,
             },
             {
                 accessorKey: 'revenue_rejected',
                 header: () => (
                     <ColumnHeaderWithTooltip
-                        label="Revenue Rejected"
-                        tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied, including VAT."
+                        label="Item Revenue Rejected"
+                        tooltip="Total potential revenue from items rejected by the customer — combined Part + Labour, after each discount is applied, including VAT. Inspection fee is not included."
                     />
                 ),
-                meta: { label: 'Revenue Rejected', align: 'right' },
+                meta: { label: 'Item Revenue Rejected', align: 'right' },
                 cell: ({ row }) => <NumCell>{formatCurrency(row.original.revenue_rejected)}</NumCell>,
             },
             {
@@ -335,7 +335,7 @@ export default function Sa({ saStats, summary, filters }) {
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">
-                                Total Revenue Approved
+                                Total Item Revenue Approved
                             </CardTitle>
                         </CardHeader>
                         <CardContent>

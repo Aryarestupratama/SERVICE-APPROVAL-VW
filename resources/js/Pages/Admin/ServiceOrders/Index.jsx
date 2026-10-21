@@ -263,9 +263,9 @@ function buildColumns({ isAdmin, onRequestDelete }) {
             header: 'Customer',
             meta: { label: 'Customer' },
             enableSorting: false,
-            accessorFn: (row) => row.vehicle?.customer?.name ?? '',
+            accessorFn: (row) => row.customer?.name ?? '',
             cell: ({ row }) => (
-                <span className="font-medium">{row.original.vehicle?.customer?.name ?? '—'}</span>
+                <span className="font-medium">{row.original.customer?.name ?? '—'}</span>
             ),
         },
         {

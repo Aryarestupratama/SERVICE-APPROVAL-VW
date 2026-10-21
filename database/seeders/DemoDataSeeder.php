@@ -409,6 +409,7 @@ class DemoDataSeeder extends Seeder
 
         $orderId = DB::table('service_orders')->insertGetId([
             'vehicle_id' => $vehicle['id'],
+            'customer_id' => $customer->id,
             'service_advisor_id' => $advisor->id,
             'technician_id' => $technician?->id,
             'work_order_number' => $wo,

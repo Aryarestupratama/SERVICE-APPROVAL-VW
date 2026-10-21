@@ -56,7 +56,7 @@ class FuasController extends Controller
         $query = ServiceOrder::query()
             ->select('service_orders.*')
             ->leftJoin('service_order_fuas as f', 'f.service_order_id', '=', 'service_orders.id')
-            ->with(['vehicle.customer:id,name,phone', 'serviceAdvisor:id,name', 'fuas.manuallyCompletedBy:id,name']);
+            ->with(['vehicle', 'customer:id,name,phone', 'serviceAdvisor:id,name', 'fuas.manuallyCompletedBy:id,name']);
 
         $this->fuasStatus->applyList($query, $list, $status ? [$status] : null, $now);
 
@@ -66,7 +66,7 @@ class FuasController extends Controller
                 // RULE-024: orWhere dibungkus supaya tidak lolos dari filter lain.
                 $q->where(function ($w) use ($search) {
                     $w->where('service_orders.work_order_number', 'like', "%{$search}%")
-                        ->orWhereHas('vehicle.customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
                         ->orWhereHas('vehicle', fn ($v) => $v->where('plate_number', 'like', "%{$search}%"));
                 })
             );
@@ -263,9 +263,11 @@ class FuasController extends Controller
                 'brand' => $order->vehicle->brand,
                 'model' => $order->vehicle->model,
                 'plate_number' => $order->vehicle->plate_number,
-                'customer' => $order->vehicle->customer ? [
-                    'name' => $order->vehicle->customer->name,
-                    'phone' => $order->vehicle->customer->phone,
+                // Bentuk respons tetap (customer di dalam vehicle) supaya Fuas/Index.jsx tidak berubah;
+                // sumbernya order->customer (TASK-010), bukan primary kendaraan saat ini.
+                'customer' => $order->customer ? [
+                    'name' => $order->customer->name,
+                    'phone' => $order->customer->phone,
                 ] : null,
             ] : null,
             'service_advisor' => $order->serviceAdvisor ? ['name' => $order->serviceAdvisor->name] : null,

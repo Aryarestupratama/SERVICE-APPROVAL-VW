@@ -233,7 +233,11 @@ class DashboardController extends Controller
     /**
      * Pendapatan per hari, $days hari terakhir. Dihitung dari order yang
      * STATUSNYA BERUBAH JADI `completed` di hari tsb (status_changed_at),
-     * dijumlah dari final_price_snapshot item-item yang approved — basisnya
+     * dijumlah dari final_price_snapshot item-item yang approved PLUS
+     * inspection_fee order tsb (TASK-009 / OQ-6, keputusan owner: grafik ini
+     * = tagihan, yaitu Confirmed Total + fee). Fee 0 berarti gratis atau
+     * sudah termasuk di harga item, jadi tidak terhitung ganda. Item snapshot
+     * sudah ber-PPN, fee tanpa PPN (sama dengan Amount due). Basisnya
      * sengaja snapshot yang sudah dikunci (bukan recompute cost_item/
      * cost_labour), konsisten dengan keputusan breakdown Grand Total di
      * InspectionItemPricingService (lihat PROJECT-RULES bagian 1).
@@ -276,13 +280,18 @@ class DashboardController extends Controller
             ->groupBy('service_order_id')
             ->pluck('total', 'service_order_id');
 
+        // Fee per order. Order tanpa item approved (mis. semua ditolak) tetap
+        // membawa fee, jadi penjumlahan berjalan per order completed, bukan
+        // per order yang punya item approved.
+        $feeByOrderId = (clone $baseQuery)
+            ->whereIn('id', $orderIds)
+            ->pluck('inspection_fee', 'id');
+
         $totalsByDay = [];
-        foreach ($totalsByOrderId as $orderId => $total) {
-            $day = $completedDayByOrderId[$orderId] ?? null;
-            if ($day === null) {
-                continue;
-            }
-            $totalsByDay[$day] = ($totalsByDay[$day] ?? 0) + (int) $total;
+        foreach ($completedDayByOrderId as $orderId => $day) {
+            $amount = (int) ($totalsByOrderId[$orderId] ?? 0)
+                + (int) round((float) ($feeByOrderId[$orderId] ?? 0));
+            $totalsByDay[$day] = ($totalsByDay[$day] ?? 0) + $amount;
         }
 
         return $this->fillLastNDays($since, $days, 'amount', fn (Carbon $day) => $totalsByDay[$day->toDateString()] ?? 0);

@@ -90,7 +90,7 @@ class ServiceOrderController extends Controller
             AND status = 'approved'
         )";
 
-        $query = ServiceOrder::with(['vehicle.customer', 'serviceAdvisor'])
+        $query = ServiceOrder::with(['vehicle', 'customer', 'serviceAdvisor'])
             ->select('service_orders.*')
             ->selectRaw("{$estimateSql} as grand_total_estimate", [$vatPercent])
             ->selectRaw("{$approvedSql} as grand_total_approved");
@@ -129,7 +129,7 @@ class ServiceOrderController extends Controller
             ->when($request->search, fn ($q, $search) =>
                 $q->where(function ($q2) use ($search) {
                     $q2->where('work_order_number', 'like', "%{$search}%")
-                        ->orWhereHas('vehicle.customer', fn ($q3) =>
+                        ->orWhereHas('customer', fn ($q3) =>
                             $q3->where('name', 'like', "%{$search}%")
                         )
                         ->orWhereHas('vehicle', fn ($q3) =>
@@ -353,6 +353,8 @@ class ServiceOrderController extends Controller
 
                 if ($validated['vehicle_id']) {
                     $vehicleId = $validated['vehicle_id'];
+                    // Customer order = primary kendaraan saat ini (ADR-005), bukan PIC yang dipilih di form.
+                    $orderCustomerId = Vehicle::whereKey($vehicleId)->value('customer_id');
                 } else {
                     $vehicle = Vehicle::create($validated['new_vehicle']);
 
@@ -363,10 +365,12 @@ class ServiceOrderController extends Controller
                     ]);
 
                     $vehicleId = $vehicle->id;
+                    $orderCustomerId = $customerId;
                 }
 
                $order = ServiceOrder::create([
                     'vehicle_id' => $vehicleId,
+                    'customer_id' => $orderCustomerId,
                     'service_advisor_id' => $request->user()->id,
                     'technician_id' => $validated['technician_id'] ?? null,
                     'work_order_number' => $validated['work_order_number'],
@@ -643,7 +647,8 @@ class ServiceOrderController extends Controller
         $this->authorizeAccess($request, $serviceOrder);
 
         $serviceOrder->load([
-            'vehicle.customer',
+            'vehicle',
+            'customer',
             'serviceAdvisor',
             'technician',
             'videos',
