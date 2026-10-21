@@ -23,6 +23,29 @@ function flashFailed(page) {
     return true;
 }
 
+// FR-009 / API-004: server menolak bukti bayar di atas 10 MB (`max:10240`) atau selain
+// PDF/JPG/PNG. Dicek juga di klien supaya file yang pasti ditolak tidak dikirim dulu
+// (hemat kuota data customer). Server tetap sumber kebenaran.
+const RECEIPT_MAX_MB = 10;
+const RECEIPT_MAX_BYTES = RECEIPT_MAX_MB * 1024 * 1024;
+const RECEIPT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
+const RECEIPT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+
+// Mengembalikan pesan masalah untuk customer, atau null bila file layak dikirim.
+function receiptProblem(file) {
+    const extension = (file.name.split('.').pop() ?? '').toLowerCase();
+    if (!RECEIPT_EXTENSIONS.includes(extension) && !RECEIPT_MIME_TYPES.includes(file.type)) {
+        return 'Please choose a PDF, JPG, or PNG file.';
+    }
+    if (file.size > RECEIPT_MAX_BYTES) {
+        return `That file is too large. Please choose a file under ${RECEIPT_MAX_MB} MB.`;
+    }
+    if (file.size === 0) {
+        return 'That file looks empty. Please choose another one.';
+    }
+    return null;
+}
+
 // Kartu "melayang": putih, sudut besar, bayangan lembut + ring tipis (gaya referensi payment/cart).
 const SOFT_CARD = 'rounded-3xl bg-white ring-1 ring-black/[0.04] shadow-[0_12px_40px_-16px_rgba(22,27,89,0.22)]';
 
@@ -500,8 +523,8 @@ export default function InspectionReport({
     const [localDecisions, setLocalDecisions] = useState(new Map());
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
-    const [receiptFile, setReceiptFile] = useState(null);
     const [uploadingReceipt, setUploadingReceipt] = useState(false);
+    const receiptInputRef = useRef(null);
     // Pembatalan keputusan yang SUDAH disubmit ke server (item yang masih lokal
     // langsung di-undo tanpa konfirmasi, lihat handleCancelDecision).
     const [undoTarget, setUndoTarget] = useState(null);
@@ -575,6 +598,7 @@ export default function InspectionReport({
         const messages = {
             410: 'This link has expired. Please contact the workshop for a new one.',
             409: 'This report has changed and can no longer be updated this way. We refreshed it for you.',
+            413: `That file is too large. Please choose a file under ${RECEIPT_MAX_MB} MB.`,
             422: 'Some items changed while you were deciding. We refreshed the list, please check and try again.',
             429: 'Too many attempts. Please wait a minute and try again.',
         };
@@ -801,22 +825,41 @@ export default function InspectionReport({
         }
     };
 
-    const handleReceiptUpload = (e) => {
-        e.preventDefault();
-        if (!receiptFile) return;
+    // Satu langkah: begitu file dipilih, langsung diunggah (tanpa tombol kedua).
+    const handleReceiptChange = (e) => {
+        const file = e.target.files?.[0];
+        // Kosongkan input supaya memilih file yang sama lagi (mis. setelah gagal) tetap memicu onChange.
+        e.target.value = '';
+        if (!file || uploadingReceipt) return;
+
+        const problem = receiptProblem(file);
+        if (problem) {
+            toast.error(problem);
+            return;
+        }
+
         setUploadingReceipt(true);
+        // Kegagalan jaringan tidak memanggil onError (itu untuk validasi), jadi dengarkan event
+        // `exception` hanya selama unggahan ini berjalan (RULE-042).
+        const offException = router.on('exception', (event) => {
+            event.preventDefault();
+            toast.error('No connection. Your receipt was not sent, please try again.');
+        });
         router.post(
             route('public.report.upload-payment-receipt', token),
-            { receipt: receiptFile },
+            { receipt: file },
             {
                 forceFormData: true,
+                preserveScroll: true,
                 onSuccess: (page) => {
                     if (flashFailed(page)) return;
-                    setReceiptFile(null);
                     toast.success('Receipt uploaded.');
                 },
                 onError: (errors) => toast.error(errors?.receipt ?? 'Upload failed. Check your connection and try again.'),
-                onFinish: () => setUploadingReceipt(false),
+                onFinish: () => {
+                    offException();
+                    setUploadingReceipt(false);
+                },
             }
         );
     };
@@ -960,29 +1003,32 @@ export default function InspectionReport({
                                             Upload your transfer proof.
                                         </p>
                                     )}
-                                    <form
-                                        onSubmit={handleReceiptUpload}
-                                        className="mt-3 flex flex-col gap-2"
+                                    <input
+                                        ref={receiptInputRef}
+                                        type="file"
+                                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                                        className="hidden"
+                                        tabIndex={-1}
+                                        onChange={handleReceiptChange}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => receiptInputRef.current?.click()}
+                                        disabled={uploadingReceipt}
+                                        aria-busy={uploadingReceipt}
+                                        aria-describedby="receipt-hint"
+                                        className="mt-3 inline-flex min-h-[48px] w-full items-center justify-center gap-1.5 rounded-full bg-vw-blue px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:bg-vw-grey/20 disabled:text-vw-grey disabled:shadow-none"
                                     >
-                                        <input
-                                            type="file"
-                                            accept=".pdf,.jpg,.jpeg,.png"
-                                            className="w-full min-w-0 rounded-xl border border-vw-grey/20 p-1.5 text-xs text-vw-grey file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-vw-grey-light file:px-3 file:py-2.5 file:text-xs file:font-semibold file:text-gray-900 hover:file:bg-vw-grey/20"
-                                            onChange={(e) => setReceiptFile(e.target.files[0])}
-                                        />
-                                        <button
-                                            type="submit"
-                                            disabled={uploadingReceipt || !receiptFile}
-                                            className="inline-flex min-h-[48px] w-full items-center justify-center gap-1.5 rounded-full bg-vw-blue px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-vw-blue/90 disabled:bg-vw-grey/20 disabled:text-vw-grey disabled:shadow-none"
-                                        >
-                                            {uploadingReceipt ? (
-                                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                                <Upload className="h-4 w-4" aria-hidden="true" />
-                                            )}
-                                            {uploadingReceipt ? 'Uploading...' : customerPaymentReceipt ? 'Replace' : 'Upload'}
-                                        </button>
-                                    </form>
+                                        {uploadingReceipt ? (
+                                            <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                                        ) : (
+                                            <Upload className="h-4 w-4" aria-hidden="true" />
+                                        )}
+                                        {uploadingReceipt ? 'Uploading...' : customerPaymentReceipt ? 'Replace receipt' : 'Upload receipt'}
+                                    </button>
+                                    <p id="receipt-hint" className="mt-2 text-center text-xs text-vw-grey">
+                                        PDF, JPG, or PNG, up to {RECEIPT_MAX_MB} MB. Your file is sent as soon as you choose it.
+                                    </p>
                                 </div>
                             </section>
                         </>
