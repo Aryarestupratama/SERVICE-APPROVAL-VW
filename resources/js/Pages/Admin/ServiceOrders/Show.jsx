@@ -580,6 +580,7 @@ export default function Show({
     maxInvoices,
     breakdownByGroup,
     estimatedGrandTotal,
+    inspectionFeeBreakdown,
     customerComplaintEditable,
     inspectionFeeEditable,
     delayReasonEditable,
@@ -599,6 +600,7 @@ export default function Show({
             'order',
             'breakdownByGroup',
             'estimatedGrandTotal',
+            'inspectionFeeBreakdown',
             'customerComplaintEditable',
             'inspectionFeeEditable',
             'delayReasonEditable',
@@ -1307,7 +1309,14 @@ export default function Show({
     // "Grand Total" final di card Order Totals = Confirmed Total + Inspection
     // Fee (bukan lagi Estimated). Inspection fee jasa cek awal, terpisah dari
     // harga per-item, ditambahkan langsung di sini.
-    const finalGrandTotal = grandTotalApproved + Number(order.inspection_fee ?? 0);
+    // TASK-054: fee yang tidak termasuk di harga item tetap kena PPN; angkanya dari server
+    // (InspectionItemPricingService::inspectionFeeBreakdown), bukan dihitung ulang di sini.
+    const feeVatAmount = Number(inspectionFeeBreakdown?.vat_amount ?? 0);
+    const feeVatPercent = Number(inspectionFeeBreakdown?.vat_percent ?? 0);
+    const feeTotalWithVat = Number(
+        inspectionFeeBreakdown?.total ?? order.inspection_fee ?? 0
+    );
+    const finalGrandTotal = grandTotalApproved + feeTotalWithVat;
 
     // Catatan: "Estimated Grand Total" gabungan semua group (card terpisah,
     // di bawah breakdown per group) TIDAK dihitung di sini lagi — datang
@@ -1563,7 +1572,7 @@ export default function Show({
     // Estimated Grand Total sekarang sudah termasuk Inspection Fee
     // (dipindah dari Order Totals). Nilai dasar tetap dari backend.
     const estimatedGrandTotalWithFee =
-        Number(estimatedGrandTotal?.grand_total ?? 0) + Number(order.inspection_fee ?? 0);
+        Number(estimatedGrandTotal?.grand_total ?? 0) + feeTotalWithVat;
 
     // Layout section 3: kalau sudah ada inspection item DAN Invoice &
     // Payment sudah muncul, keduanya ditaruh sebelahan (grid 2 kolom, lebar
@@ -2258,7 +2267,7 @@ export default function Show({
                                     >
                                         <div className="space-y-1.5">
                                             <Label htmlFor="inspection_fee" className="text-vw-grey">
-                                                Inspection Fee
+                                                Inspection Fee (before VAT)
                                             </Label>
                                             <CurrencyInput
                                                 id="inspection_fee"
@@ -2348,7 +2357,7 @@ export default function Show({
                                     <div className="space-y-0.5">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-1">
-                                                <span className="text-vw-grey">Inspection Fee</span>
+                                                <span className="text-vw-grey">Inspection Fee (before VAT)</span>
                                                 {inspectionFeeEditable && (
                                                     <TextActionButton text="Edit" label="Edit inspection fee" onClick={() => setIsEditingFee(true)} />
                                                 )}
@@ -2357,6 +2366,16 @@ export default function Show({
                                                 {formatCurrency(order.inspection_fee)}
                                             </span>
                                         </div>
+                                        {feeVatAmount > 0 && (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-vw-grey">
+                                                    VAT on fee ({feeVatPercent}%)
+                                                </span>
+                                                <span className="text-gray-900">
+                                                    {formatCurrency(feeVatAmount)}
+                                                </span>
+                                            </div>
+                                        )}
                                         {order.inspection_fee_note && (
                                             <p className="text-xs text-vw-grey">
                                                 {order.inspection_fee_note}
@@ -2400,11 +2419,27 @@ export default function Show({
                                                 {formatCurrency(grandTotalApproved)}
                                             </span>
                                         </div>
+                                        {Number(order.inspection_fee ?? 0) > 0 && (
+                                            <>
+                                                <div className="flex justify-between">
+                                                    <span className="text-vw-grey">Inspection Fee (before VAT)</span>
+                                                    <span className="text-gray-900">
+                                                        {formatCurrency(order.inspection_fee)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-vw-grey">VAT on fee ({feeVatPercent}%)</span>
+                                                    <span className="text-gray-900">
+                                                        {formatCurrency(feeVatAmount)}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        )}
                                         <div className="flex justify-between border-t border-vw-grey/15 pt-1 font-semibold text-gray-900">
                                             <div>
                                                 <p>Grand Total</p>
                                                 <p className="text-xs font-normal text-vw-grey">
-                                                    Confirmed Total + Inspection Fee
+                                                    Confirmed Total + Inspection Fee + VAT on fee
                                                 </p>
                                             </div>
                                             <span>{formatCurrency(finalGrandTotal)}</span>

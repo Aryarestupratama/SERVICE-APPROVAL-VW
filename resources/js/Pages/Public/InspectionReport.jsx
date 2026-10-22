@@ -615,6 +615,9 @@ export default function InspectionReport({
 
     const vatPercent = Number(settings.ppn_percent ?? 0);
     const inspectionFee = Number(order.inspection_fee ?? 0);
+    // TASK-054: fee yang tidak termasuk di harga item tetap kena PPN (angka dari server).
+    const inspectionFeeVat = Number(order.inspection_fee_vat_amount ?? 0);
+    const inspectionFeeTotal = Number(order.inspection_fee_total ?? inspectionFee);
 
     // CHANGED: item 'rejected' tetap dikecualikan (sudah benar sebelumnya).
     // Yang baru: item yang sudah locked (final_price_snapshot terisi) tetap
@@ -942,7 +945,7 @@ export default function InspectionReport({
                                     )}
                                     <div className="mt-4 flex items-center justify-between gap-3">
                                         <span className="text-sm font-bold text-gray-900">Amount due</span>
-                                        <Rupiah value={grandTotal + inspectionFee} className="text-2xl font-bold text-vw-blue" />
+                                        <Rupiah value={grandTotal + inspectionFeeTotal} className="text-2xl font-bold text-vw-blue" />
                                     </div>
                                     <p className="mt-2 text-xs text-vw-grey">Please follow the amount stated on your invoice.</p>
                                 </div>
@@ -1365,11 +1368,11 @@ export default function InspectionReport({
                                 {totalDiscount <= 0 && inspectionFeeRow}
                                 <div className="flex items-center justify-between gap-3">
                                     <dt className="text-vw-grey">Subtotal</dt>
-                                    <dd className="font-semibold text-gray-900"><Rupiah value={subtotal} /></dd>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={subtotal + inspectionFee} /></dd>
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
                                     <dt className="text-vw-grey">VAT ({vatPercent}%)</dt>
-                                    <dd className="font-semibold text-gray-900"><Rupiah value={vatAmount} /></dd>
+                                    <dd className="font-semibold text-gray-900"><Rupiah value={vatAmount + inspectionFeeVat} /></dd>
                                 </div>
                             </dl>
 
@@ -1379,7 +1382,7 @@ export default function InspectionReport({
                                 <span className="text-sm font-bold text-gray-900">
                                     {isPricingFinal ? 'Final total' : 'Estimated total'}
                                 </span>
-                                <Rupiah value={grandTotal + inspectionFee} className="text-2xl font-bold text-vw-blue" />
+                                <Rupiah value={grandTotal + inspectionFeeTotal} className="text-2xl font-bold text-vw-blue" />
                             </div>
                         </div>
 
