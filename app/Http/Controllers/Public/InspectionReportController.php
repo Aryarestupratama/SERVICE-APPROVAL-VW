@@ -60,6 +60,9 @@ class InspectionReportController extends Controller
         // owner), dan dikirim kosong di status lain.
         $showRepairImages = $serviceOrder->status === ServiceOrder::STATUS_WORK_IN_PROGRESS;
 
+        $feeBreakdown = (new InspectionItemPricingService())
+            ->inspectionFeeBreakdown($serviceOrder, (float) $settings->ppn_percent);
+
         return Inertia::render('Public/InspectionReport', [
             'token' => $token,
             'settings' => [
@@ -86,6 +89,9 @@ class InspectionReportController extends Controller
                 'personal_message' => $serviceOrder->personal_message,
                 'inspection_fee' => (float) $serviceOrder->inspection_fee,
                 'inspection_fee_note' => $serviceOrder->inspection_fee_note,
+                // TASK-054: PPN fee dihitung di server (satu sumber rumus).
+                'inspection_fee_vat_amount' => $feeBreakdown['vat_amount'],
+                'inspection_fee_total' => $feeBreakdown['total'],
                 'invoice_number' => $serviceOrder->invoice_number,
                 'bill_to' => $serviceOrder->bill_to,
                 // Nilai awal untuk hook polling di sisi frontend — supaya poll

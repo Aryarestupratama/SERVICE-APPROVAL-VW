@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\InspectionItem;
 use App\Models\ServiceOrder;
+use App\Models\Setting;
+use App\Services\InspectionItemPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -265,7 +267,7 @@ class DashboardController extends Controller
      * inspection_fee order tsb (TASK-009 / OQ-6, keputusan owner: grafik ini
      * = tagihan, yaitu Confirmed Total + fee). Fee 0 berarti gratis atau
      * sudah termasuk di harga item, jadi tidak terhitung ganda. Item snapshot
-     * sudah ber-PPN, fee tanpa PPN (sama dengan Amount due). Basisnya
+     * sudah ber-PPN, fee juga ditambah PPN-nya (TASK-054, sama dengan Amount due). Basisnya
      * sengaja snapshot yang sudah dikunci (bukan recompute cost_item/
      * cost_labour), konsisten dengan keputusan breakdown Grand Total di
      * InspectionItemPricingService (lihat PROJECT-RULES bagian 1).
@@ -311,14 +313,21 @@ class DashboardController extends Controller
         // Fee per order. Order tanpa item approved (mis. semua ditolak) tetap
         // membawa fee, jadi penjumlahan berjalan per order completed, bukan
         // per order yang punya item approved.
+        // TASK-054: fee yang tidak termasuk di harga item tetap kena PPN, jadi yang dijumlah
+        // adalah fee + PPN fee (tarif PPN Settings saat ini).
+        $pricing = new InspectionItemPricingService();
+        $currentPpn = (float) Setting::current()->ppn_percent;
         $feeByOrderId = (clone $baseQuery)
             ->whereIn('id', $orderIds)
-            ->pluck('inspection_fee', 'id');
+            ->get(['id', 'inspection_fee'])
+            ->mapWithKeys(fn (ServiceOrder $o) => [
+                $o->id => $pricing->inspectionFeeBreakdown($o, $currentPpn)['total'],
+            ]);
 
         $totalsByDay = [];
         foreach ($completedDayByOrderId as $orderId => $day) {
             $amount = (int) ($totalsByOrderId[$orderId] ?? 0)
-                + (int) round((float) ($feeByOrderId[$orderId] ?? 0));
+                + (int) ($feeByOrderId[$orderId] ?? 0);
             $totalsByDay[$day] = ($totalsByDay[$day] ?? 0) + $amount;
         }
 

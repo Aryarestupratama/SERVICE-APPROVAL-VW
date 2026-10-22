@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\InspectionItem;
+use App\Models\ServiceOrder;
 use App\Models\Setting;
 use RuntimeException;
 
@@ -185,6 +186,29 @@ class InspectionItemPricingService
             'subtotal' => round($subtotal, 2),
             'vat_amount' => round($vatAmount, 2),
             'grand_total' => round($subtotal + $vatAmount, 2),
+        ];
+    }
+
+    /**
+     * Rincian inspection fee beserta PPN-nya (TASK-054). Fee yang diinput SA adalah harga
+     * SEBELUM PPN; PPN ditambahkan di atasnya memakai tarif Settings saat ini (satu sumber PPN,
+     * sama dengan estimasi item). Fee 0 (gratis atau sudah termasuk di harga
+     * item) tidak dikenai PPN lagi supaya tidak terhitung ganda. Rupiah bulat (RULE-030).
+     * Ini SATU-SATUNYA tempat rumus ini; dipakai Show, laporan publik, dan revenue dashboard.
+     *
+     * @return array{fee: int, vat_percent: float, vat_amount: int, total: int}
+     */
+    public function inspectionFeeBreakdown(ServiceOrder $order, ?float $currentPpn = null): array
+    {
+        $fee = (int) round((float) $order->inspection_fee);
+        $vatPercent = $currentPpn ?? (float) Setting::current()->ppn_percent;
+        $vatAmount = $fee > 0 ? (int) round($fee * $vatPercent / 100) : 0;
+
+        return [
+            'fee' => $fee,
+            'vat_percent' => $vatPercent,
+            'vat_amount' => $vatAmount,
+            'total' => $fee + $vatAmount,
         ];
     }
 

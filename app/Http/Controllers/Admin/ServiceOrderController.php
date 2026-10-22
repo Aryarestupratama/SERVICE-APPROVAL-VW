@@ -684,6 +684,8 @@ class ServiceOrderController extends Controller
             'groups' => InspectionItem::GROUPS,
             'breakdownByGroup' => $breakdownByGroup,
             'estimatedGrandTotal' => $estimatedGrandTotal,
+            // TASK-054: fee + PPN fee dari server (satu sumber rumus, RULE-026).
+            'inspectionFeeBreakdown' => $pricingService->inspectionFeeBreakdown($serviceOrder, (float) $settings->ppn_percent),
             // customer_complaint itself is already inside 'order' (a regular
             // model column), but the editability flag is sent separately so
             // Show.jsx doesn't need to duplicate the list of "editable"
