@@ -1458,20 +1458,17 @@ export default function Show({
     };
 
     // --- Copy report link + message untuk dikirim manual ke WA customer ---
-    // Muncul HANYA saat order berada di status work_in_progress — begitu
-    // order pindah ke quality_control (dan seterusnya sampai completed),
-    // link ini tidak relevan lagi jadi disembunyikan (permintaan owner).
+    // Tombol Copy Link & Message dan Renew Link tampil di semua status kecuali
+    // appointment (belum ada laporan untuk customer) dan all_rejected_cancelled
+    // (permintaan owner, TASK-057). Customer bisa butuh link di status lanjutan,
+    // mis. invoice_preparation untuk upload bukti bayar. Backend (renewReportLink)
+    // menolak status yang sama.
     const [reportLinkCopied, setReportLinkCopied] = useState(false);
 
-    const [linkRenewed, setLinkRenewed] = useState(false);
-
-    // Link boleh dibagikan di work_in_progress, atau setelah SA baru saja
-    // membuat link baru (customer bisa butuh link di status lain, mis.
-    // invoice_preparation untuk upload bukti bayar).
-    const canShareReportLink = order.status === 'work_in_progress' || linkRenewed;
-    const canRenewReportLink =
-        order.status !== 'all_rejected_cancelled' &&
-        (inspectionLinkExpired || order.status === 'work_in_progress');
+    const canUseReportLink =
+        order.status !== 'appointment' && order.status !== 'all_rejected_cancelled';
+    const canShareReportLink = canUseReportLink;
+    const canRenewReportLink = canUseReportLink;
 
     const handleRenewReportLink = () => {
         setConfirmDialog({
@@ -1491,9 +1488,7 @@ export default function Show({
                     {
                         preserveScroll: true,
                         onSuccess: (page) => {
-                            if (flashToast(page, 'New report link created')) {
-                                setLinkRenewed(true);
-                            }
+                            flashToast(page, 'New report link created');
                         },
                         onError: () => toast.error('Failed to renew link'),
                         onFinish: closeConfirmDialog,
@@ -1507,7 +1502,7 @@ export default function Show({
         ? route('public.inspection-report', order.inspection_token)
         : null;
 
-    // Sapaan pagi/siang/sore/malam diambil dari rentang jam WIB (Asia/Jakarta)
+    // Sapaan Pagi/Siang/Sore diambil dari rentang jam WIB (Asia/Jakarta)
     // saat tombol copy diklik — bukan dari jam server, supaya benar walau
     // server pakai timezone lain.
     function getGreeting() {
@@ -1519,11 +1514,9 @@ export default function Show({
             }).format(new Date())
         );
 
-        // Rentang sama dengan pesan FUAS (Fuas/Index.jsx), huruf kecil sesuai tata bahasa ("Selamat pagi").
-        if (hour >= 18 || hour < 4) return 'malam';
-        if (hour >= 15) return 'sore';
-        if (hour >= 11) return 'siang';
-        return 'pagi';
+        if (hour >= 4 && hour < 11) return 'Pagi';
+        if (hour >= 11 && hour < 15) return 'Siang';
+        return 'Sore';
     }
 
     // "Kendaraan customer" diambil dari service order yang terdaftar
@@ -1542,13 +1535,10 @@ export default function Show({
         ? `Bapak/Ibu ${customerName}`
         : 'Bapak/Ibu Pelanggan VW PIK';
 
-    // Pesan ke customer: tanpa "(-)" bila data kendaraan kosong, "dicek" (bukan "di cek"),
-    // "kami" konsisten (bukan campur "saya"/"kami"), dan menyebut keputusan per item.
-    const reportVehicleText = vehicleLabel !== '-' ? ` (${vehicleLabel})` : '';
     const reportMessageText =
-        `Selamat ${getGreeting()} ${customerGreetingName}, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda${reportVehicleText}:\n\n` +
+        `Selamat ${getGreeting()} ${customerGreetingName}, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda (${vehicleLabel}):\n\n` +
         `${reportUrl ?? '-'}\n\n` +
-        `Di dalamnya terdapat video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat dicek, lalu setujui atau tolak tiap item sesuai kebutuhan Bapak/Ibu. Kami menunggu konfirmasi dari Bapak/Ibu. Terima kasih.`;
+        `Di dalamnya ada video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat di cek dan saya tunggu persetujuan dari bapak/ibu selanjutnya. Terima kasih.`;
 
     const handleCopyReportLink = async () => {
         const success = await copyToClipboard(reportMessageText);

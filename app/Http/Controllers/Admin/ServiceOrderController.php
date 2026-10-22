@@ -1366,8 +1366,14 @@ class ServiceOrderController extends Controller
     {
         $this->authorizeAccess($request, $serviceOrder);
 
+        // TASK-057: link boleh dibuat ulang di semua status kecuali appointment (belum ada
+        // laporan untuk customer) dan cancelled. UI (Show.jsx) memakai aturan yang sama.
         if ($serviceOrder->status === ServiceOrder::STATUS_ALL_REJECTED_CANCELLED) {
             return back()->with('error', 'Cannot renew the report link for a cancelled order.');
+        }
+
+        if ($serviceOrder->status === ServiceOrder::STATUS_APPOINTMENT) {
+            return back()->with('error', 'Cannot renew the report link for an order that is still in appointment.');
         }
 
         $serviceOrder->renewInspectionLink();
