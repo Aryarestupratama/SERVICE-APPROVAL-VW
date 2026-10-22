@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
+import { DELAY_REASON_LABEL, DELAY_BADGE_CLASS } from '@/lib/delayReason';
 import { AlertTriangle, Car, Wrench, ClipboardCheck, FileText } from 'lucide-react';
 import {
     ResponsiveContainer,
@@ -38,11 +39,13 @@ const STATUS_ICONS = {
 
 const REASON_LABELS = {
     waiting_for_parts: 'Menunggu Part',
+    waiting_for_approval: 'Menunggu Approval',
     waiting_for_pickup: 'Menunggu Diambil',
 };
 
 const REASON_VARIANT = {
     waiting_for_parts: 'destructive',
+    waiting_for_approval: 'destructive',
     waiting_for_pickup: 'secondary',
 };
 
@@ -175,6 +178,14 @@ function InProgressCard({ order }) {
                     SA: {order.service_advisor_name ?? 'Unassigned'}
                 </p>
             </div>
+
+            {order.delay_reason && DELAY_REASON_LABEL[order.delay_reason] && (
+                <div>
+                    <Badge variant="outline" className={`text-[11px] ${DELAY_BADGE_CLASS}`}>
+                        Delay: {DELAY_REASON_LABEL[order.delay_reason]}
+                    </Badge>
+                </div>
+            )}
 
             <div className="mt-auto flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground">

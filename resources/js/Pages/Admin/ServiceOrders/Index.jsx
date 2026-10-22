@@ -3,6 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Link, router, Head, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
+import { DELAY_REASON_LABEL, DELAY_BADGE_CLASS } from '@/lib/delayReason';
 import { Input } from '@/Components/ui/input';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -292,9 +293,16 @@ function buildColumns({ isAdmin, onRequestDelete }) {
             header: 'Status',
             meta: { label: 'Status' },
             cell: ({ row }) => (
-                <Badge variant={STATUS_VARIANT[row.original.status] ?? 'default'}>
-                    {STATUS_LABEL[row.original.status] ?? row.original.status}
-                </Badge>
+                <div className="flex flex-col items-start gap-1">
+                    <Badge variant={STATUS_VARIANT[row.original.status] ?? 'default'}>
+                        {STATUS_LABEL[row.original.status] ?? row.original.status}
+                    </Badge>
+                    {row.original.delay_reason && DELAY_REASON_LABEL[row.original.delay_reason] && (
+                        <Badge variant="outline" className={DELAY_BADGE_CLASS}>
+                            Delay: {DELAY_REASON_LABEL[row.original.delay_reason]}
+                        </Badge>
+                    )}
+                </div>
             ),
         },
         {

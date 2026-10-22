@@ -62,6 +62,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePollLastActivity } from '@/hooks/usePollLastActivity';
+import {
+    DELAY_REASON_LABEL,
+    DELAY_REASON_QUESTION,
+    DELAY_REASON_YES_LABEL,
+    DELAY_BADGE_CLASS,
+} from '@/lib/delayReason';
 
 // Foto hasil perbaikan: batas harus sama dengan
 // ServiceOrderRepairImage::MAX_PER_ORDER dan aturan `max:5120` di controller.
@@ -576,6 +582,7 @@ export default function Show({
     estimatedGrandTotal,
     customerComplaintEditable,
     inspectionFeeEditable,
+    delayReasonEditable,
     inspectionLinkExpired,
 }) {
     const { auth } = usePage().props;
@@ -594,6 +601,7 @@ export default function Show({
             'estimatedGrandTotal',
             'customerComplaintEditable',
             'inspectionFeeEditable',
+            'delayReasonEditable',
             'inspectionLinkExpired',
         ],
         intervalMs: 4000,
@@ -603,7 +611,7 @@ export default function Show({
     // Menggantikan seluruh window.confirm() sebelumnya, konsisten dengan pola
     // AlertDialog resmi shadcn yang sudah dipakai di Vehicles/Customers/Users.
     const [confirmDialog, setConfirmDialog] = useState(null);
-    // shape: { title, description, confirmLabel, destructive, onConfirm }
+    // shape: { title, description, confirmLabel, cancelLabel?, destructive, onConfirm }
 
     const closeConfirmDialog = () => setConfirmDialog(null);
 
@@ -769,7 +777,7 @@ export default function Show({
     // baru jadi form lagi kalau SA klik ikon pensil.
     const [isEditingPaymentDetails, setIsEditingPaymentDetails] = useState(false);
 
-    const { setData, patch, processing } = useForm({ status: '' });
+    const { setData, patch, processing } = useForm({ status: '', confirm_delay_clear: false });
     const invoiceForm = useForm({ invoice_pdf: null });
     const estimationForm = useForm({ group: '', pdf: null });
     const addItemForm = useForm({ ...EMPTY_ITEM_FORM });
@@ -851,8 +859,43 @@ export default function Show({
     // buka dropdown dulu. 1 tombol kalau cuma 1 tujuan, 2 tombol berdampingan
     // kalau ada 2 (work_in_progress -> quality_control / all_rejected_cancelled).
 
+    // TASK-053: bila delay reason masih aktif, dialog berubah jadi pertanyaan konfirmasi
+    // (part sudah datang / customer sudah approve). Backend tetap memeriksa flag
+    // confirm_delay_clear dan, untuk Waiting Approval, item yang masih pending.
     const handleSelectStatus = (value) => {
-        setData('status', value);
+        const delay = order.delay_reason;
+        const hasDelay = Boolean(delay && DELAY_REASON_LABEL[delay]);
+        const isCancel = value === 'all_rejected_cancelled';
+
+        setData((prev) => ({ ...prev, status: value, confirm_delay_clear: hasDelay }));
+
+        const sendStatus = () => {
+            patch(route('admin.service-orders.update-status', order.id), {
+                preserveScroll: true,
+                onSuccess: (page) => flashToast(page, `Status updated to ${STATUS_LABEL[value]}`),
+                onError: () => toast.error('Failed to update status'),
+                onFinish: closeConfirmDialog,
+            });
+        };
+
+        if (hasDelay && !isCancel) {
+            setConfirmDialog({
+                title: 'Delay reason is still active',
+                description: (
+                    <>
+                        This order is marked as <strong>{DELAY_REASON_LABEL[delay]}</strong>.{' '}
+                        {DELAY_REASON_QUESTION[delay]} Moving to{' '}
+                        <strong>{STATUS_LABEL[value]}</strong> will turn off the delay reason.
+                    </>
+                ),
+                confirmLabel: DELAY_REASON_YES_LABEL[delay],
+                cancelLabel: 'Not yet',
+                destructive: false,
+                onConfirm: sendStatus,
+            });
+            return;
+        }
+
         setConfirmDialog({
             title: 'Confirm Status Change',
             description: (
@@ -860,18 +903,17 @@ export default function Show({
                     Change order status from <strong>{STATUS_LABEL[order.status]}</strong> to{' '}
                     <strong>{STATUS_LABEL[value]}</strong>? This action will be recorded and
                     cannot be easily undone.
+                    {hasDelay && (
+                        <>
+                            {' '}The delay reason (<strong>{DELAY_REASON_LABEL[delay]}</strong>) will
+                            also be turned off.
+                        </>
+                    )}
                 </>
             ),
             confirmLabel: 'Confirm',
-            destructive: value === 'all_rejected_cancelled',
-            onConfirm: () => {
-                patch(route('admin.service-orders.update-status', order.id), {
-                    preserveScroll: true,
-                    onSuccess: (page) => flashToast(page, `Status updated to ${STATUS_LABEL[value]}`),
-                    onError: () => toast.error('Failed to update status'),
-                    onFinish: closeConfirmDialog,
-                });
-            },
+            destructive: isCancel,
+            onConfirm: sendStatus,
         });
     };
 
@@ -883,6 +925,12 @@ export default function Show({
                     Revert order status from <strong>{STATUS_LABEL[order.status]}</strong> back
                     to <strong>{STATUS_LABEL[revertTarget]}</strong>? Use this only if items need
                     to be reopened for negotiation.
+                    {order.delay_reason && DELAY_REASON_LABEL[order.delay_reason] && (
+                        <>
+                            {' '}The delay reason (<strong>{DELAY_REASON_LABEL[order.delay_reason]}</strong>)
+                            will also be turned off.
+                        </>
+                    )}
                 </>
             ),
             confirmLabel: 'Confirm Revert',
@@ -890,7 +938,7 @@ export default function Show({
             onConfirm: () => {
                 router.patch(
                     route('admin.service-orders.revert-status', order.id),
-                    {},
+                    { confirm_delay_clear: Boolean(order.delay_reason) },
                     {
                         preserveScroll: true,
                         onSuccess: (page) => flashToast(page, `Status reverted to ${STATUS_LABEL[revertTarget]}`),
@@ -899,6 +947,73 @@ export default function Show({
                     }
                 );
             },
+        });
+    };
+
+    // --- Delay reason (TASK-053, FR-041) ---
+    // Select hanya aktif di work_in_progress dan quality_control (prop delayReasonEditable dari
+    // backend). Nilai yang tampil selalu nilai server: memilih opsi baru hanya membuka dialog,
+    // dan tampilan baru berubah setelah backend menyimpan.
+
+    const submitDelayReason = (value, confirmClear = false) => {
+        router.patch(
+            route('admin.service-orders.update-delay-reason', order.id),
+            { delay_reason: value, confirm_delay_clear: confirmClear },
+            {
+                preserveScroll: true,
+                onSuccess: (page) =>
+                    flashToast(
+                        page,
+                        value ? `Delay reason set to ${DELAY_REASON_LABEL[value]}` : 'Delay reason turned off'
+                    ),
+                onError: () => toast.error('Failed to update delay reason'),
+                onFinish: closeConfirmDialog,
+            }
+        );
+    };
+
+    const handleDelayReasonChange = (selected) => {
+        const next = selected === 'none' ? null : selected;
+        const current = order.delay_reason ?? null;
+        if (next === current) return;
+
+        // Belum ada delay -> langsung pasang, tanpa modal.
+        if (current === null) {
+            submitDelayReason(next);
+            return;
+        }
+
+        // Mematikan delay -> pertanyaan konfirmasi sesuai alasan yang aktif.
+        if (next === null) {
+            setConfirmDialog({
+                title: 'Turn off delay reason?',
+                description: (
+                    <>
+                        This order is marked as <strong>{DELAY_REASON_LABEL[current]}</strong>.{' '}
+                        {DELAY_REASON_QUESTION[current]} Turning this off will remove the delay
+                        badge from the order.
+                    </>
+                ),
+                confirmLabel: DELAY_REASON_YES_LABEL[current],
+                cancelLabel: 'Not yet',
+                destructive: false,
+                onConfirm: () => submitDelayReason(null, true),
+            });
+            return;
+        }
+
+        // Ganti ke alasan lain -> konfirmasi singkat.
+        setConfirmDialog({
+            title: 'Change delay reason?',
+            description: (
+                <>
+                    Change the delay reason from <strong>{DELAY_REASON_LABEL[current]}</strong> to{' '}
+                    <strong>{DELAY_REASON_LABEL[next]}</strong>?
+                </>
+            ),
+            confirmLabel: 'Change',
+            destructive: false,
+            onConfirm: () => submitDelayReason(next),
         });
     };
 
@@ -1480,6 +1595,11 @@ export default function Show({
                             Waiting for Pickup
                         </Badge>
                     )}
+                    {order.delay_reason && DELAY_REASON_LABEL[order.delay_reason] && (
+                        <Badge variant="outline" className={DELAY_BADGE_CLASS}>
+                            Delay: {DELAY_REASON_LABEL[order.delay_reason]}
+                        </Badge>
+                    )}
                 </>
             }
         >
@@ -1827,6 +1947,31 @@ export default function Show({
                             </Tooltip>
                         )}
                     </div>
+
+                    {delayReasonEditable && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Label htmlFor="delay-reason-select" className="text-sm font-normal text-vw-grey">
+                                Delay reason:
+                            </Label>
+                            <Select
+                                value={order.delay_reason ?? 'none'}
+                                onValueChange={handleDelayReasonChange}
+                                disabled={processing}
+                            >
+                                <SelectTrigger id="delay-reason-select" className="h-9 w-48">
+                                    <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {Object.entries(DELAY_REASON_LABEL).map(([value, label]) => (
+                                        <SelectItem key={value} value={value}>
+                                            {label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
 
                     {isCompletedBlocked && (
                         <p className="flex items-center gap-1.5 text-xs text-amber-700">
@@ -3188,7 +3333,7 @@ export default function Show({
                         <AlertDialogDescription>{confirmDialog?.description}</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{confirmDialog?.cancelLabel ?? 'Cancel'}</AlertDialogCancel>
                         <AlertDialogAction
                             onClick={confirmDialog?.onConfirm}
                             className={cn(
