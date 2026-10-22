@@ -1507,7 +1507,7 @@ export default function Show({
         ? route('public.inspection-report', order.inspection_token)
         : null;
 
-    // Sapaan Pagi/Siang/Sore diambil dari rentang jam WIB (Asia/Jakarta)
+    // Sapaan pagi/siang/sore/malam diambil dari rentang jam WIB (Asia/Jakarta)
     // saat tombol copy diklik — bukan dari jam server, supaya benar walau
     // server pakai timezone lain.
     function getGreeting() {
@@ -1519,9 +1519,11 @@ export default function Show({
             }).format(new Date())
         );
 
-        if (hour >= 4 && hour < 11) return 'Pagi';
-        if (hour >= 11 && hour < 15) return 'Siang';
-        return 'Sore';
+        // Rentang sama dengan pesan FUAS (Fuas/Index.jsx), huruf kecil sesuai tata bahasa ("Selamat pagi").
+        if (hour >= 18 || hour < 4) return 'malam';
+        if (hour >= 15) return 'sore';
+        if (hour >= 11) return 'siang';
+        return 'pagi';
     }
 
     // "Kendaraan customer" diambil dari service order yang terdaftar
@@ -1540,10 +1542,13 @@ export default function Show({
         ? `Bapak/Ibu ${customerName}`
         : 'Bapak/Ibu Pelanggan VW PIK';
 
+    // Pesan ke customer: tanpa "(-)" bila data kendaraan kosong, "dicek" (bukan "di cek"),
+    // "kami" konsisten (bukan campur "saya"/"kami"), dan menyebut keputusan per item.
+    const reportVehicleText = vehicleLabel !== '-' ? ` (${vehicleLabel})` : '';
     const reportMessageText =
-        `Selamat ${getGreeting()} ${customerGreetingName}, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda (${vehicleLabel}):\n\n` +
+        `Selamat ${getGreeting()} ${customerGreetingName}, berikut kami kirimkan link laporan hasil inspeksi dan estimasi kendaraan Anda${reportVehicleText}:\n\n` +
         `${reportUrl ?? '-'}\n\n` +
-        `Di dalamnya ada video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat di cek dan saya tunggu persetujuan dari bapak/ibu selanjutnya. Terima kasih.`;
+        `Di dalamnya terdapat video hasil pengecekan dari teknisi kami dan rincian biaya perbaikan. Mohon dapat dicek, lalu setujui atau tolak tiap item sesuai kebutuhan Bapak/Ibu. Kami menunggu konfirmasi dari Bapak/Ibu. Terima kasih.`;
 
     const handleCopyReportLink = async () => {
         const success = await copyToClipboard(reportMessageText);

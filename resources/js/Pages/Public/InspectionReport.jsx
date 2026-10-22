@@ -794,7 +794,8 @@ export default function InspectionReport({
     };
 
     // Pesan WhatsApp ke SA berbahasa Indonesia (RULE-010, FR-025); nomor dinormalisasi ke 62xxx (RULE-013).
-    const saMessage = `Halo, saya ${customer.name}. Mohon dihubungi oleh Service Advisor karena saya ingin berdiskusi lebih lanjut mengenai estimasi dan kendaraan saya${order.work_order_number ? ` (No. WO: ${order.work_order_number})` : ''}. Terima kasih.`;
+    // Pesan ini dikirim customer langsung ke SA, jadi menyapa SA (bukan menyebut "oleh Service Advisor" seolah pihak ketiga).
+    const saMessage = `Halo${serviceAdvisor.name ? ` ${serviceAdvisor.name}` : ''}, saya ${customer.name}${order.work_order_number ? ` (No. WO: ${order.work_order_number})` : ''}. Saya ingin berdiskusi lebih lanjut mengenai estimasi dan kendaraan saya. Mohon dapat menghubungi saya. Terima kasih.`;
     const waHref = serviceAdvisor.phone
         ? `https://wa.me/${toWaDigits(serviceAdvisor.phone)}?text=${encodeURIComponent(saMessage)}`
         : null;

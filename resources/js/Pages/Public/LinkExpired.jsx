@@ -15,8 +15,9 @@ export default function LinkExpired({ settings, serviceAdvisor }) {
     const workshopName = settings?.workshop_name ?? 'the workshop';
     const phone = serviceAdvisor?.phone ?? settings?.booking_whatsapp_phone ?? null;
     const waHref = phone
+        // Pesan WhatsApp berbahasa Indonesia (RULE-010, konsisten dengan pesan lain ke SA).
         ? `https://wa.me/${toWaDigits(phone)}?text=${encodeURIComponent(
-              'Hello, my inspection report link has expired. Could you send me a new one?'
+              'Halo, link laporan inspeksi saya sudah tidak aktif. Mohon dapat dikirimkan link yang baru. Terima kasih.'
           )}`
         : null;
 
