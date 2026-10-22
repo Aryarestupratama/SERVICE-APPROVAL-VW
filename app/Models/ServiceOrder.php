@@ -43,6 +43,22 @@ class ServiceOrder extends Model
         self::STATUS_QUALITY_CONTROL,
     ];
 
+    // Alasan keterlambatan (TASK-053, FR-041). Dipilih SA lewat select; NULL = tidak terlambat.
+    // Hanya boleh diubah saat work_in_progress dan quality_control (keputusan owner). Pada
+    // invoice_preparation statusnya sudah paten "Waiting for Pickup", jadi tidak ada delay.
+    public const DELAY_WAITING_PART = 'waiting_part';
+    public const DELAY_WAITING_APPROVAL = 'waiting_approval';
+
+    public const DELAY_REASONS = [
+        self::DELAY_WAITING_PART => 'Waiting Part',
+        self::DELAY_WAITING_APPROVAL => 'Waiting Approval',
+    ];
+
+    public const DELAY_REASON_EDITABLE_STATUSES = [
+        self::STATUS_WORK_IN_PROGRESS,
+        self::STATUS_QUALITY_CONTROL,
+    ];
+
     protected $fillable = [
         'vehicle_id',
         'customer_id',
@@ -51,6 +67,7 @@ class ServiceOrder extends Model
         'work_order_number',
         'status',
         'items_approval_status',
+        'delay_reason',
         'inspection_fee',
         'inspection_fee_note',
         'personal_message',
@@ -103,6 +120,15 @@ class ServiceOrder extends Model
         static::saving(function (ServiceOrder $order) {
             if ($order->isDirty('status') && ! $order->wasRecentlyCreated) {
                 $order->status_changed_at = Carbon::now();
+
+                // TASK-053: setiap perpindahan status (maju, batal, atau revert) mematikan delay
+                // reason dalam save() yang sama, sehingga tidak pernah ada status baru yang
+                // masih membawa alasan keterlambatan status lama. Konfirmasi SA diminta di
+                // controller sebelum sampai ke sini. Hanya untuk record yang sudah ada: saat
+                // insert, `wasRecentlyCreated` masih false sehingga blok ini ikut berjalan.
+                if ($order->exists) {
+                    $order->delay_reason = null;
+                }
             }
         });
     }
@@ -200,6 +226,27 @@ class ServiceOrder extends Model
     public function isInspectionFeeEditable(): bool
     {
         return in_array($this->status, self::INSPECTION_FEE_EDITABLE_STATUSES, true);
+    }
+
+    // Guard backend (sumber kebenaran) apakah delay_reason boleh diubah di status saat ini.
+    // Dikirim ke Show.jsx sebagai prop supaya UI tidak menduplikasi daftar status.
+    public function isDelayReasonEditable(): bool
+    {
+        return in_array($this->status, self::DELAY_REASON_EDITABLE_STATUSES, true);
+    }
+
+    // Guard untuk mematikan delay "Waiting Approval": SA mengonfirmasi customer sudah approve,
+    // tetapi data harus cocok. Return pesan error bila masih ada item yang belum diputuskan
+    // customer, atau null bila aman. Logika "pending" sama dengan revertStatus().
+    public function waitingApprovalBlocker(): ?string
+    {
+        $pending = $this->inspectionItems()->where('status', 'pending')->count();
+
+        if ($pending === 0) {
+            return null;
+        }
+
+        return "Cannot turn off Waiting Approval: {$pending} item(s) are still waiting for the customer's decision.";
     }
 
     /**

@@ -693,6 +693,8 @@ class ServiceOrderController extends Controller
             // Same pattern as above but for inspection_fee — single source
             // of truth in ServiceOrder::isInspectionFeeEditable().
             'inspectionFeeEditable' => $serviceOrder->isInspectionFeeEditable(),
+            // TASK-053: sumber kebenaran status yang boleh mengubah delay reason.
+            'delayReasonEditable' => $serviceOrder->isDelayReasonEditable(),
             'inspectionLinkExpired' => $serviceOrder->isInspectionLinkExpired(),
         ]);
     }
@@ -755,6 +757,55 @@ class ServiceOrderController extends Controller
         return back()->with('success', 'Customer complaint saved successfully.');
     }
 
+    /**
+     * Ubah alasan keterlambatan (TASK-053, FR-041, API-031). Hanya saat work_in_progress dan
+     * quality_control. Mematikan delay (nilai kosong) wajib dikonfirmasi; untuk Waiting
+     * Approval juga dicek bahwa tidak ada item yang masih menunggu keputusan customer.
+     * Mengganti ke alasan lain tidak butuh flag (konfirmasinya ada di modal UI).
+     */
+    public function updateDelayReason(Request $request, ServiceOrder $serviceOrder)
+    {
+        $this->authorizeAccess($request, $serviceOrder);
+
+        if (! $serviceOrder->isDelayReasonEditable()) {
+            return back()->with('error', 'Delay reason can only be changed while the order is in Work In Process or Quality Control.');
+        }
+
+        $validated = $request->validate([
+            'delay_reason' => ['nullable', Rule::in(array_keys(ServiceOrder::DELAY_REASONS))],
+            'confirm_delay_clear' => ['sometimes', 'boolean'],
+        ]);
+
+        $current = $serviceOrder->delay_reason;
+        $new = $validated['delay_reason'] ?? null;
+
+        if ($new === $current) {
+            return back()->with('success', 'Delay reason unchanged.');
+        }
+
+        if ($current !== null && $new === null) {
+            if (! $request->boolean('confirm_delay_clear')) {
+                return back()->with('error', 'Delay reason is still active. Please confirm before continuing.');
+            }
+
+            if (
+                $current === ServiceOrder::DELAY_WAITING_APPROVAL
+                && ($blocker = $serviceOrder->waitingApprovalBlocker()) !== null
+            ) {
+                return back()->with('error', $blocker);
+            }
+        }
+
+        $serviceOrder->update([
+            'delay_reason' => $new,
+            'last_activity_at' => now(),
+        ]);
+
+        return back()->with('success', $new === null
+            ? 'Delay reason turned off.'
+            : 'Delay reason set to '.ServiceOrder::DELAY_REASONS[$new].'.');
+    }
+
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)
     {
         $this->authorizeAccess($request, $serviceOrder);
@@ -768,6 +819,7 @@ class ServiceOrderController extends Controller
                 ServiceOrder::STATUS_COMPLETED,
                 ServiceOrder::STATUS_ALL_REJECTED_CANCELLED,
             ])],
+            'confirm_delay_clear' => ['sometimes', 'boolean'],
         ]);
 
         $newStatus = $validated['status'];
@@ -788,6 +840,24 @@ class ServiceOrderController extends Controller
             return back()->with('error', 'Upload at least 1 invoice PDF before marking the order as complete.');
         }
 
+        // TASK-053: bila delay reason masih aktif, SA harus mengonfirmasi lewat modal (flag
+        // dikirim UI). Untuk Waiting Approval, data juga harus cocok: tidak boleh ada item yang
+        // masih menunggu keputusan customer (kecuali order dibatalkan). Status baru otomatis
+        // mematikan delay lewat event model; tidak perlu diisi di sini.
+        if ($serviceOrder->delay_reason !== null) {
+            if (! $request->boolean('confirm_delay_clear')) {
+                return back()->with('error', 'Delay reason is still active. Please confirm before continuing.');
+            }
+
+            if (
+                $serviceOrder->delay_reason === ServiceOrder::DELAY_WAITING_APPROVAL
+                && $newStatus !== ServiceOrder::STATUS_ALL_REJECTED_CANCELLED
+                && ($blocker = $serviceOrder->waitingApprovalBlocker()) !== null
+            ) {
+                return back()->with('error', $blocker);
+            }
+        }
+
         $updates = ['status' => $newStatus, 'last_activity_at' => now()];
 
         $serviceOrder->update($updates);
@@ -806,6 +876,12 @@ class ServiceOrderController extends Controller
 
         if ($target === null) {
             return back()->with('error', "Status '{$currentStatus}' cannot be reverted.");
+        }
+
+        // TASK-053: revert juga mematikan delay reason (lewat event model), jadi wajib
+        // dikonfirmasi. Tidak ada guard item pending: revert justru dipakai untuk membuka ulang item.
+        if ($serviceOrder->delay_reason !== null && ! $request->boolean('confirm_delay_clear')) {
+            return back()->with('error', 'Delay reason is still active. Please confirm before continuing.');
         }
 
         // FIX: previously finalized_at was nulled unconditionally on every

@@ -72,7 +72,7 @@ class DashboardController extends Controller
             ->where('status_changed_at', '<', $stuckThreshold)
             ->with(['vehicle', 'serviceAdvisor'])
             ->get()
-            ->map(fn ($order) => $this->toActionItem($order, self::STUCK_REASON_BY_STATUS[$order->status]))
+            ->map(fn ($order) => $this->toActionItem($order, $this->stuckReasonFor($order)))
             ->sortBy('sort_key')
             ->values();
 
@@ -135,11 +135,21 @@ class DashboardController extends Controller
         $count = (clone $baseQuery)->count();
         $latest = (clone $baseQuery)->max('status_changed_at');
 
+        // TASK-053: delay reason berubah tanpa mengubah status, jadi tidak tertangkap oleh
+        // status_changed_at. Hash kecil dari pasangan id:delay_reason (hanya order yang
+        // sedang delay) cukup untuk mendeteksinya tanpa query berat.
+        $delays = (clone $baseQuery)
+            ->whereNotNull('delay_reason')
+            ->orderBy('id')
+            ->pluck('delay_reason', 'id');
+        $delayHash = crc32($delays->toJson());
+
         return response()->json([
             // count + latest timestamp cukup untuk mendeteksi: order baru
             // masuk (count berubah), order pindah status (latest berubah),
-            // atau order keluar dari In Progress (count berubah).
-            'signature' => "{$count}:{$latest}",
+            // atau order keluar dari In Progress (count berubah). Hash delay
+            // menambah deteksi perubahan alasan keterlambatan.
+            'signature' => "{$count}:{$latest}:{$delayHash}",
         ]);
     }
 
@@ -177,6 +187,23 @@ class DashboardController extends Controller
             ->values();
     }
 
+    /**
+     * Kode alasan untuk Needs Attention. Default mengikuti status (WIP = nunggu part,
+     * invoice_preparation = nunggu diambil). TASK-053: bila SA memilih delay reason
+     * Waiting Approval di WIP, alasan itu yang tampil. Waiting Part sama dengan default.
+     */
+    private function stuckReasonFor(ServiceOrder $order): string
+    {
+        if (
+            $order->status === ServiceOrder::STATUS_WORK_IN_PROGRESS
+            && $order->delay_reason === ServiceOrder::DELAY_WAITING_APPROVAL
+        ) {
+            return 'waiting_for_approval';
+        }
+
+        return self::STUCK_REASON_BY_STATUS[$order->status];
+    }
+
     private function toActionItem(ServiceOrder $order, string $reason): array
     {
         // Basisnya selalu status_changed_at karena "stuck" sekarang cuma soal
@@ -208,6 +235,7 @@ class DashboardController extends Controller
             'customer_name' => $order->customer?->name,
             'service_advisor_name' => $order->serviceAdvisor?->name,
             'status' => $order->status,
+            'delay_reason' => $order->delay_reason,
             'days_ago' => (int) $basis->diffInDays(Carbon::now()),
             'sort_key' => $basis->toIso8601String(),
         ];

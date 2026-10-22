@@ -156,6 +156,12 @@ Route::middleware(['auth', 'verified'])
                 [ServiceOrderController::class, 'updateStatus'])
                 ->name('service-orders.update-status');
 
+            // TASK-053 (API-031): alasan keterlambatan (Waiting Part / Waiting Approval), hanya
+            // work_in_progress & quality_control; guard status di controller.
+            Route::patch('service-orders/{serviceOrder}/delay-reason',
+                [ServiceOrderController::class, 'updateDelayReason'])
+                ->name('service-orders.update-delay-reason');
+
             // Endpoint ringan untuk polling + change-detection sisi admin
             // (PROJECT-RULES.md bagian 12.4/12.6) — throttle terpisah dari
             // batas default karena dipanggil sering per tab yang terbuka.
