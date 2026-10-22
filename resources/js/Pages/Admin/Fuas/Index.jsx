@@ -276,8 +276,8 @@ function buildColumns({ busyId, onSend, onView, onDone }) {
         },
         {
             id: 'fuas_status',
-            header: 'FUAS Status',
-            meta: { label: 'FUAS Status' },
+            header: 'Status',
+            meta: { label: 'Status' },
             accessorFn: (row) => row.fuas.status ?? '',
             cell: ({ row }) => <StatusBadge status={row.original.fuas.status} />,
         },
@@ -578,7 +578,7 @@ function FuasIndex({ orders, scope, search, filters, statusOptions, serviceAdvis
     const filterDefs = useMemo(() => [
         {
             key: 'status',
-            label: 'FUAS Status',
+            label: 'Status',
             type: 'select',
             options: statusOptions.map((value) => ({ value, label: STATUS_LABEL[value] })),
         },
