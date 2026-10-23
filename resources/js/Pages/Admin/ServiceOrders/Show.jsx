@@ -1601,7 +1601,7 @@ export default function Show({
                     )}
                     {order.delay_reason && DELAY_REASON_LABEL[order.delay_reason] && (
                         <Badge variant="outline" className={DELAY_BADGE_CLASS}>
-                            Delay: {DELAY_REASON_LABEL[order.delay_reason]}
+                            {DELAY_REASON_LABEL[order.delay_reason]}
                         </Badge>
                     )}
                 </>

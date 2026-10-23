@@ -16,6 +16,6 @@ export const DELAY_REASON_YES_LABEL = {
     waiting_approval: 'Yes, customer has approved',
 };
 
-// Badge amber (teks amber-700 sesuai RULE-060). Awalan "Delay:" membedakannya dari label
-// status item "Waiting Approval" yang sudah ada di detail order.
+// Badge amber (teks amber-700 sesuai RULE-060). Teks badge langsung nama alasan (tanpa awalan); label
+// status item "Waiting Approval" di detail order tetap ada, bedakan lewat warna dan posisi badge.
 export const DELAY_BADGE_CLASS = 'border-amber-500 bg-amber-50 text-amber-700';

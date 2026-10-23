@@ -37,16 +37,10 @@ const STATUS_ICONS = {
     invoice_preparation: FileText,
 };
 
+// Label alasan macet per waktu (bahasa Inggris, RULE-010). Badge-nya memakai warna yang
+// sama dengan badge delay (DELAY_BADGE_CLASS) supaya tampil seragam di Needs Attention.
 const REASON_LABELS = {
-    waiting_for_parts: 'Menunggu Part',
-    waiting_for_approval: 'Menunggu Approval',
-    waiting_for_pickup: 'Menunggu Diambil',
-};
-
-const REASON_VARIANT = {
-    waiting_for_parts: 'destructive',
-    waiting_for_approval: 'destructive',
-    waiting_for_pickup: 'secondary',
+    waiting_for_pickup: 'Waiting for Pickup',
 };
 
 const CHART_RANGES = [
@@ -179,14 +173,6 @@ function InProgressCard({ order }) {
                 </p>
             </div>
 
-            {order.delay_reason && DELAY_REASON_LABEL[order.delay_reason] && (
-                <div>
-                    <Badge variant="outline" className={`text-[11px] ${DELAY_BADGE_CLASS}`}>
-                        Delay: {DELAY_REASON_LABEL[order.delay_reason]}
-                    </Badge>
-                </div>
-            )}
-
             <div className="mt-auto flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground">
                     {STATUS_LABELS[order.status] ?? order.status}
@@ -301,7 +287,7 @@ export default function Dashboard({
                         </CardTitle>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Orders stuck &gt; {stuckThresholdDays} days in Work In Process (waiting for parts) or Invoice Preparation (waiting for pickup).
+                        Orders marked as delayed (Waiting Part / Waiting Approval) in Work In Process or Quality Control, plus orders stuck &gt; {stuckThresholdDays} days in Invoice Preparation (waiting for pickup).
                     </p>
                     {attentionTotal > actionItems.length && (
                         <p className="text-xs text-muted-foreground">
@@ -331,8 +317,13 @@ export default function Dashboard({
                                         </p>
                                     </div>
                                     <div className="flex flex-shrink-0 flex-wrap gap-1 sm:justify-end">
+                                        {item.delay_reason && DELAY_REASON_LABEL[item.delay_reason] && (
+                                            <Badge variant="outline" className={DELAY_BADGE_CLASS}>
+                                                {DELAY_REASON_LABEL[item.delay_reason]}
+                                            </Badge>
+                                        )}
                                         {item.reasons.map((reason) => (
-                                            <Badge key={reason} variant={REASON_VARIANT[reason] ?? 'secondary'}>
+                                            <Badge key={reason} variant="outline" className={DELAY_BADGE_CLASS}>
                                                 {REASON_LABELS[reason] ?? reason}
                                             </Badge>
                                         ))}

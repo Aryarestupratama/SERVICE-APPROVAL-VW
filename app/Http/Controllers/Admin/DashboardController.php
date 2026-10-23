@@ -17,14 +17,13 @@ class DashboardController extends Controller
     // UPDATE: 3 -> 21 hari (permintaan owner, revisi PROJECT-RULES bagian 7).
     private const STUCK_THRESHOLD_DAYS = 21;
 
-    // Needs Attention SEKARANG hanya mencakup 2 status ini (quality_control,
-    // pending_approval, dan missing_invoice dilepas dari scope sesuai
-    // permintaan). Key = status order, value = reason code yang dikirim
-    // ke frontend untuk label badge:
-    // - work_in_progress    -> lagi nunggu part datang
+    // Aturan "macet per waktu" di Needs Attention HANYA untuk status ini. Key = status
+    // order, value = reason code yang dikirim ke frontend untuk label badge:
     // - invoice_preparation -> lagi nunggu customer ambil mobil
+    // TASK-055: work_in_progress DIHAPUS dari aturan ini (keputusan owner 2026-10-23):
+    // "nunggu part / approval" sekarang ditandai eksplisit oleh SA lewat delay reason
+    // (TASK-053), yang masuk Needs Attention lewat jalur terpisah (delay_reason).
     private const STUCK_REASON_BY_STATUS = [
-        ServiceOrder::STATUS_WORK_IN_PROGRESS => 'waiting_for_parts',
         ServiceOrder::STATUS_INVOICE_PREPARATION => 'waiting_for_pickup',
     ];
 
@@ -60,21 +59,31 @@ class DashboardController extends Controller
 
         $stuckThreshold = Carbon::now()->subDays(self::STUCK_THRESHOLD_DAYS);
 
-        // Order stuck di work_in_progress (nunggu part) atau invoice_preparation
-        // (nunggu customer ambil mobil) terlalu lama. Pakai `status_changed_at`,
+        // Order stuck di invoice_preparation (nunggu customer ambil mobil) terlalu lama.
+        // Pakai `status_changed_at`,
         // kolom yang di-set otomatis lewat model event `ServiceOrder::saving()`
         // HANYA saat kolom `status` benar-benar berubah — jadi order yang cuma
         // di-edit non-status tidak keanggap "baru".
         //
         // NOTE: quality_control, items_approval_status pending, dan invoice
         // belum diupload SUDAH TIDAK masuk Needs Attention (dilepas dari scope
-        // sesuai permintaan) — sekarang murni "stuck di 2 status ini > 21 hari".
+        // sesuai permintaan) — stuck per waktu sekarang hanya untuk invoice_preparation
+        // > 21 hari; work_in_progress diganti sistem delay reason (TASK-055).
+        //
+        // TASK-054: order dengan delay reason aktif (Waiting Part / Waiting Approval, hanya
+        // mungkin di WIP/QC) juga masuk, berapa pun umurnya, dan sebaliknya dikeluarkan
+        // dari In Progress (lihat inProgressOrdersFor). Kondisi dikelompokkan dalam closure
+        // supaya filter SA di $baseQuery tetap berlaku untuk kedua cabang.
         $actionItems = (clone $baseQuery)
-            ->whereIn('status', array_keys(self::STUCK_REASON_BY_STATUS))
-            ->where('status_changed_at', '<', $stuckThreshold)
+            ->where(function ($q) use ($stuckThreshold) {
+                $q->where(function ($stuck) use ($stuckThreshold) {
+                    $stuck->whereIn('status', array_keys(self::STUCK_REASON_BY_STATUS))
+                        ->where('status_changed_at', '<', $stuckThreshold);
+                })->orWhereNotNull('delay_reason');
+            })
             ->with(['vehicle', 'serviceAdvisor'])
             ->get()
-            ->map(fn ($order) => $this->toActionItem($order, $this->stuckReasonFor($order)))
+            ->map(fn ($order) => $this->toActionItem($order))
             ->sortBy('sort_key')
             ->values();
 
@@ -180,6 +189,8 @@ class DashboardController extends Controller
     {
         return (clone $baseQuery)
             ->whereIn('status', self::IN_PROGRESS_STATUSES)
+            // TASK-054: order yang delay pindah ke Needs Attention; In Progress murni tanpa delay.
+            ->whereNull('delay_reason')
             ->with(['vehicle', 'serviceAdvisor', 'customer'])
             ->get()
             ->map(fn ($order) => $this->toInProgressItem($order))
@@ -189,24 +200,7 @@ class DashboardController extends Controller
             ->values();
     }
 
-    /**
-     * Kode alasan untuk Needs Attention. Default mengikuti status (WIP = nunggu part,
-     * invoice_preparation = nunggu diambil). TASK-053: bila SA memilih delay reason
-     * Waiting Approval di WIP, alasan itu yang tampil. Waiting Part sama dengan default.
-     */
-    private function stuckReasonFor(ServiceOrder $order): string
-    {
-        if (
-            $order->status === ServiceOrder::STATUS_WORK_IN_PROGRESS
-            && $order->delay_reason === ServiceOrder::DELAY_WAITING_APPROVAL
-        ) {
-            return 'waiting_for_approval';
-        }
-
-        return self::STUCK_REASON_BY_STATUS[$order->status];
-    }
-
-    private function toActionItem(ServiceOrder $order, string $reason): array
+    private function toActionItem(ServiceOrder $order): array
     {
         // Basisnya selalu status_changed_at karena "stuck" sekarang cuma soal
         // durasi order diam di status yang sama (work_in_progress /
@@ -219,7 +213,13 @@ class DashboardController extends Controller
             'plate_number' => $order->vehicle?->plate_number,
             'service_advisor_name' => $order->serviceAdvisor?->name,
             'status' => $order->status,
-            'reasons' => [$reason],
+            // TASK-054: bila delay aktif, badge delay yang tampil dan alasan default (macet
+            // per status) dilewati supaya tidak ada dua badge bermakna sama; lamanya tetap
+            // terbaca dari days_ago. Tanpa delay, alasan default mengikuti status.
+            'delay_reason' => $order->delay_reason,
+            'reasons' => $order->delay_reason === null
+                ? [self::STUCK_REASON_BY_STATUS[$order->status]]
+                : [],
             'updated_at' => $basis->toIso8601String(),
             'days_ago' => (int) $basis->diffInDays(Carbon::now()),
             'sort_key' => $basis->toIso8601String(),
@@ -237,7 +237,6 @@ class DashboardController extends Controller
             'customer_name' => $order->customer?->name,
             'service_advisor_name' => $order->serviceAdvisor?->name,
             'status' => $order->status,
-            'delay_reason' => $order->delay_reason,
             'days_ago' => (int) $basis->diffInDays(Carbon::now()),
             'sort_key' => $basis->toIso8601String(),
         ];

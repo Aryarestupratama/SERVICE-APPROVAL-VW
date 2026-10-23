@@ -299,7 +299,7 @@ function buildColumns({ isAdmin, onRequestDelete }) {
                     </Badge>
                     {row.original.delay_reason && DELAY_REASON_LABEL[row.original.delay_reason] && (
                         <Badge variant="outline" className={DELAY_BADGE_CLASS}>
-                            Delay: {DELAY_REASON_LABEL[row.original.delay_reason]}
+                            {DELAY_REASON_LABEL[row.original.delay_reason]}
                         </Badge>
                     )}
                 </div>
