@@ -29,10 +29,12 @@ function loadPdfjs() {
     if (!pdfjsPromise) {
         pdfjsPromise = Promise.all([
             import('pdfjs-dist/legacy/build/pdf.mjs'),
-            import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+            import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker'),
         ])
             .then(([lib, worker]) => {
-                lib.GlobalWorkerOptions.workerSrc = worker.default;
+                // Worker di-bundle Vite sebagai file .js (bukan .mjs), supaya tidak bergantung
+                // pada MIME type .mjs di hosting.
+                lib.GlobalWorkerOptions.workerPort = new worker.default();
                 return lib;
             })
             .catch((err) => {
